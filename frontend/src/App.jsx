@@ -22,6 +22,8 @@ import AssignmentsList from "./components/Dashboard/Admin/AssignmentsList";
 import AuditLogs from "./components/Dashboard/Admin/AuditLogs";
 import AdminContainers from "./components/Dashboard/Admin/AdminContainers";
 import AdminFolders from "./components/Dashboard/Admin/AdminFolders";
+import SmartTokenManagement from "./components/Dashboard/Admin/SmartTokenManagement";
+// import DebugSmartToken from "./components/Dashboard/Admin/DebugSmartToken"; // Debug component
 
 // User Components
 import UserDashboard from "./components/Dashboard/User/UserDashboard";
@@ -121,6 +123,26 @@ const App = () => {
                       </RoleCheck>
                     }
                   />
+
+                  {/* SmartToken Management Route */}
+                  <Route
+                    path="/admin/smart-tokens"
+                    element={
+                      <RoleCheck allowedRoles={["admin"]}>
+                        <SmartTokenManagement />
+                      </RoleCheck>
+                    }
+                  />
+
+                  {/* DEBUG: SmartToken Debug Route */}
+                  {/* <Route
+                    path="/admin/debug/smart-tokens"
+                    element={
+                      <RoleCheck allowedRoles={["admin"]}>
+                        <DebugSmartToken />
+                      </RoleCheck>
+                    }
+                  /> */}
 
                   {/* Admin Blob Viewer - Important for back button functionality */}
                   <Route

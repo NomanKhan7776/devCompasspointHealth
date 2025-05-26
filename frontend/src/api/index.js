@@ -1,7 +1,5 @@
 import axios from "axios";
 
-// const API_URL = "http://localhost:5000/api";
-
 // Create axios instance
 const api = axios.create({
   baseURL: `${import.meta.env.VITE_REACT_API_URL}/api`,
@@ -38,6 +36,45 @@ api.interceptors.response.use(
         localStorage.removeItem("token");
 
         // Force page refresh to reset the application state
+        window.location.href = "/login?session=expired";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Create separate axios instance for SmartToken APIs (different base path)
+const smartTokenAxios = axios.create({
+  baseURL: import.meta.env.VITE_REACT_API_URL, // Direct to backend without /api
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// Add authentication token to SmartToken requests
+smartTokenAxios.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers["x-auth-token"] = token;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for SmartToken API
+smartTokenAxios.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    // Handle authentication errors
+    if (error.response && error.response.status === 401) {
+      if (!window.location.pathname.includes("/login")) {
+        localStorage.removeItem("token");
         window.location.href = "/login?session=expired";
       }
     }
@@ -99,4 +136,11 @@ const blobsAPI = {
   getAuditLogs: (params) => api.get("/blobs/audit", { params }),
 };
 
-export { authAPI, usersAPI, assignmentsAPI, blobsAPI };
+// SmartToken API - Production version (simplified)
+const smartTokenAPI = {
+  getUnclaimedTokens: () => smartTokenAxios.get("/patients/admin/unclaimed"),
+  assignTokenToPatient: (tokenData) =>
+    smartTokenAxios.post("/patients/admin/assign", tokenData),
+};
+
+export { authAPI, usersAPI, assignmentsAPI, blobsAPI, smartTokenAPI };
