@@ -1,3 +1,4 @@
+// src/App.jsx - UPDATED VERSION
 import React from "react";
 import {
   BrowserRouter as Router,
@@ -12,6 +13,9 @@ import Login from "./components/Auth/Login";
 import PrivateRoute from "./components/Auth/PrivateRoute";
 import RoleCheck from "./components/Auth/RoleCheck";
 
+// SmartToken Component (NEW)
+import SmartTokenRedirect from "./components/SmartToken/SmartTokenRedirect";
+
 // Admin Components
 import AdminDashboard from "./components/Dashboard/Admin/AdminDashboard";
 import UserList from "./components/Dashboard/Admin/UserList";
@@ -23,13 +27,14 @@ import AuditLogs from "./components/Dashboard/Admin/AuditLogs";
 import AdminContainers from "./components/Dashboard/Admin/AdminContainers";
 import AdminFolders from "./components/Dashboard/Admin/AdminFolders";
 import SmartTokenManagement from "./components/Dashboard/Admin/SmartTokenManagement";
-// import DebugSmartToken from "./components/Dashboard/Admin/DebugSmartToken"; // Debug component
 
 // User Components
 import UserDashboard from "./components/Dashboard/User/UserDashboard";
 import ContainerList from "./components/Dashboard/User/ContainerList";
 import BlobViewer from "./components/Dashboard/User/BlobViewer";
 import MyAssignments from "./components/Dashboard/User/MyAssignments";
+
+// Context Providers
 import { AssignmentsProvider } from "./context/AssignmentsContext";
 import { AdminProvider } from "./context/AdminContext";
 import { DashboardProvider } from "./context/DashboardContext";
@@ -42,10 +47,18 @@ const App = () => {
           <AdminProvider>
             <Router>
               <Routes>
-                {/* Public Routes */}
+                {/* PUBLIC ROUTES - No authentication required */}
+
+                {/* Login Route */}
                 <Route path="/login" element={<Login />} />
 
-                {/* All Private Routes under a single PrivateRoute */}
+                {/* SmartToken Redirect Route - MUST be public for emergency access */}
+                <Route
+                  path="/patients/verify/:id"
+                  element={<SmartTokenRedirect />}
+                />
+
+                {/* PRIVATE ROUTES - Authentication required */}
                 <Route element={<PrivateRoute />}>
                   {/* Dashboard route */}
                   <Route path="/dashboard" element={<DashboardRouter />} />
@@ -134,16 +147,6 @@ const App = () => {
                     }
                   />
 
-                  {/* DEBUG: SmartToken Debug Route */}
-                  {/* <Route
-                    path="/admin/debug/smart-tokens"
-                    element={
-                      <RoleCheck allowedRoles={["admin"]}>
-                        <DebugSmartToken />
-                      </RoleCheck>
-                    }
-                  /> */}
-
                   {/* Admin Blob Viewer - Important for back button functionality */}
                   <Route
                     path="/admin/containers/:containerName/folders/:folderName"
@@ -166,11 +169,13 @@ const App = () => {
                   />
                 </Route>
 
-                {/* Default Route */}
+                {/* Default Routes */}
                 <Route
                   path="/"
                   element={<Navigate replace to="/dashboard" />}
                 />
+
+                {/* Catch-all route - redirect unknown paths to dashboard */}
                 <Route
                   path="*"
                   element={<Navigate replace to="/dashboard" />}
@@ -186,12 +191,22 @@ const App = () => {
 
 // Smart Dashboard Router that redirects based on role
 const DashboardRouter = () => {
-  const isAdmin =
-    localStorage.getItem("token") &&
-    JSON.parse(atob(localStorage.getItem("token").split(".")[1])).user.role ===
-      "admin";
+  // Check if user is admin by parsing the token
+  const token = localStorage.getItem("token");
 
-  return isAdmin ? <AdminDashboard /> : <UserDashboard />;
+  if (!token) {
+    return <Navigate replace to="/login" />;
+  }
+
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const isAdmin = payload.user?.role === "admin";
+
+    return isAdmin ? <AdminDashboard /> : <UserDashboard />;
+  } catch (error) {
+    console.error("Error parsing token:", error);
+    return <Navigate replace to="/login" />;
+  }
 };
 
 export default App;
