@@ -11,7 +11,7 @@ const userRoutes = require("./routes/users");
 const assignmentRoutes = require("./routes/assignments");
 const blobRoutes = require("./routes/blobs");
 const smartTokenRoutes = require("./routes/smartTokenRoutes");
-const { testAzureConfig } = require("./controllers/blobController");
+
 // Create Express app
 const app = express();
 
@@ -71,42 +71,6 @@ app.use("/patients", express.json());
 // Additional middleware
 app.use(express.urlencoded({ extended: true }));
 
-
-app.get("/debug/azure-test", testAzureConfig);
-
-app.get("/debug/auth-test", require("./middleware/auth"), (req, res) => {
-  res.json({
-    success: true,
-    user: {
-      userId: req.user.userId,
-      name: req.user.name,
-      role: req.user.role,
-    },
-    message: "Authentication working",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.get("/debug/env-test", (req, res) => {
-  res.json({
-    success: true,
-    environment: {
-      nodeEnv: process.env.NODE_ENV,
-      hasDbServer: !!process.env.DB_SERVER,
-      hasDbUser: !!process.env.DB_USER,
-      hasDbPassword: !!process.env.DB_PASSWORD,
-      hasJwtSecret: !!process.env.JWT_SECRET,
-      hasAzureConnectionString: !!process.env.AZURE_STORAGE_CONNECTION_STRING,
-      hasAzureAccountName: !!process.env.AZURE_STORAGE_ACCOUNT_NAME,
-      hasAzureAccountKey: !!process.env.AZURE_STORAGE_ACCOUNT_KEY,
-      port: process.env.PORT || 5000,
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
-
-
-
 // Logging - simplified for production
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("combined"));
@@ -133,7 +97,6 @@ app.get("/", (req, res) => {
     version: "1.0.0",
   });
 });
-
 
 // API status endpoint
 app.get("/api/status", (req, res) => {
