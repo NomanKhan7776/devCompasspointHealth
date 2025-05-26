@@ -53,7 +53,7 @@ app.use(
   cors({
     origin:
       process.env.NODE_ENV === "production"
-        ? ["https://yourdomain.com", "https://www.yourdomain.com"] // Replace with your actual domains
+        ? ["https://compasspointpr.ms", "https://www.compasspointpr.ms"] // Replace with your actual domains
         : ["http://localhost:3000", "http://localhost:5173"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-auth-token"],
@@ -71,32 +71,6 @@ app.use("/patients", express.json());
 // Additional middleware
 app.use(express.urlencoded({ extended: true }));
 
-// Logging - simplified for production
-if (process.env.NODE_ENV === "development") {
-  app.use(morgan("combined"));
-} else {
-  app.use(morgan("common"));
-}
-
-// Serve static files
-app.use("/static", express.static(path.join(__dirname, "public")));
-
-// Routes
-app.use("/patients", smartTokenRoutes);
-app.use("/api/auth", authRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/assignments", assignmentRoutes);
-app.use("/api/blobs", blobRoutes);
-
-// Health check endpoint
-app.get("/", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    message: "CompassPoint Health PRMS Server is running",
-    timestamp: new Date().toISOString(),
-    version: "1.0.0",
-  });
-});
 
 app.get("/debug/azure-test", testAzureConfig);
 
@@ -130,6 +104,36 @@ app.get("/debug/env-test", (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+
+
+// Logging - simplified for production
+if (process.env.NODE_ENV === "development") {
+  app.use(morgan("combined"));
+} else {
+  app.use(morgan("common"));
+}
+
+// Serve static files
+app.use("/static", express.static(path.join(__dirname, "public")));
+
+// Routes
+app.use("/patients", smartTokenRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/assignments", assignmentRoutes);
+app.use("/api/blobs", blobRoutes);
+
+// Health check endpoint
+app.get("/", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    message: "CompassPoint Health PRMS Server is running",
+    timestamp: new Date().toISOString(),
+    version: "1.0.0",
+  });
+});
+
 
 // API status endpoint
 app.get("/api/status", (req, res) => {
