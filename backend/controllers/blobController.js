@@ -1,4 +1,4 @@
-// controllers/blobController.js
+// controllers/blobController.js - COMPLETE UPDATED VERSION
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -11,9 +11,6 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
-
-// Configure multer for file uploads
-// const upload = multer({ dest: "uploads/" });
 
 // Configure multer to use memory storage instead of disk storage
 const memoryStorage = multer.memoryStorage();
@@ -51,91 +48,147 @@ const logFileOperation = async (
   }
 };
 
-// Helper function to check if user has access to container/folder
+// FIXED: Helper function to check if user has access to container/folder
 const checkUserAccess = async (userId, containerName, folderName) => {
-  // Admin has access to everything
-  const userResult = await pool
-    .request()
-    .input("id", userId)
-    .query("SELECT role FROM Users WHERE userId = @id");
+  try {
+    // Make sure we're connected to the database
+    await pool.connect();
 
-  if (userResult.recordset[0].role === "admin") {
-    return true;
-  }
+    console.log("Checking access for:", { userId, containerName, folderName });
 
-  // Check container assignment
-  const containerResult = await pool
-    .request()
-    .input("userId", userId)
-    .input("containerName", containerName)
-    .query(
-      "SELECT * FROM ContainerAssignments WHERE userId = @userId AND containerName = @containerName"
-    );
+    // Get user role - FIXED: handle case where user doesn't exist
+    const userResult = await pool
+      .request()
+      .input("id", userId)
+      .query("SELECT role FROM Users WHERE userId = @id");
 
-  if (containerResult.recordset.length === 0) {
-    return false;
-  }
+    if (userResult.recordset.length === 0) {
+      console.log("User not found:", userId);
+      return false;
+    }
 
-  // If folderName is provided, check folder assignment
-  if (folderName) {
-    const folderResult = await pool
+    const userRole = userResult.recordset[0].role;
+    console.log("User role:", userRole);
+
+    // Admin has access to everything
+    if (userRole === "admin") {
+      console.log("Admin access granted");
+      return true;
+    }
+
+    // Check container assignment
+    const containerResult = await pool
       .request()
       .input("userId", userId)
       .input("containerName", containerName)
-      .input("folderName", folderName)
       .query(
-        "SELECT * FROM FolderAssignments WHERE userId = @userId AND containerName = @containerName AND folderName = @folderName"
+        "SELECT * FROM ContainerAssignments WHERE userId = @userId AND containerName = @containerName"
       );
 
-    if (folderResult.recordset.length === 0) {
+    console.log(
+      "Container assignments found:",
+      containerResult.recordset.length
+    );
+
+    if (containerResult.recordset.length === 0) {
+      console.log("No container access");
       return false;
     }
-  }
 
-  return true;
+    // If folderName is provided, check folder assignment
+    if (folderName) {
+      const folderResult = await pool
+        .request()
+        .input("userId", userId)
+        .input("containerName", containerName)
+        .input("folderName", folderName)
+        .query(
+          "SELECT * FROM FolderAssignments WHERE userId = @userId AND containerName = @containerName AND folderName = @folderName"
+        );
+
+      console.log("Folder assignments found:", folderResult.recordset.length);
+
+      if (folderResult.recordset.length === 0) {
+        console.log("No folder access");
+        return false;
+      }
+    }
+
+    console.log("Access granted");
+    return true;
+  } catch (err) {
+    console.error("Access check error:", err.message);
+    return false;
+  }
 };
 
-// Helper function to generate SAS token based on user role
+// FIXED: Helper function to generate SAS token based on user role
 const generateSasToken = (containerName, blobName, userRole) => {
-  const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-  const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+  try {
+    console.log("Generating SAS token for:", {
+      containerName,
+      blobName,
+      userRole,
+    });
 
-  const sharedKeyCredential = new StorageSharedKeyCredential(
-    accountName,
-    accountKey
-  );
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
 
-  // Set permissions based on user role
-  let permissions;
+    console.log("Azure config check:", {
+      hasAccountName: !!accountName,
+      hasAccountKey: !!accountKey,
+      accountNameLength: accountName ? accountName.length : 0,
+      accountKeyLength: accountKey ? accountKey.length : 0,
+    });
 
-  switch (userRole) {
-    case "admin":
-      permissions = BlobSASPermissions.parse("racwd"); // Full permissions
-      break;
-    case "doctor":
-    case "nurse":
-      permissions = BlobSASPermissions.parse("rcw"); // Read, Create, Write
-      break;
-    case "assistant":
-    default:
-      permissions = BlobSASPermissions.parse("r"); // Read-only
-      break;
+    if (!accountName || !accountKey) {
+      throw new Error(
+        `Missing Azure Storage credentials. AccountName: ${!!accountName}, AccountKey: ${!!accountKey}`
+      );
+    }
+
+    const sharedKeyCredential = new StorageSharedKeyCredential(
+      accountName,
+      accountKey
+    );
+
+    // Set permissions based on user role
+    let permissions;
+    switch (userRole) {
+      case "admin":
+        permissions = BlobSASPermissions.parse("racwd"); // Full permissions
+        break;
+      case "doctor":
+      case "nurse":
+        permissions = BlobSASPermissions.parse("rcw"); // Read, Create, Write
+        break;
+      case "assistant":
+      default:
+        permissions = BlobSASPermissions.parse("r"); // Read-only
+        break;
+    }
+
+    const sasOptions = {
+      containerName,
+      blobName,
+      permissions: permissions,
+      startsOn: new Date(),
+      expiresOn: new Date(new Date().valueOf() + 3600 * 1000), // 1 hour
+    };
+
+    console.log("SAS options:", sasOptions);
+
+    const sasToken = generateBlobSASQueryParameters(
+      sasOptions,
+      sharedKeyCredential
+    ).toString();
+
+    console.log("SAS token generated successfully, length:", sasToken.length);
+    return sasToken;
+  } catch (err) {
+    console.error("SAS token generation error:", err.message);
+    throw err;
   }
-
-  const sasOptions = {
-    containerName,
-    blobName,
-    permissions: permissions,
-    startsOn: new Date(),
-    expiresOn: new Date(new Date().valueOf() + 3600 * 1000), // 1 hour
-  };
-
-  const sasToken = generateBlobSASQueryParameters(
-    sasOptions,
-    sharedKeyCredential
-  ).toString();
-
-  return sasToken;
 };
 
 // @route   GET api/blobs/:containerName/:folderName
@@ -144,6 +197,10 @@ const generateSasToken = (containerName, blobName, userRole) => {
 exports.getBlobs = async (req, res) => {
   try {
     const { containerName, folderName } = req.params;
+
+    console.log("=== getBlobs Request ===");
+    console.log("User:", req.user);
+    console.log("Params:", { containerName, folderName });
 
     await pool.connect();
 
@@ -154,6 +211,7 @@ exports.getBlobs = async (req, res) => {
       folderName
     );
     if (!hasAccess) {
+      console.log("Access denied for getBlobs");
       return res.status(403).json({
         success: false,
         message: "Access denied",
@@ -166,6 +224,7 @@ exports.getBlobs = async (req, res) => {
     // Check if container exists
     const containerExists = await containerClient.exists();
     if (!containerExists) {
+      console.log("Container not found for getBlobs");
       return res.status(404).json({
         success: false,
         message: "Container not found",
@@ -198,6 +257,10 @@ exports.getBlobs = async (req, res) => {
       });
     }
 
+    console.log(
+      `Found ${blobs.length} blobs in ${containerName}/${folderName}`
+    );
+
     // Log the list operation for audit
     await logFileOperation(
       req.user.userId,
@@ -214,7 +277,7 @@ exports.getBlobs = async (req, res) => {
       blobs,
     });
   } catch (err) {
-    console.error(err.message);
+    console.error("getBlobs error:", err.message);
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -222,34 +285,85 @@ exports.getBlobs = async (req, res) => {
   }
 };
 
-// @route   GET api/blobs/:containerName/:folderName/:blobName/url
+// FIXED: @route   GET api/blobs/:containerName/:folderName/:blobName/url
 // @desc    Get SAS URL for a blob
 // @access  Private
 exports.getBlobSasUrl = async (req, res) => {
   try {
     const { containerName, folderName, blobName } = req.params;
 
+    console.log("=== getBlobSasUrl Request ===");
+    console.log("User:", req.user);
+    console.log("Params:", { containerName, folderName, blobName });
+
+    // Check if user is authenticated
+    if (!req.user || !req.user.userId) {
+      console.log("User not authenticated");
+      return res.status(401).json({
+        success: false,
+        message: "User not authenticated",
+      });
+    }
+
+    console.log("User authenticated:", {
+      id: req.user.userId,
+      role: req.user.role,
+    });
+
+    // Connect to database
     await pool.connect();
 
     // Check if user has access
+    console.log("Checking user access...");
     const hasAccess = await checkUserAccess(
       req.user.userId,
       containerName,
       folderName
     );
+
     if (!hasAccess) {
+      console.log("Access denied for user");
       return res.status(403).json({
         success: false,
         message: "Access denied",
       });
     }
 
+    console.log("Access granted, proceeding with blob operations...");
+
+    // Check Azure Storage configuration
+    if (
+      !process.env.AZURE_STORAGE_ACCOUNT_NAME ||
+      !process.env.AZURE_STORAGE_ACCOUNT_KEY
+    ) {
+      console.error("Missing Azure Storage configuration");
+      return res.status(500).json({
+        success: false,
+        message: "Storage configuration error",
+      });
+    }
+
     // Get container client
+    console.log("Getting container client...");
     const containerClient = blobServiceClient.getContainerClient(containerName);
 
     // Check if container exists
-    const containerExists = await containerClient.exists();
+    console.log("Checking if container exists...");
+    let containerExists;
+    try {
+      containerExists = await containerClient.exists();
+      console.log("Container exists:", containerExists);
+    } catch (containerError) {
+      console.error("Container check error:", containerError.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to check container existence",
+        error: containerError.message,
+      });
+    }
+
     if (!containerExists) {
+      console.log("Container not found");
       return res.status(404).json({
         success: false,
         message: "Container not found",
@@ -258,11 +372,26 @@ exports.getBlobSasUrl = async (req, res) => {
 
     // Get blob client
     const fullBlobName = `${folderName}/${blobName}`;
+    console.log("Full blob name:", fullBlobName);
     const blobClient = containerClient.getBlobClient(fullBlobName);
 
     // Check if blob exists
-    const blobExists = await blobClient.exists();
+    console.log("Checking if blob exists...");
+    let blobExists;
+    try {
+      blobExists = await blobClient.exists();
+      console.log("Blob exists:", blobExists);
+    } catch (blobError) {
+      console.error("Blob check error:", blobError.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to check blob existence",
+        error: blobError.message,
+      });
+    }
+
     if (!blobExists) {
+      console.log("Blob not found");
       return res.status(404).json({
         success: false,
         message: "Blob not found",
@@ -270,12 +399,21 @@ exports.getBlobSasUrl = async (req, res) => {
     }
 
     // Generate SAS token with permissions based on user role
-    const sasToken = generateSasToken(
-      containerName,
-      fullBlobName,
-      req.user.role
-    );
+    console.log("Generating SAS token...");
+    let sasToken;
+    try {
+      sasToken = generateSasToken(containerName, fullBlobName, req.user.role);
+    } catch (sasError) {
+      console.error("SAS token generation failed:", sasError.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to generate SAS token",
+        error: sasError.message,
+      });
+    }
+
     const sasUrl = `${blobClient.url}?${sasToken}`;
+    console.log("SAS URL generated successfully");
 
     // Log the download operation for audit
     await logFileOperation(
@@ -286,6 +424,7 @@ exports.getBlobSasUrl = async (req, res) => {
       "DOWNLOAD"
     );
 
+    console.log("=== getBlobSasUrl Success ===");
     res.json({
       success: true,
       sasUrl,
@@ -293,140 +432,28 @@ exports.getBlobSasUrl = async (req, res) => {
       canUpload: ["admin", "doctor", "nurse"].includes(req.user.role),
     });
   } catch (err) {
-    console.error(err.message);
+    console.error("=== getBlobSasUrl Error ===");
+    console.error("Error:", err.message);
+    console.error("Stack:", err.stack);
     res.status(500).json({
       success: false,
       message: "Server error",
+      error:
+        process.env.NODE_ENV === "development"
+          ? err.message
+          : "Internal server error",
     });
   }
 };
+
 // @route   POST api/blobs/:containerName/:folderName
 // @desc    Upload a blob
 // @access  Private/Admin,Doctor,Nurse
-// exports.uploadBlob = async (req, res) => {
-//   // Use multer middleware to handle file upload
-//   upload.single("file")(req, res, async (err) => {
-//     if (err) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "File upload error: " + err.message,
-//       });
-//     }
-
-//     // console.log("File upload request received", req.file);
-
-//     // Check if file was uploaded
-//     if (!req.file) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "No file uploaded",
-//       });
-//     }
-
-//     try {
-//       const { containerName, folderName } = req.params;
-//       const { filename } = req.body;
-
-//       // console.log("Processing file upload with params:", {
-//       //   containerName,
-//       //   folderName,
-//       // });
-
-//       // Check if user has access to this folder
-//       const hasAccess = await checkUserAccess(
-//         req.user.userId,
-//         containerName,
-//         folderName
-//       );
-//       if (!hasAccess) {
-//         // Clean up uploaded file
-//         fs.unlinkSync(req.file.path);
-
-//         return res.status(403).json({
-//           success: false,
-//           message: "Access denied",
-//         });
-//       }
-
-//       // Get container client
-//       const containerClient =
-//         blobServiceClient.getContainerClient(containerName);
-
-//       // Check if container exists
-//       const containerExists = await containerClient.exists();
-//       if (!containerExists) {
-//         // Clean up uploaded file
-//         fs.unlinkSync(req.file.path);
-
-//         return res.status(404).json({
-//           success: false,
-//           message: "Container not found",
-//         });
-//       }
-
-//       // Generate blob name
-//       const blobName = filename || `${uuidv4()}-${req.file.originalname}`;
-//       const fullBlobName = `${folderName}/${blobName}`;
-
-//       // Get blob client
-//       const blobClient = containerClient.getBlobClient(fullBlobName);
-//       const blockBlobClient = blobClient.getBlockBlobClient();
-
-//       // Upload file
-//       const fileContent = fs.readFileSync(req.file.path);
-//       const uploadOptions = {
-//         blobHTTPHeaders: {
-//           blobContentType: req.file.mimetype,
-//         },
-//       };
-
-//       await blockBlobClient.uploadData(fileContent, uploadOptions);
-
-//       // Clean up uploaded file
-//       fs.unlinkSync(req.file.path);
-
-//       // Log the upload operation for audit
-//       await logFileOperation(
-//         req.user.userId,
-//         containerName,
-//         folderName,
-//         blobName,
-//         "UPLOAD"
-//       );
-
-//       res.status(201).json({
-//         success: true,
-//         containerName,
-//         folderName,
-//         blobName,
-//         fullPath: fullBlobName,
-//         contentType: req.file.mimetype,
-//         size: req.file.size,
-//         uploadedBy: {
-//           id: req.user.userId,
-//           role: req.user.role,
-//           name: req.user.name,
-//         },
-//       });
-//     } catch (err) {
-//       // Clean up uploaded file if it exists
-//       if (req.file && fs.existsSync(req.file.path)) {
-//         fs.unlinkSync(req.file.path);
-//       }
-
-//       console.error("Upload error:", err.message);
-//       res.status(500).json({
-//         success: false,
-//         message: "Server error: " + err.message,
-//       });
-//     }
-//   });
-// };
-
 exports.uploadBlob = async (req, res) => {
   // Use multer middleware to handle file upload
   upload.single("file")(req, res, async (err) => {
     if (err) {
+      console.error("Upload middleware error:", err.message);
       return res.status(400).json({
         success: false,
         message: "File upload error: " + err.message,
@@ -445,6 +472,14 @@ exports.uploadBlob = async (req, res) => {
       const { containerName, folderName } = req.params;
       const { filename } = req.body;
 
+      console.log("=== Upload Blob Request ===");
+      console.log("User:", req.user);
+      console.log("Params:", { containerName, folderName });
+      console.log("File:", {
+        name: req.file.originalname,
+        size: req.file.size,
+      });
+
       // Check if user has access to this folder
       const hasAccess = await checkUserAccess(
         req.user.userId,
@@ -452,6 +487,7 @@ exports.uploadBlob = async (req, res) => {
         folderName
       );
       if (!hasAccess) {
+        console.log("Upload access denied");
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -465,6 +501,7 @@ exports.uploadBlob = async (req, res) => {
       // Check if container exists
       const containerExists = await containerClient.exists();
       if (!containerExists) {
+        console.log("Container not found for upload");
         return res.status(404).json({
           success: false,
           message: "Container not found",
@@ -474,6 +511,8 @@ exports.uploadBlob = async (req, res) => {
       // Generate blob name
       const blobName = filename || `${uuidv4()}-${req.file.originalname}`;
       const fullBlobName = `${folderName}/${blobName}`;
+
+      console.log("Uploading to:", fullBlobName);
 
       // Get blob client
       const blobClient = containerClient.getBlobClient(fullBlobName);
@@ -492,6 +531,8 @@ exports.uploadBlob = async (req, res) => {
         req.file.size,
         uploadOptions
       );
+
+      console.log("Upload successful");
 
       // Log the upload operation for audit
       await logFileOperation(
@@ -533,12 +574,17 @@ exports.deleteBlob = async (req, res) => {
   try {
     const { containerName, folderName, blobName } = req.params;
 
+    console.log("=== Delete Blob Request ===");
+    console.log("User:", req.user);
+    console.log("Params:", { containerName, folderName, blobName });
+
     // Get container client
     const containerClient = blobServiceClient.getContainerClient(containerName);
 
     // Check if container exists
     const containerExists = await containerClient.exists();
     if (!containerExists) {
+      console.log("Container not found for delete");
       return res.status(404).json({
         success: false,
         message: "Container not found",
@@ -552,6 +598,7 @@ exports.deleteBlob = async (req, res) => {
     // Check if blob exists
     const blobExists = await blobClient.exists();
     if (!blobExists) {
+      console.log("Blob not found for delete");
       return res.status(404).json({
         success: false,
         message: "Blob not found",
@@ -560,10 +607,11 @@ exports.deleteBlob = async (req, res) => {
 
     // Delete the blob
     await blobClient.delete();
+    console.log("Blob deleted successfully");
 
-    // Log the delete operation for audit
+    // Log the delete operation for audit - FIXED: use userId not id
     await logFileOperation(
-      req.user.id,
+      req.user.userId,
       containerName,
       folderName,
       blobName,
@@ -578,7 +626,7 @@ exports.deleteBlob = async (req, res) => {
       blobName,
     });
   } catch (err) {
-    console.error(err.message);
+    console.error("Delete blob error:", err.message);
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -601,6 +649,9 @@ exports.getAuditLogs = async (req, res) => {
       limit = 100,
       offset = 0,
     } = req.query;
+
+    console.log("=== Get Audit Logs Request ===");
+    console.log("Filters:", { userId, containerName, folderName, operation });
 
     await pool.connect();
 
@@ -654,6 +705,8 @@ exports.getAuditLogs = async (req, res) => {
 
     const result = await request.query(query);
 
+    console.log(`Found ${result.recordset.length} audit log entries`);
+
     res.json({
       success: true,
       auditLogs: result.recordset,
@@ -664,10 +717,60 @@ exports.getAuditLogs = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(err.message);
+    console.error("Get audit logs error:", err.message);
     res.status(500).json({
       success: false,
       message: "Server error",
+    });
+  }
+};
+
+// ADD: Test function to debug Azure configuration
+exports.testAzureConfig = async (req, res) => {
+  try {
+    console.log("=== Azure Configuration Test ===");
+
+    const config = {
+      hasConnectionString: !!process.env.AZURE_STORAGE_CONNECTION_STRING,
+      hasAccountName: !!process.env.AZURE_STORAGE_ACCOUNT_NAME,
+      hasAccountKey: !!process.env.AZURE_STORAGE_ACCOUNT_KEY,
+      connectionStringStart: process.env.AZURE_STORAGE_CONNECTION_STRING
+        ? process.env.AZURE_STORAGE_CONNECTION_STRING.substring(0, 50) + "..."
+        : "NOT SET",
+      accountName: process.env.AZURE_STORAGE_ACCOUNT_NAME || "NOT SET",
+      accountKeyStart: process.env.AZURE_STORAGE_ACCOUNT_KEY
+        ? process.env.AZURE_STORAGE_ACCOUNT_KEY.substring(0, 10) + "..."
+        : "NOT SET",
+    };
+
+    console.log("Config:", config);
+
+    // Test listing containers
+    const containers = [];
+    const containerIterator = blobServiceClient.listContainers();
+
+    let count = 0;
+    for await (const container of containerIterator) {
+      containers.push(container.name);
+      count++;
+      if (count >= 3) break; // Limit to 3 for testing
+    }
+
+    console.log("Found containers:", containers);
+
+    res.json({
+      success: true,
+      message: "Azure Storage connection successful",
+      config: config,
+      containerCount: containers.length,
+      containers: containers,
+    });
+  } catch (err) {
+    console.error("Azure test error:", err.message);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
     });
   }
 };

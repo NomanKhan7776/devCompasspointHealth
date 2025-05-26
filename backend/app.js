@@ -1,4 +1,3 @@
-// app.js - UPDATED CORS CONFIGURATION
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -12,7 +11,7 @@ const userRoutes = require("./routes/users");
 const assignmentRoutes = require("./routes/assignments");
 const blobRoutes = require("./routes/blobs");
 const smartTokenRoutes = require("./routes/smartTokenRoutes");
-
+const { testAzureConfig } = require("./controllers/blobController");
 // Create Express app
 const app = express();
 
@@ -20,7 +19,7 @@ const app = express();
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// Helmet configuration - UPDATED for SmartToken pages
+// Helmet configuration - allow inline styles for emergency pages
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -40,52 +39,25 @@ app.use(
         imgSrc: ["'self'", "data:", "https:"],
         connectSrc: [
           "'self'",
-          // Add your production domains here
+          // Add your production API domains here
         ],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
       },
     },
-    // Allow embedding in iframes from your frontend domain
-    frameAncestors:
-      process.env.NODE_ENV === "production"
-        ? ["https://compasspointpr.ms"]
-        : ["http://localhost:5173", "http://localhost:3000"],
   })
 );
 
-// CORS configuration - UPDATED to include your frontend domain
+// CORS configuration - UPDATED for production
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-
-      const allowedOrigins = [
-        "https://compasspointpr.ms", // Your production frontend
-        // "http://localhost:5173", // Vite dev server
-        // "http://localhost:3000", // Alternative dev port
-        // "http://localhost:5000", // Backend dev server
-      ];
-
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.log(`CORS blocked origin: ${origin}`);
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin:
+      process.env.NODE_ENV === "production"
+        ? ["https://yourdomain.com", "https://www.yourdomain.com"] // Replace with your actual domains
+        : ["http://localhost:3000", "http://localhost:5173"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-auth-token",
-      "X-Requested-With",
-      "Accept",
-      "Origin",
-    ],
+    allowedHeaders: ["Content-Type", "Authorization", "x-auth-token"],
     credentials: true,
-    optionsSuccessStatus: 200, // Some legacy browsers choke on 204
   })
 );
 
@@ -109,24 +81,8 @@ if (process.env.NODE_ENV === "development") {
 // Serve static files
 app.use("/static", express.static(path.join(__dirname, "public")));
 
-// Add a specific route for SmartToken redirects from frontend
-app.get("/api/smarttoken/redirect/:id", (req, res) => {
-  const { id } = req.params;
-  const { s: signature } = req.query;
-
-  if (!id || !signature) {
-    return res.status(400).json({
-      success: false,
-      message: "Missing token ID or signature",
-    });
-  }
-
-  // Redirect to the actual SmartToken verification endpoint
-  res.redirect(`/patients/verify/${id}?s=${signature}`);
-});
-
 // Routes
-app.use("/patients", smartTokenRoutes); // SmartToken routes (PUBLIC)
+app.use("/patients", smartTokenRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/assignments", assignmentRoutes);
@@ -142,6 +98,39 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/debug/azure-test", testAzureConfig);
+
+app.get("/debug/auth-test", require("./middleware/auth"), (req, res) => {
+  res.json({
+    success: true,
+    user: {
+      userId: req.user.userId,
+      name: req.user.name,
+      role: req.user.role,
+    },
+    message: "Authentication working",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/debug/env-test", (req, res) => {
+  res.json({
+    success: true,
+    environment: {
+      nodeEnv: process.env.NODE_ENV,
+      hasDbServer: !!process.env.DB_SERVER,
+      hasDbUser: !!process.env.DB_USER,
+      hasDbPassword: !!process.env.DB_PASSWORD,
+      hasJwtSecret: !!process.env.JWT_SECRET,
+      hasAzureConnectionString: !!process.env.AZURE_STORAGE_CONNECTION_STRING,
+      hasAzureAccountName: !!process.env.AZURE_STORAGE_ACCOUNT_NAME,
+      hasAzureAccountKey: !!process.env.AZURE_STORAGE_ACCOUNT_KEY,
+      port: process.env.PORT || 5000,
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // API status endpoint
 app.get("/api/status", (req, res) => {
   res.status(200).json({
@@ -152,17 +141,7 @@ app.get("/api/status", (req, res) => {
   });
 });
 
-// SmartToken health check (for testing chip configuration)
-app.get("/patients/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    service: "SmartToken Verification Service",
-    timestamp: new Date().toISOString(),
-    message: "Ready to verify SmartTokens",
-  });
-});
-
-// Error handling middleware - UPDATED for better SmartToken error handling
+// Error handling middleware
 app.use((err, req, res, next) => {
   // Log errors server-side only
   if (process.env.NODE_ENV === "development") {
@@ -184,19 +163,6 @@ app.use((err, req, res, next) => {
       message: "Access denied",
       errorCode: "UNAUTHORIZED",
     });
-  }
-
-  // Handle CORS errors for SmartToken requests
-  if (err.message === "Not allowed by CORS") {
-    if (req.originalUrl.startsWith("/patients/")) {
-      return res.status(403).render("error", {
-        title: "Access Restricted",
-        message: "SmartToken access is restricted to authorized domains",
-        errorCode: "CORS_ERROR",
-        instructions:
-          "Please ensure you are accessing this link from a valid SmartToken device",
-      });
-    }
   }
 
   // Check if it's an API request (JSON response) or web request (HTML response)
@@ -221,7 +187,7 @@ app.use((err, req, res, next) => {
   }
 });
 
-// 404 Handler - UPDATED for better SmartToken handling
+// 404 Handler
 app.use("*", (req, res) => {
   // Check if it's an API request
   if (
@@ -233,17 +199,8 @@ app.use("*", (req, res) => {
       message: "Endpoint not found",
       endpoint: req.originalUrl,
     });
-  } else if (req.originalUrl.startsWith("/patients/")) {
-    // For SmartToken requests, show a more helpful 404 page
-    res.status(404).render("error", {
-      title: "SmartToken Not Found",
-      message: "The requested SmartToken could not be found or has expired",
-      errorCode: "TOKEN_NOT_FOUND",
-      instructions:
-        "Please ensure you are scanning a valid SmartToken device or contact support",
-    });
   } else {
-    // For web requests, show generic 404 page
+    // For web requests, show 404 page
     res.status(404).render("error", {
       title: "Page Not Found",
       message: "The requested page could not be found",
@@ -263,7 +220,6 @@ app.listen(PORT, () => {
 📍 Health Check: http://localhost:${PORT}/
 🔗 SmartToken Endpoint: http://localhost:${PORT}/patients/verify/:id
 📊 API Status: http://localhost:${PORT}/api/status
-🏥 SmartToken Health: http://localhost:${PORT}/patients/health
 🕐 Started at: ${new Date().toISOString()}
     `);
   } else {
