@@ -131,14 +131,33 @@ const generateSasToken = (containerName, blobName, userRole) => {
       userRole,
     });
 
-    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-    const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+    // Try to get account name and key from individual environment variables first
+    let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    let accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
 
-    console.log("Azure config check:", {
+    // If account key is not set individually, extract from connection string
+    if (!accountKey && process.env.AZURE_STORAGE_CONNECTION_STRING) {
+      const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+      // Extract account name from connection string
+      const accountNameMatch = connectionString.match(/AccountName=([^;]+)/);
+      if (accountNameMatch) {
+        accountName = accountNameMatch[1];
+      }
+
+      // Extract account key from connection string
+      const accountKeyMatch = connectionString.match(/AccountKey=([^;]+)/);
+      if (accountKeyMatch) {
+        accountKey = accountKeyMatch[1];
+      }
+    }
+
+    console.log("SAS Token credentials check:", {
       hasAccountName: !!accountName,
       hasAccountKey: !!accountKey,
       accountNameLength: accountName ? accountName.length : 0,
       accountKeyLength: accountKey ? accountKey.length : 0,
+      extractedFromConnectionString: !process.env.AZURE_STORAGE_ACCOUNT_KEY,
     });
 
     if (!accountName || !accountKey) {
@@ -187,6 +206,7 @@ const generateSasToken = (containerName, blobName, userRole) => {
     return sasToken;
   } catch (err) {
     console.error("SAS token generation error:", err.message);
+    console.error("Error stack:", err.stack);
     throw err;
   }
 };
