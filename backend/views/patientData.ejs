@@ -181,6 +181,18 @@
                     <%= new Date(file.lastModified).toLocaleString() %>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <% if (file.sasUrl) { %>
+                    <!-- Direct link - no popup blocker issues -->
+                    <a
+                      href="<%= file.sasUrl %>"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm transition-colors duration-200 inline-flex items-center"
+                    >
+                      <i class="fas fa-eye mr-2"></i>View File
+                    </a>
+                    <% } else { %>
+                    <!-- Fallback to old method if SAS URL not available -->
                     <button
                       class="view-file-btn bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm transition-colors duration-200 flex items-center"
                       data-container="<%= containerName %>"
@@ -189,6 +201,7 @@
                     >
                       <i class="fas fa-eye mr-2"></i>View File
                     </button>
+                    <% } %>
                   </td>
                 </tr>
                 <% }); %>
@@ -214,9 +227,9 @@
     </div>
 
     <script>
-      // CSP-compliant JavaScript - no inline event handlers
+      // CSP-compliant JavaScript - fallback for files without SAS URLs
       document.addEventListener("DOMContentLoaded", function () {
-        // Handle file view buttons
+        // Handle file view buttons (fallback only)
         const viewFileButtons = document.querySelectorAll(".view-file-btn");
 
         viewFileButtons.forEach(function (button) {
@@ -236,34 +249,16 @@
               fileName
             )}`;
 
-            // Open file in new window
-            const newWindow = window.open(
-              fileUrl,
-              "_blank",
-              "noopener,noreferrer"
-            );
+            // Try to open in same tab first to avoid popup blockers
+            window.location.href = fileUrl;
 
             // Reset button after delay
-            const resetButton = () => {
+            setTimeout(() => {
               this.innerHTML = originalHTML;
               this.disabled = false;
-            };
-
-            // Reset button after 2 seconds or if window fails to open
-            setTimeout(resetButton, 2000);
-
-            // If window failed to open, reset immediately
-            if (!newWindow) {
-              resetButton();
-              alert(
-                "Unable to open file. Please check your popup blocker settings."
-              );
-            }
+            }, 3000);
           });
         });
-
-        // Handle any other interactive elements here if needed
-        console.log("Patient data page loaded successfully");
       });
     </script>
   </body>

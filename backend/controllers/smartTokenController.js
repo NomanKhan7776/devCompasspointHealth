@@ -1,4 +1,4 @@
-// controllers/smartTokenController.js - Production version
+// controllers/smartTokenController.js - Production version with popup fix
 const { pool, sql } = require("../config/database");
 const { blobServiceClient } = require("../config/azure-storage");
 const {
@@ -11,30 +11,57 @@ const jwt = require("jsonwebtoken");
 
 // Helper function to generate SAS token for emergency access
 const generateEmergencySasToken = (containerName, blobName) => {
-  const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-  const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+  try {
+    // Try to get account name and key from individual environment variables first
+    let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    let accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
 
-  const sharedKeyCredential = new StorageSharedKeyCredential(
-    accountName,
-    accountKey
-  );
+    // If account key is not set individually, extract from connection string
+    if (!accountKey && process.env.AZURE_STORAGE_CONNECTION_STRING) {
+      const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 
-  const permissions = BlobSASPermissions.parse("r");
+      // Extract account name from connection string
+      const accountNameMatch = connectionString.match(/AccountName=([^;]+)/);
+      if (accountNameMatch) {
+        accountName = accountNameMatch[1];
+      }
 
-  const sasOptions = {
-    containerName,
-    blobName,
-    permissions: permissions,
-    startsOn: new Date(),
-    expiresOn: new Date(new Date().valueOf() + 3600 * 1000),
-  };
+      // Extract account key from connection string
+      const accountKeyMatch = connectionString.match(/AccountKey=([^;]+)/);
+      if (accountKeyMatch) {
+        accountKey = accountKeyMatch[1];
+      }
+    }
 
-  const sasToken = generateBlobSASQueryParameters(
-    sasOptions,
-    sharedKeyCredential
-  ).toString();
+    if (!accountName || !accountKey) {
+      throw new Error("Missing Azure Storage credentials");
+    }
 
-  return sasToken;
+    const sharedKeyCredential = new StorageSharedKeyCredential(
+      accountName,
+      accountKey
+    );
+
+    const permissions = BlobSASPermissions.parse("r");
+
+    const sasOptions = {
+      containerName,
+      blobName,
+      permissions: permissions,
+      startsOn: new Date(),
+      expiresOn: new Date(new Date().valueOf() + 3600 * 1000), // 1 hour
+    };
+
+    const sasToken = generateBlobSASQueryParameters(
+      sasOptions,
+      sharedKeyCredential
+    ).toString();
+
+    return sasToken;
+  } catch (err) {
+    console.error("SAS token generation error:", err.message);
+    throw err;
+  }
 };
 
 // Helper function to get patient files from Azure
@@ -193,16 +220,45 @@ exports.verifySmartToken = async (req, res) => {
           token.folderName
         );
 
+        // Generate SAS URLs for all files to avoid popup blockers
+        const filesWithUrls = await Promise.all(
+          patientFiles.map(async (file) => {
+            try {
+              const fullBlobName = `${token.folderName}/${file.name}`;
+              const sasToken = generateEmergencySasToken(
+                token.containerName,
+                fullBlobName
+              );
+              const containerClient = blobServiceClient.getContainerClient(
+                token.containerName
+              );
+              const blobClient = containerClient.getBlobClient(fullBlobName);
+              const sasUrl = `${blobClient.url}?${sasToken}`;
+
+              return {
+                ...file,
+                sasUrl: sasUrl,
+              };
+            } catch (err) {
+              console.error(`Error generating SAS URL for ${file.name}:`, err);
+              return {
+                ...file,
+                sasUrl: null,
+              };
+            }
+          })
+        );
+
         // Log access for audit
         await logTokenAccess(id, token.containerName, token.folderName, req.ip);
 
-        // Render patient data page
+        // Render patient data page with SAS URLs
         return res.render("patientData", {
           title: `Patient Data - ${token.patientName || token.folderName}`,
           patientName: token.patientName || token.folderName,
           containerName: token.containerName,
           folderName: token.folderName,
-          files: patientFiles,
+          files: filesWithUrls,
           isEmergencyAccess: true,
           accessTime: new Date().toISOString(),
           tokenId: id,
@@ -280,6 +336,35 @@ const handleOfflineMode = async (req, res, tokenId) => {
           token.folderName
         );
 
+        // Generate SAS URLs for all files even in offline mode
+        const filesWithUrls = await Promise.all(
+          patientFiles.map(async (file) => {
+            try {
+              const fullBlobName = `${token.folderName}/${file.name}`;
+              const sasToken = generateEmergencySasToken(
+                token.containerName,
+                fullBlobName
+              );
+              const containerClient = blobServiceClient.getContainerClient(
+                token.containerName
+              );
+              const blobClient = containerClient.getBlobClient(fullBlobName);
+              const sasUrl = `${blobClient.url}?${sasToken}`;
+
+              return {
+                ...file,
+                sasUrl: sasUrl,
+              };
+            } catch (err) {
+              console.error(`Error generating SAS URL for ${file.name}:`, err);
+              return {
+                ...file,
+                sasUrl: null,
+              };
+            }
+          })
+        );
+
         // Log offline access
         await logTokenAccess(
           tokenId,
@@ -296,7 +381,7 @@ const handleOfflineMode = async (req, res, tokenId) => {
           patientName: token.patientName || token.folderName,
           containerName: token.containerName,
           folderName: token.folderName,
-          files: patientFiles,
+          files: filesWithUrls,
           isEmergencyAccess: true,
           isOfflineMode: true,
           warning: "Limited access - Token verification service unavailable",
@@ -338,7 +423,7 @@ const handleOfflineMode = async (req, res, tokenId) => {
   }
 };
 
-// Get file with SAS URL
+// Get file with SAS URL - UPDATED to handle direct access
 exports.getPatientFile = async (req, res) => {
   try {
     const { containerName, folderName, fileName } = req.params;
