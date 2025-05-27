@@ -29,11 +29,10 @@
             <div>
               <p class="font-semibold text-lg">Emergency Access Mode</p>
               <p class="text-sm">
-                Patient medical data accessed via SmartToken • Access Time: <%=
-                new Date(accessTime).toLocaleString('en-US', { timeZone:
-                'America/New_York', year: 'numeric', month: '2-digit', day:
-                '2-digit', hour: '2-digit', minute: '2-digit', second:
-                '2-digit', hour12: true }) %> EST
+                Patient medical data accessed via SmartToken • Access Time:
+                <span id="access-time-display"
+                  ><%= new Date(accessTime).toLocaleString() %>
+                </span>
               </p>
             </div>
           </div>
@@ -285,6 +284,38 @@
 
     <script>
       document.addEventListener("DOMContentLoaded", function () {
+        // Display access time in user's local timezone
+        function displayLocalAccessTime() {
+          const accessTimeElement = document.getElementById(
+            "access-time-display"
+          );
+          if (accessTimeElement) {
+            const accessTime = new Date("<%= accessTime %>");
+
+            // Get user's timezone name
+            const userTimezone =
+              Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+            // Format time in user's local timezone
+            const localTimeString = accessTime.toLocaleString(undefined, {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: true,
+              timeZoneName: "short",
+            });
+
+            accessTimeElement.textContent = localTimeString;
+
+            // Log timezone info for debugging
+            console.log("User timezone:", userTimezone);
+            console.log("Local access time:", localTimeString);
+          }
+        }
+
         // Set session duration to 5 minutes (300 seconds)
         const SESSION_DURATION = 5 * 60; // 5 minutes in seconds
         let timeRemaining = SESSION_DURATION;
@@ -376,6 +407,9 @@
           console.log("Warning: Session expires in 1 minute");
         }
 
+        // Display local access time
+        displayLocalAccessTime();
+
         // Start the timer when page loads
         startSessionTimer();
 
@@ -392,7 +426,7 @@
         });
 
         console.log(
-          "Patient data page loaded - 5 minute session timer started"
+          "Patient data page loaded - 5 minute session timer started with user's local timezone"
         );
       });
     </script>
