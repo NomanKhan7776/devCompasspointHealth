@@ -182,7 +182,7 @@
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <% if (file.sasUrl) { %>
-                    <!-- Direct link - no popup blocker issues -->
+                    <!-- Direct link - opens in new tab -->
                     <a
                       href="<%= file.sasUrl %>"
                       target="_blank"
@@ -192,15 +192,15 @@
                       <i class="fas fa-eye mr-2"></i>View File
                     </a>
                     <% } else { %>
-                    <!-- Fallback to old method if SAS URL not available -->
-                    <button
-                      class="view-file-btn bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm transition-colors duration-200 flex items-center"
-                      data-container="<%= containerName %>"
-                      data-folder="<%= folderName %>"
-                      data-filename="<%= file.name %>"
+                    <!-- Fallback - also opens in new tab -->
+                    <a
+                      href="/patients/file/<%= containerName %>/<%= folderName %>/<%= encodeURIComponent(file.name) %>"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm transition-colors duration-200 inline-flex items-center"
                     >
                       <i class="fas fa-eye mr-2"></i>View File
-                    </button>
+                    </a>
                     <% } %>
                   </td>
                 </tr>
@@ -227,38 +227,11 @@
     </div>
 
     <script>
-      // CSP-compliant JavaScript - fallback for files without SAS URLs
+      // Simple script to log page load - no complex JavaScript needed anymore
       document.addEventListener("DOMContentLoaded", function () {
-        // Handle file view buttons (fallback only)
-        const viewFileButtons = document.querySelectorAll(".view-file-btn");
-
-        viewFileButtons.forEach(function (button) {
-          button.addEventListener("click", function () {
-            const containerName = this.getAttribute("data-container");
-            const folderName = this.getAttribute("data-folder");
-            const fileName = this.getAttribute("data-filename");
-
-            // Show loading state
-            const originalHTML = this.innerHTML;
-            this.innerHTML =
-              '<i class="fas fa-spinner fa-spin mr-2"></i>Opening...';
-            this.disabled = true;
-
-            // Create file URL
-            const fileUrl = `/patients/file/${containerName}/${folderName}/${encodeURIComponent(
-              fileName
-            )}`;
-
-            // Try to open in same tab first to avoid popup blockers
-            window.location.href = fileUrl;
-
-            // Reset button after delay
-            setTimeout(() => {
-              this.innerHTML = originalHTML;
-              this.disabled = false;
-            }, 3000);
-          });
-        });
+        console.log(
+          "Patient data page loaded successfully - all files open in new tabs"
+        );
       });
     </script>
   </body>
