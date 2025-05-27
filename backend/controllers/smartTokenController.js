@@ -1,4 +1,4 @@
-// controllers/smartTokenController.js - Production version with popup fix
+// controllers/smartTokenController.js - Production version with 5-minute expiry
 const { pool, sql } = require("../config/database");
 const { blobServiceClient } = require("../config/azure-storage");
 const {
@@ -9,7 +9,7 @@ const {
 const axios = require("axios");
 const jwt = require("jsonwebtoken");
 
-// Helper function to generate SAS token for emergency access
+// Helper function to generate SAS token for emergency access with 5-minute expiry
 const generateEmergencySasToken = (containerName, blobName) => {
   try {
     // Try to get account name and key from individual environment variables first
@@ -49,7 +49,7 @@ const generateEmergencySasToken = (containerName, blobName) => {
       blobName,
       permissions: permissions,
       startsOn: new Date(),
-      expiresOn: new Date(new Date().valueOf() + 3600 * 1000), // 1 hour
+      expiresOn: new Date(new Date().valueOf() + 5 * 60 * 1000), // 5 minutes instead of 1 hour
     };
 
     const sasToken = generateBlobSASQueryParameters(
@@ -220,7 +220,7 @@ exports.verifySmartToken = async (req, res) => {
           token.folderName
         );
 
-        // Generate SAS URLs for all files to avoid popup blockers
+        // Generate SAS URLs for all files with 5-minute expiry
         const filesWithUrls = await Promise.all(
           patientFiles.map(async (file) => {
             try {
@@ -252,7 +252,7 @@ exports.verifySmartToken = async (req, res) => {
         // Log access for audit
         await logTokenAccess(id, token.containerName, token.folderName, req.ip);
 
-        // Render patient data page with SAS URLs
+        // Render patient data page with SAS URLs and session timer
         return res.render("patientData", {
           title: `Patient Data - ${token.patientName || token.folderName}`,
           patientName: token.patientName || token.folderName,
@@ -336,7 +336,7 @@ const handleOfflineMode = async (req, res, tokenId) => {
           token.folderName
         );
 
-        // Generate SAS URLs for all files even in offline mode
+        // Generate SAS URLs for all files even in offline mode with 5-minute expiry
         const filesWithUrls = await Promise.all(
           patientFiles.map(async (file) => {
             try {
@@ -423,7 +423,7 @@ const handleOfflineMode = async (req, res, tokenId) => {
   }
 };
 
-// Get file with SAS URL - UPDATED to handle direct access
+// Get file with SAS URL - UPDATED to handle direct access with 5-minute expiry
 exports.getPatientFile = async (req, res) => {
   try {
     const { containerName, folderName, fileName } = req.params;
@@ -442,7 +442,7 @@ exports.getPatientFile = async (req, res) => {
       });
     }
 
-    // Generate SAS token for emergency read access
+    // Generate SAS token for emergency read access with 5-minute expiry
     const sasToken = generateEmergencySasToken(containerName, fullBlobName);
     const sasUrl = `${blobClient.url}?${sasToken}`;
 
