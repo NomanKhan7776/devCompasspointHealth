@@ -136,11 +136,113 @@ const blobsAPI = {
   getAuditLogs: (params) => api.get("/blobs/audit", { params }),
 };
 
-// SmartToken API - Production version (simplified)
+// SmartToken API - Complete version with remote disconnect functionality
 const smartTokenAPI = {
+  // Token Management
   getUnclaimedTokens: () => smartTokenAxios.get("/patients/admin/unclaimed"),
-  assignTokenToPatient: (tokenData) =>
-    smartTokenAxios.post("/patients/admin/assign", tokenData),
+  getAllAssignedTokens: () => smartTokenAxios.get("/patients/admin/assigned"),
+
+  // Token Assignment
+  assignTokenToPatient: (tokenData) => {
+    const { tokenId, containerName, folderName, patientName } = tokenData;
+
+    return smartTokenAxios.post("/patients/admin/assign", {
+      tokenId,
+      containerName,
+      folderName,
+      patientName: patientName || "Unknown Patient",
+    });
+  },
+
+  // Remote Disconnect Functions
+  revokeToken: (tokenId, reason) => {
+    return smartTokenAxios.post("/patients/admin/revoke", {
+      tokenId: tokenId,
+      reason: reason,
+    });
+  },
+
+  reactivateToken: (tokenId) => {
+    return smartTokenAxios.post("/patients/admin/reactivate", {
+      tokenId: tokenId,
+    });
+  },
 };
 
-export { authAPI, usersAPI, assignmentsAPI, blobsAPI, smartTokenAPI };
+// Utility functions for SmartToken API
+const smartTokenUtils = {
+  // Format token ID for display
+  formatTokenId: (tokenId) => {
+    if (!tokenId || tokenId.length < 16) return tokenId;
+    return `${tokenId.substring(0, 8)}...${tokenId.substring(
+      tokenId.length - 8
+    )}`;
+  },
+
+  // Get status color for UI
+  getStatusColor: (status) => {
+    switch (status) {
+      case "assigned":
+        return "green";
+      case "revoked":
+        return "red";
+      case "unclaimed":
+        return "yellow";
+      default:
+        return "gray";
+    }
+  },
+
+  // Get status display text
+  getStatusText: (status) => {
+    switch (status) {
+      case "assigned":
+        return "Active";
+      case "revoked":
+        return "Revoked";
+      case "unclaimed":
+        return "Unclaimed";
+      default:
+        return "Unknown";
+    }
+  },
+
+  // Format dates consistently
+  formatDate: (dateString) => {
+    try {
+      return new Date(dateString).toLocaleString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+        timeZoneName: "short",
+      });
+    } catch {
+      return "Invalid Date";
+    }
+  },
+
+  // Error handler for API calls
+  handleApiError: (error, defaultMessage = "An error occurred") => {
+    if (error.response && error.response.data && error.response.data.message) {
+      return error.response.data.message;
+    } else if (error.message) {
+      return error.message;
+    } else {
+      return defaultMessage;
+    }
+  },
+};
+
+// Export everything
+export {
+  authAPI,
+  usersAPI,
+  assignmentsAPI,
+  blobsAPI,
+  smartTokenAPI,
+  smartTokenUtils,
+};
