@@ -30,7 +30,10 @@
               <p class="font-semibold text-lg">Emergency Access Mode</p>
               <p class="text-sm">
                 Patient medical data accessed via SmartToken • Access Time: <%=
-                new Date(accessTime).toLocaleString() %>
+                new Date(accessTime).toLocaleString('en-US', { timeZone:
+                'America/New_York', year: 'numeric', month: '2-digit', day:
+                '2-digit', hour: '2-digit', minute: '2-digit', second:
+                '2-digit', hour12: true }) %> EST
               </p>
             </div>
           </div>
