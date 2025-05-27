@@ -1,0 +1,142 @@
+<!-- views/tokenRevoked.ejs -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100 min-h-screen flex items-center justify-center">
+    <div class="max-w-md w-full mx-4">
+      <div class="bg-white rounded-lg shadow-lg p-8 text-center">
+        <div
+          class="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center"
+        >
+          <i class="fas fa-ban text-red-600 text-2xl"></i>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">
+          SmartToken Revoked
+        </h1>
+        <p class="text-gray-600 mb-6"><%= message %></p>
+
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div class="flex items-start">
+            <i class="fas fa-exclamation-triangle text-red-500 mt-1 mr-3"></i>
+            <div class="text-left">
+              <p class="text-sm font-medium text-red-800 mb-2">
+                Security Notice:
+              </p>
+              <p class="text-sm text-red-700">
+                This SmartToken has been remotely disconnected for security
+                reasons.
+              </p>
+              <% if (typeof revokeReason !== 'undefined' && revokeReason) { %>
+              <p class="text-sm text-red-700 mt-2">
+                <strong>Reason:</strong> <%= revokeReason %>
+              </p>
+              <% } %> <% if (typeof revokedAt !== 'undefined' && revokedAt) { %>
+              <p class="text-sm text-red-700 mt-1">
+                <strong>Revoked:</strong>
+                <span id="revoked-time"
+                  ><%= new Date(revokedAt).toLocaleString() %></span
+                >
+              </p>
+              <% } %>
+            </div>
+          </div>
+        </div>
+
+        <% if (typeof instructions !== 'undefined' && instructions) { %>
+        <div class="bg-blue-50 rounded-lg p-4 mb-6">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-blue-500 mt-1 mr-3"></i>
+            <p class="text-sm text-blue-800 text-left"><%= instructions %></p>
+          </div>
+        </div>
+        <% } %> <% if (typeof isOfflineMode !== 'undefined' && isOfflineMode) {
+        %>
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+          <p class="text-sm text-yellow-800">
+            <i class="fas fa-wifi mr-2"></i>Limited connectivity - Token status
+            verified from local database
+          </p>
+        </div>
+        <% } %>
+
+        <!-- Simple Instructions Section -->
+        <div class="bg-gray-50 rounded-lg p-4 mb-6">
+          <h3 class="text-sm font-medium text-gray-800 mb-2">
+            What to do next:
+          </h3>
+          <div class="text-sm text-gray-600 space-y-2">
+            <p>• This SmartToken is no longer valid and cannot be used</p>
+            <p>
+              • If you need access to patient data, contact the medical facility
+            </p>
+            <p>• A replacement token can be issued if needed</p>
+            <p>• This action was taken for security and privacy protection</p>
+          </div>
+        </div>
+
+        <button
+          onclick="window.close()"
+          class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-md transition-colors duration-200"
+        >
+          <i class="fas fa-times mr-2"></i>Close Window
+        </button>
+
+        <div class="text-xs text-gray-500 mt-6">
+          <p>Token ID: <%= tokenId.substring(0, 8) %>...</p>
+          <p>CompassPoint Health PRMS</p>
+          <p>For technical support, contact your system administrator</p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        // Display revoked time in user's local timezone
+        function displayLocalRevokedTime() {
+          const revokedTimeElement = document.getElementById("revoked-time");
+          if (
+            revokedTimeElement &&
+            '<%= typeof revokedAt !== "undefined" && revokedAt ? revokedAt : "" %>'
+          ) {
+            const revokedTime = new Date(
+              '<%= typeof revokedAt !== "undefined" && revokedAt ? revokedAt : "" %>'
+            );
+
+            // Format time in user's local timezone
+            const localTimeString = revokedTime.toLocaleString(undefined, {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: true,
+              timeZoneName: "short",
+            });
+
+            revokedTimeElement.textContent = localTimeString;
+          }
+        }
+
+        displayLocalRevokedTime();
+
+        console.log(
+          "Token revoked page loaded - SmartToken has been remotely disconnected"
+        );
+      });
+    </script>
+  </body>
+</html>

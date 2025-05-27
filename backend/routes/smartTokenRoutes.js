@@ -1,4 +1,4 @@
-// routes/smartTokenRoutes.js - Production version (cleaned)
+// routes/smartTokenRoutes.js - Production version with remote disconnect
 
 const express = require("express");
 const router = express.Router();
@@ -7,7 +7,9 @@ const {
   getPatientFile,
   getUnclaimedTokens,
   assignTokenToPatient,
-  // getAvailablePatientFolders - REMOVED: No longer needed since SmartToken uses assignmentsAPI
+  getAllAssignedTokens,
+  revokeSmartToken,
+  reactivateSmartToken,
 } = require("../controllers/smartTokenController");
 
 // Middleware
@@ -20,8 +22,16 @@ router.get("/file/:containerName/:folderName/:fileName", getPatientFile);
 
 // Admin routes (authentication required)
 router.get("/admin/unclaimed", auth, checkRole(["admin"]), getUnclaimedTokens);
+router.get("/admin/assigned", auth, checkRole(["admin"]), getAllAssignedTokens);
 router.post("/admin/assign", auth, checkRole(["admin"]), assignTokenToPatient);
 
-// NOTE: /admin/folders endpoint removed - SmartToken management now uses assignmentsAPI
+// NEW: Remote disconnect routes
+router.post("/admin/revoke", auth, checkRole(["admin"]), revokeSmartToken);
+router.post(
+  "/admin/reactivate",
+  auth,
+  checkRole(["admin"]),
+  reactivateSmartToken
+);
 
 module.exports = router;

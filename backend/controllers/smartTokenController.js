@@ -1,4 +1,4 @@
-// controllers/smartTokenController.js - Production version with 5-minute expiry
+// controllers/smartTokenController.js - With Remote Disconnect Feature
 const { pool, sql } = require("../config/database");
 const { blobServiceClient } = require("../config/azure-storage");
 const {
@@ -49,7 +49,7 @@ const generateEmergencySasToken = (containerName, blobName) => {
       blobName,
       permissions: permissions,
       startsOn: new Date(),
-      expiresOn: new Date(new Date().valueOf() + 5 * 60 * 1000), // 5 minutes instead of 1 hour
+      expiresOn: new Date(new Date().valueOf() + 5 * 60 * 1000), // 5 minutes
     };
 
     const sasToken = generateBlobSASQueryParameters(
@@ -61,6 +61,36 @@ const generateEmergencySasToken = (containerName, blobName) => {
   } catch (err) {
     console.error("SAS token generation error:", err.message);
     throw err;
+  }
+};
+
+// Helper function to check if token is revoked/disabled
+const checkTokenStatus = async (smartTokenId) => {
+  try {
+    await pool.connect();
+    const result = await pool
+      .request()
+      .input("smartTokenId", smartTokenId)
+      .query(
+        "SELECT status, revokedAt, revokedBy, revokeReason FROM SmartTokens WHERE smartTokenId = @smartTokenId"
+      );
+
+    if (result.recordset.length === 0) {
+      return { exists: false };
+    }
+
+    const token = result.recordset[0];
+    return {
+      exists: true,
+      status: token.status,
+      isRevoked: token.status === "revoked",
+      revokedAt: token.revokedAt,
+      revokedBy: token.revokedBy,
+      revokeReason: token.revokeReason,
+    };
+  } catch (error) {
+    console.error("Error checking token status:", error);
+    return { exists: false, error: true };
   }
 };
 
@@ -90,7 +120,6 @@ const getPatientFilesFromAzure = async (containerName, folderName) => {
 
     return blobs;
   } catch (error) {
-    // Log errors server-side only
     if (process.env.NODE_ENV === "development") {
       console.error("Error fetching patient files:", error);
     }
@@ -107,7 +136,7 @@ const formatFileSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 };
 
-// Main verification endpoint
+// Main verification endpoint - UPDATED with remote disconnect check
 exports.verifySmartToken = async (req, res) => {
   try {
     const { id } = req.params;
@@ -121,6 +150,22 @@ exports.verifySmartToken = async (req, res) => {
         errorCode: "INVALID_FORMAT",
         instructions:
           "Please ensure you are scanning a valid SmartToken device.",
+      });
+    }
+
+    // Check if token is revoked/disabled FIRST
+    const tokenStatus = await checkTokenStatus(id);
+    if (tokenStatus.isRevoked) {
+      return res.status(403).render("tokenRevoked", {
+        title: "Token Revoked",
+        message:
+          "This SmartToken has been remotely disconnected and is no longer valid.",
+        tokenId: id,
+        revokedAt: tokenStatus.revokedAt,
+        revokeReason:
+          tokenStatus.revokeReason || "Token reported lost or compromised",
+        instructions:
+          "Please contact the medical facility for a replacement token.",
       });
     }
 
@@ -207,6 +252,19 @@ exports.verifySmartToken = async (req, res) => {
       }
 
       const token = tokenRecord.recordset[0];
+
+      // Double-check token status from database
+      if (token.status === "revoked") {
+        return res.status(403).render("tokenRevoked", {
+          title: "Token Revoked",
+          message: "This SmartToken has been remotely disconnected.",
+          tokenId: id,
+          revokedAt: token.revokedAt,
+          revokeReason:
+            token.revokeReason || "Token reported lost or compromised",
+          instructions: "Please contact the medical facility for assistance.",
+        });
+      }
 
       // Check if token is assigned to patient
       if (
@@ -300,7 +358,6 @@ exports.verifySmartToken = async (req, res) => {
       });
     }
   } catch (error) {
-    // Log errors server-side only
     if (process.env.NODE_ENV === "development") {
       console.error("SmartToken verification error:", error);
     }
@@ -316,6 +373,21 @@ exports.verifySmartToken = async (req, res) => {
 // Handle offline mode when VivoKey API is unavailable
 const handleOfflineMode = async (req, res, tokenId) => {
   try {
+    // Check token status even in offline mode
+    const tokenStatus = await checkTokenStatus(tokenId);
+    if (tokenStatus.isRevoked) {
+      return res.status(403).render("tokenRevoked", {
+        title: "Token Revoked",
+        message: "This SmartToken has been remotely disconnected.",
+        tokenId: tokenId,
+        revokedAt: tokenStatus.revokedAt,
+        revokeReason:
+          tokenStatus.revokeReason || "Token reported lost or compromised",
+        instructions: "Please contact the medical facility for assistance.",
+        isOfflineMode: true,
+      });
+    }
+
     await pool.connect();
     const tokenRecord = await pool
       .request()
@@ -423,7 +495,7 @@ const handleOfflineMode = async (req, res, tokenId) => {
   }
 };
 
-// Get file with SAS URL - UPDATED to handle direct access with 5-minute expiry
+// Get file with SAS URL - UPDATED to check token status
 exports.getPatientFile = async (req, res) => {
   try {
     const { containerName, folderName, fileName } = req.params;
@@ -486,7 +558,249 @@ const logTokenAccess = async (
   }
 };
 
-// Admin functions for token management
+// NEW: Get all assigned tokens (for remote disconnect management)
+exports.getAllAssignedTokens = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required",
+      });
+    }
+
+    await pool.connect();
+
+    const result = await pool.request().query(`
+      SELECT 
+        smartTokenId, 
+        secureChipId, 
+        productCode, 
+        patientName,
+        containerName,
+        folderName,
+        status,
+        createdAt,
+        assignedAt,
+        revokedAt,
+        revokedBy,
+        revokeReason
+      FROM SmartTokens 
+      WHERE status IN ('assigned', 'revoked')
+      ORDER BY 
+        CASE WHEN status = 'assigned' THEN 0 ELSE 1 END,
+        assignedAt DESC
+    `);
+
+    res.json({
+      success: true,
+      tokens: result.recordset,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("Error in getAllAssignedTokens:", error);
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch assigned tokens",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : "Server error",
+    });
+  }
+};
+
+// NEW: Remote disconnect/revoke token
+exports.revokeSmartToken = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required",
+      });
+    }
+
+    const { tokenId, reason } = req.body;
+
+    if (!tokenId) {
+      return res.status(400).json({
+        success: false,
+        message: "Token ID is required",
+      });
+    }
+
+    await pool.connect();
+
+    // Check if token exists and is not already revoked
+    const tokenCheck = await pool
+      .request()
+      .input("smartTokenId", tokenId)
+      .query("SELECT * FROM SmartTokens WHERE smartTokenId = @smartTokenId");
+
+    if (tokenCheck.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Token not found",
+      });
+    }
+
+    const token = tokenCheck.recordset[0];
+
+    if (token.status === "revoked") {
+      return res.status(400).json({
+        success: false,
+        message: "Token is already revoked",
+      });
+    }
+
+    // Revoke the token
+    await pool
+      .request()
+      .input("smartTokenId", tokenId)
+      .input("revokedBy", req.user.userId)
+      .input("revokeReason", reason || "Remotely disconnected by administrator")
+      .query(`
+        UPDATE SmartTokens 
+        SET status = 'revoked',
+            revokedAt = GETDATE(),
+            revokedBy = @revokedBy,
+            revokeReason = @revokeReason
+        WHERE smartTokenId = @smartTokenId
+      `);
+
+    // Log the revocation for audit
+    await pool
+      .request()
+      .input("tokenId", tokenId)
+      .input("userId", req.user.userId)
+      .input("action", "REVOKE")
+      .input("reason", reason || "Remotely disconnected").query(`
+        INSERT INTO TokenAudit (tokenId, userId, action, reason, timestamp)
+        VALUES (@tokenId, @userId, @action, @reason, GETDATE())
+      `);
+
+    res.json({
+      success: true,
+      message: `SmartToken ${tokenId} has been remotely disconnected`,
+      tokenId: tokenId,
+      revokedBy: req.user.name,
+      revokedAt: new Date().toISOString(),
+      reason: reason || "Remotely disconnected by administrator",
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("Error revoking token:", error);
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to revoke token",
+    });
+  }
+};
+
+// NEW: Reactivate revoked token
+exports.reactivateSmartToken = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required",
+      });
+    }
+
+    const { tokenId } = req.body;
+
+    if (!tokenId) {
+      return res.status(400).json({
+        success: false,
+        message: "Token ID is required",
+      });
+    }
+
+    await pool.connect();
+
+    // Check if token exists and is revoked
+    const tokenCheck = await pool
+      .request()
+      .input("smartTokenId", tokenId)
+      .query("SELECT * FROM SmartTokens WHERE smartTokenId = @smartTokenId");
+
+    if (tokenCheck.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Token not found",
+      });
+    }
+
+    const token = tokenCheck.recordset[0];
+
+    if (token.status !== "revoked") {
+      return res.status(400).json({
+        success: false,
+        message: "Token is not currently revoked",
+      });
+    }
+
+    // Reactivate the token
+    await pool.request().input("smartTokenId", tokenId).query(`
+        UPDATE SmartTokens 
+        SET status = 'assigned',
+            revokedAt = NULL,
+            revokedBy = NULL,
+            revokeReason = NULL
+        WHERE smartTokenId = @smartTokenId
+      `);
+
+    // Log the reactivation for audit
+    await pool
+      .request()
+      .input("tokenId", tokenId)
+      .input("userId", req.user.userId)
+      .input("action", "REACTIVATE")
+      .input("reason", "Token reactivated by administrator").query(`
+        INSERT INTO TokenAudit (tokenId, userId, action, reason, timestamp)
+        VALUES (@tokenId, @userId, @action, @reason, GETDATE())
+      `);
+
+    res.json({
+      success: true,
+      message: `SmartToken ${tokenId} has been reactivated`,
+      tokenId: tokenId,
+      reactivatedBy: req.user.name,
+      reactivatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("Error reactivating token:", error);
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to reactivate token",
+    });
+  }
+};
+
+// Admin functions for token management (existing)
 exports.getUnclaimedTokens = async (req, res) => {
   try {
     if (!req.user) {
