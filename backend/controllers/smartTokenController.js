@@ -885,3 +885,63 @@ exports.assignTokenToPatient = async (req, res) => {
     });
   }
 };
+
+// Get file with view-only access (no download) for SmartToken emergency access
+exports.getPatientFileViewOnly = async (req, res) => {
+  try {
+    const { containerName, folderName, fileName } = req.params;
+
+    // Get container client
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+    const fullBlobName = `${folderName}/${fileName}`;
+    const blobClient = containerClient.getBlobClient(fullBlobName);
+
+    // Check if blob exists
+    const blobExists = await blobClient.exists();
+    if (!blobExists) {
+      return res.status(404).json({
+        success: false,
+        message: "File not found",
+      });
+    }
+
+    // Get blob properties to determine content type
+    const properties = await blobClient.getProperties();
+    const contentType = properties.contentType || "application/octet-stream";
+
+    // Download blob content
+    const downloadResponse = await blobClient.download();
+
+    // Set headers for viewing only (prevent download)
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", "inline"); // Force inline viewing
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
+    // For PDF files, explicitly prevent download
+    if (contentType.includes("pdf")) {
+      res.setHeader(
+        "Content-Disposition",
+        'inline; filename="medical_document.pdf"'
+      );
+    }
+
+    // For images, ensure they display inline
+    if (contentType.includes("image")) {
+      res.setHeader("Content-Disposition", "inline");
+    }
+
+    // Stream the file content directly to response
+    downloadResponse.readableStreamBody.pipe(res);
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("File view error:", error);
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error accessing file",
+    });
+  }
+};

@@ -34,6 +34,10 @@
                   ><%= new Date(accessTime).toLocaleString() %>
                 </span>
               </p>
+              <p class="text-xs mt-1 text-red-600">
+                <i class="fas fa-eye mr-1"></i>View Only - No downloads allowed
+                for security
+              </p>
             </div>
           </div>
           <!-- Session Timer -->
@@ -107,6 +111,9 @@
               <%= files.length %> files
             </span>
             <% } %>
+            <span class="ml-3 text-sm font-normal text-gray-600">
+              (Click to view - No downloads)
+            </span>
           </h2>
         </div>
 
@@ -163,30 +170,18 @@
                       (file.contentType.includes('excel')) { fileIcon =
                       'fa-file-excel text-green-600'; } } %>
                       <i class="fas <%= fileIcon %> mr-3 text-lg"></i>
-                      <div>
-                        <% if (file.sasUrl) { %>
-                        <!-- Make file name clickable with SAS URL -->
-                        <a
-                          href="<%= file.sasUrl %>"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer file-link"
-                          title="Click to open file"
+                      <div class="flex-1">
+                        <!-- Make file name clickable for view-only access -->
+                        <button
+                          onclick="viewFile('<%= containerName %>', '<%= folderName %>', '<%= encodeURIComponent(file.name) %>')"
+                          class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left transition-colors duration-200 file-link"
+                          title="Click to view file (view only, no download)"
                         >
-                          <%= file.name %>
-                        </a>
-                        <% } else { %>
-                        <!-- Fallback clickable file name -->
-                        <a
-                          href="/patients/file/<%= containerName %>/<%= folderName %>/<%= encodeURIComponent(file.name) %>"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer file-link"
-                          title="Click to open file"
-                        >
-                          <%= file.name %>
-                        </a>
-                        <% } %>
+                          <div class="flex items-center">
+                            <i class="fas fa-eye mr-2 text-gray-400"></i>
+                            <%= file.name %>
+                          </div>
+                        </button>
                         <p class="text-xs text-gray-500">
                           <%= file.fullPath %>
                         </p>
@@ -275,6 +270,34 @@
     </div>
 
     <script>
+      // Function to view files with cross-browser compatibility
+      function viewFile(containerName, folderName, fileName) {
+        if (isExpired) {
+          alert("Session has expired. Please scan the SmartToken again.");
+          return;
+        }
+
+        try {
+          // Use the view-only endpoint
+          const viewUrl = `/patients/file/${containerName}/${folderName}/${fileName}/view`;
+
+          // Open in new window/tab - works on all browsers including Safari iOS
+          const newWindow = window.open(
+            viewUrl,
+            "_blank",
+            "noopener,noreferrer"
+          );
+
+          if (!newWindow) {
+            // Fallback if popup was blocked
+            alert("Please allow popups for this site to view medical files");
+          }
+        } catch (error) {
+          console.error("Error opening file:", error);
+          alert("Error opening file. Please try again.");
+        }
+      }
+
       document.addEventListener("DOMContentLoaded", function () {
         // Display access time in user's local timezone
         function displayLocalAccessTime() {
@@ -312,7 +335,7 @@
         const SESSION_DURATION = 5 * 60; // 5 minutes in seconds
         let timeRemaining = SESSION_DURATION;
         let sessionTimer = null;
-        let isExpired = false;
+        window.isExpired = false; // Make globally available
 
         // Get DOM elements
         const timerElement = document.getElementById("session-timer");
@@ -348,7 +371,7 @@
 
         // Expire session
         function expireSession() {
-          isExpired = true;
+          window.isExpired = true;
 
           // Clear the timer
           if (sessionTimer) {
@@ -387,7 +410,7 @@
             updateTimer();
 
             // Check if session expired
-            if (timeRemaining <= 0 && !isExpired) {
+            if (timeRemaining <= 0 && !window.isExpired) {
               expireSession();
             }
           }, 1000);
@@ -410,7 +433,7 @@
 
         // Prevent page refresh/navigation after expiry
         window.addEventListener("beforeunload", function (e) {
-          if (isExpired) {
+          if (window.isExpired) {
             e.preventDefault();
             e.returnValue =
               "Your session has expired. Please scan the SmartToken again.";
@@ -418,7 +441,7 @@
         });
 
         console.log(
-          "Patient data page loaded - 5 minute session timer started with clickable file names"
+          "Patient data page loaded - 5 minute session timer started with view-only file access"
         );
       });
     </script>

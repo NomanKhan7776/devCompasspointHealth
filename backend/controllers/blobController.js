@@ -1,4 +1,4 @@
-// controllers/blobController.js - PRODUCTION READY VERSION WITH ORIGINAL FILENAMES
+// controllers/blobController.js - VIEW ONLY VERSION (NO DOWNLOADS)
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -104,8 +104,8 @@ const checkUserAccess = async (userId, containerName, folderName) => {
   }
 };
 
-// Helper function to generate SAS token based on user role
-const generateSasToken = (containerName, blobName, userRole) => {
+// Helper function to generate SAS token for READ-ONLY access (no download)
+const generateViewOnlySasToken = (containerName, blobName) => {
   try {
     // Try to get account name and key from individual environment variables first
     let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
@@ -137,21 +137,8 @@ const generateSasToken = (containerName, blobName, userRole) => {
       accountKey
     );
 
-    // Set permissions based on user role
-    let permissions;
-    switch (userRole) {
-      case "admin":
-        permissions = BlobSASPermissions.parse("racwd"); // Full permissions
-        break;
-      case "doctor":
-      case "nurse":
-        permissions = BlobSASPermissions.parse("rcw"); // Read, Create, Write
-        break;
-      case "assistant":
-      default:
-        permissions = BlobSASPermissions.parse("r"); // Read-only
-        break;
-    }
+    // Only READ permission - no download capability
+    const permissions = BlobSASPermissions.parse("r");
 
     const sasOptions = {
       containerName,
@@ -257,8 +244,105 @@ exports.getBlobs = async (req, res) => {
   }
 };
 
+// @route   GET api/blobs/:containerName/:folderName/:blobName/view
+// @desc    Get file content for viewing (not downloading) - NEW ENDPOINT
+// @access  Private
+exports.viewBlob = async (req, res) => {
+  try {
+    const { containerName, folderName, blobName } = req.params;
+
+    // Check if user is authenticated
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User not authenticated",
+      });
+    }
+
+    // Connect to database
+    await pool.connect();
+
+    // Check if user has access
+    const hasAccess = await checkUserAccess(
+      req.user.userId,
+      containerName,
+      folderName
+    );
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
+    }
+
+    // Get container client
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+
+    // Check if container exists
+    const containerExists = await containerClient.exists();
+    if (!containerExists) {
+      return res.status(404).json({
+        success: false,
+        message: "Container not found",
+      });
+    }
+
+    // Get blob client
+    const fullBlobName = `${folderName}/${blobName}`;
+    const blobClient = containerClient.getBlobClient(fullBlobName);
+
+    // Check if blob exists
+    const blobExists = await blobClient.exists();
+    if (!blobExists) {
+      return res.status(404).json({
+        success: false,
+        message: "File not found",
+      });
+    }
+
+    // Get blob properties to determine content type
+    const properties = await blobClient.getProperties();
+    const contentType = properties.contentType || "application/octet-stream";
+
+    // Download blob content
+    const downloadResponse = await blobClient.download();
+
+    // Set headers for viewing (not downloading)
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", "inline"); // Force inline viewing, not download
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
+    // For PDF files, explicitly set headers to prevent download
+    if (contentType.includes("pdf")) {
+      res.setHeader("Content-Disposition", 'inline; filename="document.pdf"');
+    }
+
+    // Log the view operation for audit
+    await logFileOperation(
+      req.user.userId,
+      containerName,
+      folderName,
+      blobName,
+      "VIEW"
+    );
+
+    // Stream the file content directly to response
+    downloadResponse.readableStreamBody.pipe(res);
+  } catch (err) {
+    console.error("viewBlob error:", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
 // @route   GET api/blobs/:containerName/:folderName/:blobName/url
-// @desc    Get SAS URL for a blob
+// @desc    Get SAS URL for a blob (DEPRECATED - use /view endpoint instead)
 // @access  Private
 exports.getBlobSasUrl = async (req, res) => {
   try {
@@ -347,10 +431,10 @@ exports.getBlobSasUrl = async (req, res) => {
       });
     }
 
-    // Generate SAS token with permissions based on user role
+    // Generate view-only SAS token (no download capability)
     let sasToken;
     try {
-      sasToken = generateSasToken(containerName, fullBlobName, req.user.role);
+      sasToken = generateViewOnlySasToken(containerName, fullBlobName);
     } catch (sasError) {
       console.error("SAS token generation failed:", sasError.message);
       return res.status(500).json({
@@ -361,18 +445,19 @@ exports.getBlobSasUrl = async (req, res) => {
 
     const sasUrl = `${blobClient.url}?${sasToken}`;
 
-    // Log the download operation for audit
+    // Log the view operation for audit
     await logFileOperation(
       req.user.userId,
       containerName,
       folderName,
       blobName,
-      "DOWNLOAD"
+      "VIEW"
     );
 
     res.json({
       success: true,
       sasUrl,
+      viewOnly: true, // Indicate this is view-only
       canModify: req.user.role === "admin",
       canUpload: ["admin", "doctor", "nurse"].includes(req.user.role),
     });

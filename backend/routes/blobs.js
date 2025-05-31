@@ -1,10 +1,11 @@
-// routes/blobs.js
+// routes/blobs.js - Updated with view-only support
 const express = require("express");
 const router = express.Router();
 
 const {
   getBlobs,
   getBlobSasUrl,
+  viewBlob, // NEW: View-only endpoint
   uploadBlob,
   deleteBlob,
   getAuditLogs,
@@ -12,14 +13,18 @@ const {
 const auth = require("../middleware/auth.js");
 const { checkRole } = require("../middleware/role-check.js");
 
-
 // @route   GET api/blobs/:containerName/:folderName
 // @desc    Get all blobs in a folder
 // @access  Private
 router.get("/:containerName/:folderName", auth, getBlobs);
 
+// @route   GET api/blobs/:containerName/:folderName/:blobName/view
+// @desc    View file content directly (no download)
+// @access  Private
+router.get("/:containerName/:folderName/:blobName/view", auth, viewBlob);
+
 // @route   GET api/blobs/:containerName/:folderName/:blobName/url
-// @desc    Get SAS URL for a blob
+// @desc    Get SAS URL for a blob (view-only)
 // @access  Private
 router.get("/:containerName/:folderName/:blobName/url", auth, getBlobSasUrl);
 
