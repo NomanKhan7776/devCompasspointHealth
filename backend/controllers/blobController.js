@@ -1,4 +1,4 @@
-// controllers/blobController.js - PRODUCTION READY VERSION
+// controllers/blobController.js - PRODUCTION READY VERSION WITH ORIGINAL FILENAMES
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -8,7 +8,6 @@ const {
 const { blobServiceClient } = require("../config/azure-storage");
 const { pool, sql } = require("../config/database");
 const multer = require("multer");
-const { v4: uuidv4 } = require("uuid");
 
 // Configure multer to use memory storage instead of disk storage
 const memoryStorage = multer.memoryStorage();
@@ -387,7 +386,7 @@ exports.getBlobSasUrl = async (req, res) => {
 };
 
 // @route   POST api/blobs/:containerName/:folderName
-// @desc    Upload a blob
+// @desc    Upload a blob with original filename
 // @access  Private/Admin,Doctor,Nurse
 exports.uploadBlob = async (req, res) => {
   // Use multer middleware to handle file upload
@@ -410,7 +409,9 @@ exports.uploadBlob = async (req, res) => {
 
     try {
       const { containerName, folderName } = req.params;
+      // Use the original filename if provided, otherwise use the uploaded file's original name
       const { filename } = req.body;
+      const originalFilename = filename || req.file.originalname;
 
       // Check if user has access to this folder
       const hasAccess = await checkUserAccess(
@@ -438,8 +439,8 @@ exports.uploadBlob = async (req, res) => {
         });
       }
 
-      // Generate blob name
-      const blobName = filename || `${uuidv4()}-${req.file.originalname}`;
+      // Use the original filename directly
+      const blobName = originalFilename;
       const fullBlobName = `${folderName}/${blobName}`;
 
       // Get blob client
@@ -474,6 +475,7 @@ exports.uploadBlob = async (req, res) => {
         containerName,
         folderName,
         blobName,
+        originalFilename,
         fullPath: fullBlobName,
         contentType: req.file.mimetype,
         size: req.file.size,
