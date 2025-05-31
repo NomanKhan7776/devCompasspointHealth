@@ -117,12 +117,34 @@ const assignmentsAPI = {
     api.delete(`/assignments/${assignmentId}?type=${type}`),
 };
 
-// Blobs API
+// Blobs API - Updated with view-only functionality
 const blobsAPI = {
   getBlobs: (containerName, folderName) =>
     api.get(`/blobs/${containerName}/${folderName}`),
+
+  // NEW: View file without download capability
+  viewBlob: (containerName, folderName, blobName) => {
+    const token = localStorage.getItem("token");
+    const viewUrl = `${
+      import.meta.env.VITE_REACT_API_URL
+    }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+      blobName
+    )}/view?token=${encodeURIComponent(token)}`;
+
+    // Open in new window for cross-browser compatibility
+    const newWindow = window.open(viewUrl, "_blank", "noopener,noreferrer");
+
+    if (!newWindow) {
+      throw new Error("Please allow popups for this site to view files");
+    }
+
+    return Promise.resolve({ success: true });
+  },
+
+  // Legacy function - now returns view-only URLs
   getBlobUrl: (containerName, folderName, blobName) =>
     api.get(`/blobs/${containerName}/${folderName}/${blobName}/url`),
+
   uploadBlob: (containerName, folderName, formData) => {
     return api.post(`/blobs/${containerName}/${folderName}`, formData, {
       headers: {
