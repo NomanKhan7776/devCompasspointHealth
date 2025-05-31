@@ -67,7 +67,7 @@ const BlobViewer = () => {
     }
   };
 
-  // Upload file to the current folder
+  // Upload file to the current folder with original filename
   const handleUpload = async (e) => {
     e.preventDefault();
 
@@ -78,6 +78,8 @@ const BlobViewer = () => {
 
     const formData = new FormData();
     formData.append("file", file);
+    // Add the original filename to preserve it
+    formData.append("filename", file.name);
 
     try {
       setUploadLoading(true);
@@ -142,8 +144,8 @@ const BlobViewer = () => {
     }
   };
 
-  // Download a blob
-  const handleDownload = async (blobName) => {
+  // Download/View a blob - now triggered by clicking file name
+  const handleFileClick = async (blobName) => {
     try {
       const res = await blobsAPI.getBlobUrl(
         containerName,
@@ -153,8 +155,8 @@ const BlobViewer = () => {
       // Open the file in a new tab
       window.open(res.data.sasUrl, "_blank");
     } catch (err) {
-      setError("Failed to download file");
-      console.error("Download error:", err);
+      setError("Failed to open file");
+      console.error("File open error:", err);
     }
   };
 
@@ -202,7 +204,8 @@ const BlobViewer = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               />
               <p className="mt-1 text-sm text-gray-500">
-                Maximum file size: 10MB
+                Maximum file size: 10MB. Files will be saved with their original
+                names.
               </p>
             </div>
 
@@ -269,19 +272,29 @@ const BlobViewer = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Last Modified
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  {canDelete && (
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {blobs.map((blob) => (
-                  <tr key={blob.name}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {blob.name}
+                  <tr key={blob.name} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <button
+                        onClick={() => handleFileClick(blob.name)}
+                        className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left"
+                        title="Click to open file"
+                      >
+                        {blob.name}
+                      </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {blob.contentType || "Unknown"}
+                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                        {blob.contentType || "Unknown"}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatFileSize(blob.contentLength)}
@@ -289,27 +302,17 @@ const BlobViewer = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(blob.lastModified).toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
+                    {canDelete && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <Button
-                          color="blue"
+                          color="red"
                           className="text-xs py-1 px-2"
-                          onClick={() => handleDownload(blob.name)}
+                          onClick={() => confirmDelete(blob)}
                         >
-                          Read/Download
+                          Delete
                         </Button>
-
-                        {canDelete && (
-                          <Button
-                            color="red"
-                            className="text-xs py-1 px-2"
-                            onClick={() => confirmDelete(blob)}
-                          >
-                            Delete
-                          </Button>
-                        )}
-                      </div>
-                    </td>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
