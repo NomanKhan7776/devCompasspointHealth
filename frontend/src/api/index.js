@@ -194,9 +194,8 @@ const createUniversalFileViewer = async (
 
     const browserInfo = getBrowserInfo();
 
-    // For Safari on iOS, use window.location.href for reliable opening
+    // For Safari on iOS, use direct navigation
     if (browserInfo.isIOS && browserInfo.isSafari) {
-      // On Safari iOS, we need to navigate directly to open the file
       window.location.href = secureUrl;
 
       return {
@@ -206,17 +205,75 @@ const createUniversalFileViewer = async (
       };
     }
 
-    // For other mobile browsers
-    if (browserInfo.isMobile) {
-      // Try window.open first for mobile
+    // For Chrome and other desktop browsers
+    if (!browserInfo.isMobile) {
       const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
 
-      if (
-        !newWindow ||
-        newWindow.closed ||
-        typeof newWindow.closed === "undefined"
-      ) {
-        // If popup blocked on mobile, navigate in current window
+      // Improved popup detection - wait a moment to check if window actually opened
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          if (newWindow && !newWindow.closed && newWindow.location !== null) {
+            // Window opened successfully - track it for cleanup
+            if (!window.fileViewerWindows) {
+              window.fileViewerWindows = [];
+            }
+            window.fileViewerWindows.push(newWindow);
+
+            // Clean up closed windows
+            window.fileViewerWindows = window.fileViewerWindows.filter(
+              (win) => !win.closed
+            );
+
+            // Set up session validation interval
+            const sessionCheckInterval = setInterval(async () => {
+              if (newWindow.closed) {
+                clearInterval(sessionCheckInterval);
+                return;
+              }
+
+              try {
+                await authAPI.validateToken();
+              } catch (error) {
+                // Session invalid, close the window
+                if (!newWindow.closed) {
+                  newWindow.close();
+                }
+                clearInterval(sessionCheckInterval);
+              }
+            }, 30000); // Check every 30 seconds
+
+            resolve({
+              success: true,
+              method: "window_open",
+              message: "File opened in new tab",
+            });
+          } else {
+            // Popup was blocked, use fallback
+            if (newWindow) {
+              try {
+                newWindow.close();
+              } catch (e) {
+                // Ignore errors
+              }
+            }
+
+            window.location.href = secureUrl;
+            resolve({
+              success: true,
+              method: "location_navigate",
+              message: "File opened successfully",
+            });
+          }
+        }, 100); // Short delay to check popup status
+      });
+    }
+
+    // For other mobile browsers (not Safari iOS)
+    if (browserInfo.isMobile) {
+      const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
+
+      // For mobile, if window.open returns null or undefined, use fallback
+      if (!newWindow || newWindow === null) {
         window.location.href = secureUrl;
         return {
           success: true,
@@ -232,54 +289,13 @@ const createUniversalFileViewer = async (
       };
     }
 
-    // For desktop browsers, try window.open
-    const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
-
-    if (newWindow && !newWindow.closed) {
-      // Window opened successfully - track it for cleanup
-      if (!window.fileViewerWindows) {
-        window.fileViewerWindows = [];
-      }
-      window.fileViewerWindows.push(newWindow);
-
-      // Clean up closed windows
-      window.fileViewerWindows = window.fileViewerWindows.filter(
-        (win) => !win.closed
-      );
-
-      // Set up session validation interval
-      const sessionCheckInterval = setInterval(async () => {
-        if (newWindow.closed) {
-          clearInterval(sessionCheckInterval);
-          return;
-        }
-
-        try {
-          await authAPI.validateToken();
-        } catch (error) {
-          // Session invalid, close the window
-          if (!newWindow.closed) {
-            newWindow.close();
-          }
-          clearInterval(sessionCheckInterval);
-        }
-      }, 30000); // Check every 30 seconds
-
-      return {
-        success: true,
-        method: "window_open",
-        message: "File opened in new tab",
-      };
-    } else {
-      // Fallback: Use location.href if window.open fails
-      window.location.href = secureUrl;
-
-      return {
-        success: true,
-        method: "location_navigate",
-        message: "File opened successfully",
-      };
-    }
+    // Default fallback
+    window.location.href = secureUrl;
+    return {
+      success: true,
+      method: "default_navigate",
+      message: "File opened successfully",
+    };
   } catch (error) {
     throw error;
   }
