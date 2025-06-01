@@ -1,4 +1,4 @@
-<!-- views/patientData.ejs - SAFARI iOS COMPATIBLE VERSION -->
+<!-- views/patientData.ejs - IMPROVED UI FOR EMERGENCY ACCESS -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -15,37 +15,25 @@
     />
   </head>
   <body class="bg-gray-100 min-h-screen">
-    <div class="container mx-auto px-4 py-6 max-w-6xl">
+    <div class="container mx-auto px-4 py-6 max-w-4xl">
       <!-- Emergency Access Banner -->
       <% if (typeof isEmergencyAccess !== 'undefined' && isEmergencyAccess) { %>
-      <div
-        class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-r-lg shadow-sm"
-      >
+      <div class="bg-red-500 text-white p-4 mb-6 rounded-lg shadow-lg">
         <div class="flex items-center justify-between">
           <div class="flex items-center">
-            <i
-              class="fas fa-exclamation-triangle text-red-500 text-xl mr-3"
-            ></i>
+            <i class="fas fa-shield-alt text-white text-2xl mr-3"></i>
             <div>
-              <p class="font-semibold text-lg">Emergency Access Mode</p>
-              <p class="text-sm">
-                Patient medical data accessed via SmartToken • Access Time:
-                <span id="access-time-display"
-                  ><%= new Date(accessTime).toLocaleString() %>
-                </span>
-              </p>
-              <p class="text-xs mt-1 text-red-600">
-                <i class="fas fa-eye mr-1"></i>View Only - No downloads allowed
-                for security
+              <h2 class="text-xl font-bold">🚨 EMERGENCY ACCESS</h2>
+              <p class="text-sm opacity-90">
+                Secure medical data access •
+                <span id="access-time-display"></span>
               </p>
             </div>
           </div>
           <!-- Session Timer -->
           <div class="text-right">
             <p class="text-sm font-medium">Session expires in:</p>
-            <p id="session-timer" class="text-lg font-bold text-red-600">
-              5:00
-            </p>
+            <p id="session-timer" class="text-2xl font-bold">5:00</p>
           </div>
         </div>
       </div>
@@ -66,61 +54,64 @@
       </div>
       <% } %>
 
-      <!-- Patient Header -->
-      <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div class="flex items-center justify-between">
-          <div>
+      <!-- Patient Header Card -->
+      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <div class="flex items-center mb-4">
+          <div class="bg-blue-100 rounded-full p-3 mr-4">
+            <i class="fas fa-user-injured text-blue-600 text-2xl"></i>
+          </div>
+          <div class="flex-1">
             <h1 class="text-3xl font-bold text-gray-800 mb-2">
-              <i class="fas fa-user-injured text-blue-600 mr-3"></i>
               <%= patientName %>
             </h1>
-            <div class="text-gray-600">
+            <div class="flex flex-wrap gap-2">
               <span
-                class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium mr-2"
+                class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium"
               >
-                <i class="fas fa-folder mr-1"></i>
-                Container: <%= containerName %>
+                <i class="fas fa-database mr-1"></i>
+                <%= containerName %>
               </span>
               <span
                 class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium"
               >
-                <i class="fas fa-file-medical mr-1"></i>
-                Folder: <%= folderName %>
+                <i class="fas fa-folder-medical mr-1"></i>
+                <%= folderName %>
               </span>
             </div>
           </div>
-          <div class="text-right text-gray-500">
-            <p class="text-sm">Token ID: <%= tokenId.substring(0, 8) %>...</p>
-            <p class="text-sm">Compass Point Health PRMS</p>
+        </div>
+
+        <!-- Important Notice -->
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+          <div class="flex items-start">
+            <i class="fas fa-eye text-yellow-600 text-lg mr-2 mt-0.5"></i>
+            <div>
+              <p class="text-sm font-medium text-yellow-800">
+                View Only Access
+              </p>
+              <p class="text-sm text-yellow-700">
+                Files cannot be downloaded for security reasons
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Patient Files Section -->
-      <div
-        id="patient-content"
-        class="bg-white rounded-lg shadow-md overflow-hidden"
-      >
-        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <div class="flex items-center justify-between">
-            <h2 class="text-xl font-semibold text-gray-800 flex items-center">
-              <i class="fas fa-file-medical-alt text-green-600 mr-2"></i>
-              Patient Medical Files <% if (files && files.length > 0) { %>
-              <span
-                class="ml-2 bg-blue-500 text-white px-2 py-1 rounded-full text-sm"
-              >
-                <%= files.length %> files
-              </span>
-              <% } %>
-            </h2>
-            <div class="text-right">
-              <div
-                class="flex items-center text-sm text-gray-600 bg-blue-50 px-3 py-2 rounded-lg"
-              >
-                <i class="fas fa-mobile-alt mr-2 text-blue-600"></i>
-                <span class="font-medium" id="file-access-instructions">
-                  Tap to view files
-                </span>
+      <!-- Patient Medical Files Section -->
+      <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-green-500 to-blue-600 px-6 py-4">
+          <div class="flex items-center justify-between text-white">
+            <div class="flex items-center">
+              <i class="fas fa-file-medical-alt text-2xl mr-3"></i>
+              <div>
+                <h2 class="text-xl font-bold">Patient Medical Files</h2>
+                <% if (files && files.length > 0) { %>
+                <p class="text-sm opacity-90">
+                  <%= files.length %> file(s) available
+                </p>
+                <% } else { %>
+                <p class="text-sm opacity-90">No files found</p>
+                <% } %>
               </div>
             </div>
           </div>
@@ -130,131 +121,128 @@
           <!-- Safari iOS Notice -->
           <div
             id="safari-ios-notice"
-            class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg"
+            class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg"
             style="display: none"
           >
             <div class="flex items-start">
-              <i class="fas fa-info-circle text-yellow-600 mt-0.5 mr-2"></i>
+              <i class="fas fa-mobile-alt text-blue-600 mt-0.5 mr-2"></i>
               <div>
-                <p class="text-sm font-medium text-yellow-800">
+                <p class="text-sm font-medium text-blue-800">
                   iPhone/iPad Notice
                 </p>
-                <p class="text-sm text-yellow-700">
-                  Files will open in the same tab. Use the back button to return
-                  to this page.
+                <p class="text-sm text-blue-700">
+                  Files will open in the same tab. Use the back button to
+                  return.
                 </p>
               </div>
             </div>
           </div>
 
           <% if (!files || files.length === 0) { %>
+          <!-- No Files Message -->
           <div class="text-center py-12">
-            <i class="fas fa-folder-open text-gray-400 text-6xl mb-4"></i>
-            <p class="text-gray-600 text-lg">
-              No medical files found for this patient
-            </p>
-            <p class="text-gray-500 text-sm mt-2">
-              Files may be stored in a different location or not yet uploaded
+            <i class="fas fa-folder-open text-gray-300 text-6xl mb-4"></i>
+            <h3 class="text-xl font-semibold text-gray-600 mb-2">
+              No Medical Files Found
+            </h3>
+            <p class="text-gray-500">
+              No files are available for this patient at this time.
             </p>
           </div>
           <% } else { %>
-          <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th
-                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    <i class="fas fa-file mr-1"></i>File Name
-                  </th>
-                  <th
-                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    <i class="fas fa-tags mr-1"></i>Type
-                  </th>
-                  <th
-                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    <i class="fas fa-weight mr-1"></i>Size
-                  </th>
-                  <th
-                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    <i class="fas fa-clock mr-1"></i>Last Modified
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
-                <% files.forEach(function(file, index) { %>
-                <tr class="hover:bg-gray-50 transition-colors duration-200">
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="flex items-center">
-                      <% let fileIcon = 'fa-file'; if (file.contentType) { if
-                      (file.contentType.includes('image')) { fileIcon =
-                      'fa-file-image text-green-500'; } else if
-                      (file.contentType.includes('pdf')) { fileIcon =
-                      'fa-file-pdf text-red-500'; } else if
-                      (file.contentType.includes('word')) { fileIcon =
-                      'fa-file-word text-blue-500'; } else if
-                      (file.contentType.includes('excel')) { fileIcon =
-                      'fa-file-excel text-green-600'; } } %>
-                      <i class="fas <%= fileIcon %> mr-3 text-lg"></i>
-                      <div class="flex-1">
-                        <!-- Safari iOS Compatible File Link -->
-                        <button
-                          class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left transition-colors duration-200 file-link w-full"
-                          data-container="<%= containerName %>"
-                          data-folder="<%= folderName %>"
-                          data-filename="<%= encodeURIComponent(file.name) %>"
-                          title="Tap to view file"
-                        >
-                          <div class="flex items-center">
-                            <i class="fas fa-eye mr-2 text-gray-400"></i>
-                            <div class="flex-1">
-                              <div class="font-medium"><%= file.name %></div>
-                              <div
-                                class="text-xs text-gray-500"
-                                id="file-instruction-<%= index %>"
-                              >
-                                Tap to open
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                        <p class="text-xs text-gray-500 mt-1">
-                          <%= file.fullPath %>
-                        </p>
-                      </div>
+          <!-- Files Grid -->
+          <div class="grid gap-4">
+            <% files.forEach(function(file, index) { %>
+            <div
+              class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all duration-200"
+            >
+              <div class="flex items-center justify-between">
+                <div class="flex items-center flex-1">
+                  <!-- File Icon -->
+                  <div class="flex-shrink-0 mr-4">
+                    <% let fileIcon = 'fa-file text-gray-500'; let iconBg =
+                    'bg-gray-100'; if (file.contentType) { if
+                    (file.contentType.includes('image')) { fileIcon =
+                    'fa-file-image text-green-600'; iconBg = 'bg-green-100'; }
+                    else if (file.contentType.includes('pdf')) { fileIcon =
+                    'fa-file-pdf text-red-600'; iconBg = 'bg-red-100'; } else if
+                    (file.contentType.includes('word')) { fileIcon =
+                    'fa-file-word text-blue-600'; iconBg = 'bg-blue-100'; } else
+                    if (file.contentType.includes('excel')) { fileIcon =
+                    'fa-file-excel text-green-700'; iconBg = 'bg-green-100'; } }
+                    %>
+                    <div class="<%= iconBg %> rounded-lg p-3">
+                      <i class="fas <%= fileIcon %> text-xl"></i>
                     </div>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <span
-                      class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800"
+                  </div>
+
+                  <!-- File Info -->
+                  <div class="flex-1 min-w-0">
+                    <h4 class="text-lg font-medium text-gray-900 truncate mb-1">
+                      <%= file.name %>
+                    </h4>
+                    <div
+                      class="flex flex-wrap items-center gap-3 text-sm text-gray-500"
                     >
-                      <%= file.contentType || 'Unknown' %>
-                    </span>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <% function formatFileSize(bytes) { if (bytes === 0) return
-                    "0 Bytes"; const k = 1024; const sizes = ["Bytes", "KB",
-                    "MB", "GB"]; const i = Math.floor(Math.log(bytes) /
-                    Math.log(k)); return parseFloat((bytes / Math.pow(k,
-                    i)).toFixed(2)) + " " + sizes[i]; } %> <%=
-                    formatFileSize(file.contentLength) %>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <%= new Date(file.lastModified).toLocaleString() %>
-                  </td>
-                </tr>
-                <% }); %>
-              </tbody>
-            </table>
+                      <span>
+                        <i class="fas fa-calendar mr-1"></i>
+                        <%= new Date(file.lastModified).toLocaleDateString() %>
+                      </span>
+                      <span>
+                        <i class="fas fa-weight-hanging mr-1"></i>
+                        <% function formatFileSize(bytes) { if (bytes === 0)
+                        return "0 Bytes"; const k = 1024; const sizes =
+                        ["Bytes", "KB", "MB", "GB"]; const i =
+                        Math.floor(Math.log(bytes) / Math.log(k)); return
+                        parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " +
+                        sizes[i]; } %> <%= formatFileSize(file.contentLength) %>
+                      </span>
+                      <span
+                        class="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs"
+                      >
+                        <%= file.contentType || 'Unknown' %>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- View Button -->
+                <div class="flex-shrink-0 ml-4">
+                  <button
+                    class="file-link bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center shadow-lg hover:shadow-xl"
+                    data-container="<%= containerName %>"
+                    data-folder="<%= folderName %>"
+                    data-filename="<%= encodeURIComponent(file.name) %>"
+                    title="Tap to view file"
+                  >
+                    <i class="fas fa-eye mr-2"></i>
+                    <span class="hidden sm:inline">View File</span>
+                    <span class="sm:hidden">View</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <% }); %>
           </div>
           <% } %>
         </div>
       </div>
 
-      <!-- Session Expired Modal (Hidden by default) -->
+      <!-- Security Notice -->
+      <div class="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4">
+        <div class="flex items-center justify-center text-gray-600">
+          <i class="fas fa-shield-alt mr-2"></i>
+          <p class="text-sm font-medium">
+            Secure Emergency Access • CompassPoint Health PRMS
+          </p>
+        </div>
+        <p class="text-center text-xs text-gray-500 mt-1">
+          For assistance, contact emergency medical services or facility
+          administrator
+        </p>
+      </div>
+
+      <!-- Session Expired Modal -->
       <div
         id="expired-modal"
         class="fixed inset-0 z-50 hidden overflow-y-auto bg-black bg-opacity-75"
@@ -263,7 +251,7 @@
           class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center"
         >
           <div
-            class="bg-white rounded-lg shadow-xl transform transition-all max-w-md w-full p-8"
+            class="bg-white rounded-xl shadow-2xl transform transition-all max-w-md w-full p-8"
           >
             <div
               class="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center"
@@ -286,25 +274,12 @@
             </div>
             <button
               onclick="closeExpiredModal()"
-              class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-md transition-colors duration-200"
+              class="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
             >
               Close Window
             </button>
           </div>
         </div>
-      </div>
-
-      <!-- Footer -->
-      <div class="mt-8 text-center text-gray-500 text-sm">
-        <p>
-          <i class="fas fa-shield-alt mr-1"></i>
-          Secure Emergency Access • CompassPoint Health Patient Records
-          Management System
-        </p>
-        <p class="mt-1">
-          For assistance, contact emergency medical services or the facility
-          administrator
-        </p>
       </div>
     </div>
 
@@ -324,12 +299,11 @@
         try {
           window.close();
         } catch (e) {
-          // If window.close() fails, try to go back
           window.history.back();
         }
       }
 
-      // Universal file viewer function that works on all browsers including Safari iOS
+      // Universal file viewer function
       function viewFile(containerName, folderName, fileName) {
         if (window.isExpired) {
           alert("Session has expired. Please scan the SmartToken again.");
@@ -337,22 +311,15 @@
         }
 
         try {
-          // Use the emergency view-only endpoint (no authentication needed)
           const viewUrl = `/patients/file/${containerName}/${folderName}/${fileName}/view`;
 
-          // Safari iOS specific handling
           if (isSafariIOS()) {
-            // For Safari iOS, navigate in the same window to avoid popup blocking
             window.location.href = viewUrl;
           } else {
-            // For all other browsers, try to open in new tab first
             const newWindow = window.open(viewUrl, "_blank");
-
             if (!newWindow || newWindow.closed) {
-              // If popup blocked, fallback to same window navigation
               window.location.href = viewUrl;
             } else {
-              // Show user feedback for successful new tab opening
               showFileOpenFeedback(fileName, "new tab");
             }
           }
@@ -362,32 +329,28 @@
         }
       }
 
-      // Show user feedback when file is being opened
+      // Show user feedback
       function showFileOpenFeedback(fileName, method) {
-        // Create a temporary notification
         const notification = document.createElement("div");
         notification.className =
-          "fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50";
+          "fixed top-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300";
 
+        const shortName =
+          fileName.length > 25 ? fileName.substring(0, 25) + "..." : fileName;
         const message =
           method === "new tab"
-            ? `Opening ${fileName.substring(0, 20)}${
-                fileName.length > 20 ? "..." : ""
-              } in new tab`
-            : `Opening ${fileName.substring(0, 20)}${
-                fileName.length > 20 ? "..." : ""
-              }`;
+            ? `Opening ${shortName} in new tab`
+            : `Opening ${shortName}`;
 
         notification.innerHTML = `
           <div class="flex items-center">
-            <i class="fas fa-external-link-alt mr-2"></i>
+            <i class="fas fa-check-circle mr-2"></i>
             <span>${message}</span>
           </div>
         `;
 
         document.body.appendChild(notification);
 
-        // Remove notification after 3 seconds
         setTimeout(() => {
           if (notification.parentNode) {
             notification.parentNode.removeChild(notification);
@@ -398,28 +361,10 @@
       document.addEventListener("DOMContentLoaded", function () {
         // Update UI for Safari iOS
         if (isSafariIOS()) {
-          // Show Safari iOS notice
           const notice = document.getElementById("safari-ios-notice");
           if (notice) {
             notice.style.display = "block";
           }
-
-          // Update file access instructions
-          const instructions = document.getElementById(
-            "file-access-instructions"
-          );
-          if (instructions) {
-            instructions.innerHTML =
-              '<i class="fas fa-mobile-alt mr-2"></i>Tap to open files (same tab)';
-          }
-
-          // Update individual file instructions
-          const fileInstructions = document.querySelectorAll(
-            '[id^="file-instruction-"]'
-          );
-          fileInstructions.forEach((instruction) => {
-            instruction.textContent = "Tap to open file";
-          });
         }
 
         // Display access time in user's local timezone
@@ -429,73 +374,60 @@
           );
           if (accessTimeElement) {
             const accessTime = new Date("<%= accessTime %>");
-
-            // Format time in user's local timezone
             const localTimeString = accessTime.toLocaleString(undefined, {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
+              month: "short",
+              day: "numeric",
               hour: "2-digit",
               minute: "2-digit",
-              second: "2-digit",
               hour12: true,
-              timeZoneName: "short",
             });
-
-            accessTimeElement.textContent = localTimeString;
+            accessTimeElement.textContent = `Access granted at ${localTimeString}`;
           }
         }
 
-        // Set session duration to 5 minutes (300 seconds)
-        const SESSION_DURATION = 5 * 60; // 5 minutes in seconds
+        // Session timer setup
+        const SESSION_DURATION = 5 * 60; // 5 minutes
         let timeRemaining = SESSION_DURATION;
         let sessionTimer = null;
-        window.isExpired = false; // Make globally available
+        window.isExpired = false;
 
-        // Get DOM elements
         const timerElement = document.getElementById("session-timer");
         const expiredModal = document.getElementById("expired-modal");
-        const patientContent = document.getElementById("patient-content");
         const fileLinks = document.querySelectorAll(".file-link");
 
-        // Format time as MM:SS
         function formatTime(seconds) {
           const minutes = Math.floor(seconds / 60);
           const remainingSeconds = seconds % 60;
           return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
         }
 
-        // Update timer display
         function updateTimer() {
           if (timerElement) {
             timerElement.textContent = formatTime(timeRemaining);
 
-            // Change color based on time remaining
             if (timeRemaining <= 60) {
-              // Last minute - red
-              timerElement.className =
-                "text-lg font-bold text-red-600 animate-pulse";
+              timerElement.className = "text-2xl font-bold animate-pulse";
             } else if (timeRemaining <= 120) {
-              // Last 2 minutes - orange
-              timerElement.className = "text-lg font-bold text-orange-600";
+              timerElement.className = "text-2xl font-bold text-yellow-200";
             } else {
-              timerElement.className = "text-lg font-bold text-red-600";
+              timerElement.className = "text-2xl font-bold";
             }
           }
         }
 
-        // Expire session
         function expireSession() {
           window.isExpired = true;
 
-          // Clear the timer
           if (sessionTimer) {
             clearInterval(sessionTimer);
           }
 
-          // Disable all file links
           fileLinks.forEach((link) => {
-            link.classList.add("opacity-50", "cursor-not-allowed");
+            link.classList.add(
+              "opacity-50",
+              "cursor-not-allowed",
+              "bg-gray-400"
+            );
             link.setAttribute("disabled", "true");
             link.onclick = function (e) {
               e.preventDefault();
@@ -503,41 +435,26 @@
             };
           });
 
-          // Show expired modal
           if (expiredModal) {
             expiredModal.classList.remove("hidden");
           }
-
-          // Optionally blur/disable content
-          if (patientContent) {
-            patientContent.classList.add("opacity-50");
-          }
         }
 
-        // Start the session timer
         function startSessionTimer() {
-          updateTimer(); // Initial update
-
+          updateTimer();
           sessionTimer = setInterval(() => {
             timeRemaining--;
             updateTimer();
-
-            // Check if session expired
             if (timeRemaining <= 0 && !window.isExpired) {
               expireSession();
             }
           }, 1000);
         }
 
-        // Warning at 1 minute remaining
-        function showWarning() {
-          // Warning notification could be added here if desired
-        }
-
-        // Display local access time
+        // Initialize
         displayLocalAccessTime();
 
-        // Add event listeners to file links (CSP-compliant)
+        // Add event listeners to file buttons
         const fileButtons = document.querySelectorAll(
           ".file-link[data-container]"
         );
@@ -550,13 +467,9 @@
           });
         });
 
-        // Start the timer when page loads
         startSessionTimer();
 
-        // Show warning at 1 minute remaining
-        setTimeout(showWarning, (SESSION_DURATION - 60) * 1000);
-
-        // Prevent page refresh/navigation after expiry
+        // Prevent navigation after expiry
         window.addEventListener("beforeunload", function (e) {
           if (window.isExpired) {
             e.preventDefault();
