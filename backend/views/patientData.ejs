@@ -1,4 +1,4 @@
-<!-- views/patientData.ejs - FIXED VERSION WITHOUT EJS ERRORS -->
+<!-- views/patientData.ejs - COMPLETELY FIXED VERSION -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -152,24 +152,7 @@
           <% } else { %>
           <!-- Files List -->
           <div class="space-y-3">
-            <% files.forEach(function(file, index) { // Define file icon and
-            background based on content type let fileIcon = 'fa-file
-            text-gray-500'; let iconBg = 'bg-gray-100'; if (file.contentType) {
-            if (file.contentType.includes('image')) { fileIcon = 'fa-file-image
-            text-green-600'; iconBg = 'bg-green-100'; } else if
-            (file.contentType.includes('pdf')) { fileIcon = 'fa-file-pdf
-            text-red-600'; iconBg = 'bg-red-100'; } else if
-            (file.contentType.includes('word')) { fileIcon = 'fa-file-word
-            text-blue-600'; iconBg = 'bg-blue-100'; } else if
-            (file.contentType.includes('excel')) { fileIcon = 'fa-file-excel
-            text-green-700'; iconBg = 'bg-green-100'; } else if
-            (file.contentType.includes('text')) { fileIcon = 'fa-file-alt
-            text-gray-600'; iconBg = 'bg-gray-100'; } } // Helper function for
-            file size formatting function formatFileSize(bytes) { if (bytes ===
-            0) return "0 Bytes"; const k = 1024; const sizes = ["Bytes", "KB",
-            "MB", "GB"]; const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " +
-            sizes[i]; } %>
+            <% files.forEach(function(file, index) { %>
             <div
               class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200"
             >
@@ -184,6 +167,19 @@
                 <div class="flex items-start space-x-4">
                   <!-- File Icon -->
                   <div class="flex-shrink-0">
+                    <% var fileIcon = 'fa-file text-gray-500'; var iconBg =
+                    'bg-gray-100'; if (file.contentType) { if
+                    (file.contentType.indexOf('image') !== -1) { fileIcon =
+                    'fa-file-image text-green-600'; iconBg = 'bg-green-100'; }
+                    else if (file.contentType.indexOf('pdf') !== -1) { fileIcon
+                    = 'fa-file-pdf text-red-600'; iconBg = 'bg-red-100'; } else
+                    if (file.contentType.indexOf('word') !== -1) { fileIcon =
+                    'fa-file-word text-blue-600'; iconBg = 'bg-blue-100'; } else
+                    if (file.contentType.indexOf('excel') !== -1) { fileIcon =
+                    'fa-file-excel text-green-700'; iconBg = 'bg-green-100'; }
+                    else if (file.contentType.indexOf('text') !== -1) { fileIcon
+                    = 'fa-file-alt text-gray-600'; iconBg = 'bg-gray-100'; } }
+                    %>
                     <div
                       class="<%= iconBg %> rounded-lg p-3 w-12 h-12 flex items-center justify-center"
                     >
@@ -227,9 +223,10 @@
                             class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
                           >
                             <i class="fas fa-tag mr-1"></i>
-                            <%= file.contentType ?
-                            file.contentType.split('/')[1].toUpperCase() :
-                            'UNKNOWN' %>
+                            <% if (file.contentType &&
+                            file.contentType.indexOf('/') !== -1) { %> <%=
+                            file.contentType.split('/')[1].toUpperCase() %> <% }
+                            else { %> UNKNOWN <% } %>
                           </span>
                         </div>
                         <div
