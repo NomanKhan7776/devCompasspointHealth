@@ -19,7 +19,7 @@ const app = express();
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// Enhanced Helmet configuration for security with Safari iOS compatibility
+// Enhanced Helmet configuration for security with Safari iOS compatibility and SmartToken support
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -64,6 +64,22 @@ app.use(
     credentials: true,
   })
 );
+
+// Special CSP handling for SmartToken emergency access routes
+app.use("/patients", (req, res, next) => {
+  // More permissive CSP for emergency access pages to avoid blocking inline scripts
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self' 'unsafe-inline'; " +
+      "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
+      "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
+      "font-src 'self' https://cdnjs.cloudflare.com; " +
+      "img-src 'self' data: https:; " +
+      "object-src 'none'; " +
+      "frame-ancestors 'self';"
+  );
+  next();
+});
 
 // Security middleware for file viewing with Safari iOS compatibility
 app.use((req, res, next) => {
@@ -349,12 +365,12 @@ app.use("*", (req, res) => {
 
 // Graceful shutdown handling
 process.on("SIGTERM", () => {
-
+  console.log("SIGTERM received, shutting down gracefully");
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
-  
+  console.log("SIGINT received, shutting down gracefully");
   process.exit(0);
 });
 
@@ -369,6 +385,7 @@ app.listen(PORT, () => {
 📊 API Status: http://localhost:${PORT}/api/status
 🔒 Security Features: Enhanced session tracking, file protection, CORS enabled
 🍎 Safari iOS Compatible: Enhanced cross-browser compatibility
+🛡️  CSP: Configured for SmartToken emergency access
 🕐 Started at: ${new Date().toISOString()}
     `);
   } else {
@@ -376,6 +393,7 @@ app.listen(PORT, () => {
 🏥 CompassPoint Health PRMS Server running on port ${PORT}
 🔒 Security: Enhanced protection enabled
 🍎 Safari iOS: Full compatibility enabled
+🛡️  CSP: SmartToken emergency access configured
 🕐 Started: ${new Date().toISOString()}
     `);
   }

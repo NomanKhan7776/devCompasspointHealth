@@ -202,8 +202,10 @@
                       <div class="flex-1">
                         <!-- Safari iOS Compatible File Link -->
                         <button
-                          onclick="viewFile('<%= containerName %>', '<%= folderName %>', '<%= encodeURIComponent(file.name) %>')"
                           class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left transition-colors duration-200 file-link w-full"
+                          data-container="<%= containerName %>"
+                          data-folder="<%= folderName %>"
+                          data-filename="<%= encodeURIComponent(file.name) %>"
                           title="Tap to view file"
                         >
                           <div class="flex items-center">
@@ -283,7 +285,7 @@
               </p>
             </div>
             <button
-              onclick="window.close()"
+              onclick="closeExpiredModal()"
               class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-md transition-colors duration-200"
             >
               Close Window
@@ -315,6 +317,16 @@
           /safari/.test(userAgent) &&
           !/chrome|crios|fxios|edgios/.test(userAgent)
         );
+      }
+
+      // Close expired modal function
+      function closeExpiredModal() {
+        try {
+          window.close();
+        } catch (e) {
+          // If window.close() fails, try to go back
+          window.history.back();
+        }
       }
 
       // Universal file viewer function that works on all browsers including Safari iOS
@@ -524,6 +536,19 @@
 
         // Display local access time
         displayLocalAccessTime();
+
+        // Add event listeners to file links (CSP-compliant)
+        const fileButtons = document.querySelectorAll(
+          ".file-link[data-container]"
+        );
+        fileButtons.forEach((button) => {
+          button.addEventListener("click", function () {
+            const container = this.getAttribute("data-container");
+            const folder = this.getAttribute("data-folder");
+            const filename = this.getAttribute("data-filename");
+            viewFile(container, folder, filename);
+          });
+        });
 
         // Start the timer when page loads
         startSessionTimer();
