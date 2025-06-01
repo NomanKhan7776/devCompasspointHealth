@@ -1,4 +1,4 @@
-// api/index.js - FIXED VERSION TO PREVENT DOUBLE OPENING
+// api/index.js - UNIVERSAL BROWSER COMPATIBLE VERSION
 import axios from "axios";
 
 // Create axios instance
@@ -147,8 +147,34 @@ if (!window.fileViewerWindows) {
   window.fileViewerWindows = [];
 }
 
-// FIXED: Simple and reliable file viewer that doesn't cause double opening
-const createFileViewer = async (containerName, folderName, blobName) => {
+// Detect browser and device type
+const getBrowserInfo = () => {
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isMobile = /mobile|android|iphone|ipad|phone/i.test(userAgent);
+  const isIOS = /iphone|ipad|ipod/i.test(userAgent);
+  const isSafari =
+    /safari/i.test(userAgent) &&
+    !/chrome|chromium|crios|fxios/i.test(userAgent);
+  const isChrome = /chrome|chromium|crios/i.test(userAgent);
+  const isFirefox = /firefox|fxios/i.test(userAgent);
+  const isEdge = /edge|edgios/i.test(userAgent);
+
+  return {
+    isMobile,
+    isIOS,
+    isSafari,
+    isChrome,
+    isFirefox,
+    isEdge,
+  };
+};
+
+// Universal file viewer that works across all browsers and devices
+const createUniversalFileViewer = async (
+  containerName,
+  folderName,
+  blobName
+) => {
   try {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -166,7 +192,48 @@ const createFileViewer = async (containerName, folderName, blobName) => {
       blobName
     )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
 
-    // Try to open in new window/tab
+    const browserInfo = getBrowserInfo();
+
+    // For Safari on iOS, use a different approach
+    if (browserInfo.isIOS && browserInfo.isSafari) {
+      // Create a temporary link and simulate click for Safari iOS
+      const link = document.createElement("a");
+      link.href = secureUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.style.display = "none";
+
+      // Add to DOM temporarily
+      document.body.appendChild(link);
+
+      // Simulate click
+      link.click();
+
+      // Remove from DOM
+      setTimeout(() => {
+        document.body.removeChild(link);
+      }, 100);
+
+      return {
+        success: true,
+        method: "safari_ios_link",
+        message: "File opened successfully",
+      };
+    }
+
+    // For mobile browsers that have popup restrictions
+    if (browserInfo.isMobile) {
+      // Use location.assign for better mobile compatibility
+      window.open(secureUrl, "_blank", "noopener,noreferrer");
+
+      return {
+        success: true,
+        method: "mobile_open",
+        message: "File opened successfully",
+      };
+    }
+
+    // For desktop browsers, try window.open
     const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
 
     if (newWindow) {
@@ -205,25 +272,33 @@ const createFileViewer = async (containerName, folderName, blobName) => {
         message: "File opened in new tab",
       };
     } else {
-      // Popup was blocked - show message instead of redirecting
-      throw new Error(
-        "Popup was blocked. Please allow popups for this site to view files in new tabs."
-      );
+      // Fallback: Use location.assign if window.open fails
+      window.location.assign(secureUrl);
+
+      return {
+        success: true,
+        method: "location_assign",
+        message: "File opened successfully",
+      };
     }
   } catch (error) {
     throw error;
   }
 };
 
-// Blobs API - FIXED VERSION
+// Blobs API - UNIVERSAL BROWSER COMPATIBLE VERSION
 const blobsAPI = {
   getBlobs: (containerName, folderName) =>
     api.get(`/blobs/${containerName}/${folderName}`),
 
-  // FIXED: View file - only opens in new tab, no fallback to current tab
+  // Universal file viewer that works on all browsers without showing popup messages
   viewBlob: async (containerName, folderName, blobName) => {
     try {
-      return await createFileViewer(containerName, folderName, blobName);
+      return await createUniversalFileViewer(
+        containerName,
+        folderName,
+        blobName
+      );
     } catch (error) {
       console.error("Error opening file:", error);
 
@@ -231,10 +306,6 @@ const blobsAPI = {
         throw new Error("Your session has expired. Please log in again.");
       } else if (error.message.includes("Access denied")) {
         throw new Error("You don't have permission to view this file.");
-      } else if (error.message.includes("Popup was blocked")) {
-        throw new Error(
-          "Popup was blocked. Please allow popups for this site to view files."
-        );
       } else {
         throw new Error(
           "Failed to open file. Please try again or contact support."

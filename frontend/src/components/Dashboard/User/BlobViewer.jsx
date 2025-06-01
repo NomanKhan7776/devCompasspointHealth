@@ -144,7 +144,7 @@ const BlobViewer = () => {
     }
   };
 
-  // FIXED: View a blob - only opens in new tab, prevents double opening
+  // Universal file viewer that works across all browsers without showing popup messages
   const handleFileClick = async (blobName) => {
     // Prevent multiple clicks while processing
     if (viewingFile === blobName) {
@@ -155,7 +155,7 @@ const BlobViewer = () => {
       setError("");
       setViewingFile(blobName);
 
-      // Use the fixed file viewing API method
+      // Use the universal file viewing API method
       const result = await blobsAPI.viewBlob(
         containerName,
         folderName,
@@ -163,7 +163,7 @@ const BlobViewer = () => {
       );
 
       if (result.success) {
-        setSuccessMessage("File opened in new tab");
+        setSuccessMessage("File opened successfully");
 
         // Clear success message after 3 seconds
         setTimeout(() => {
@@ -178,9 +178,6 @@ const BlobViewer = () => {
         errorMessage = "Your session has expired. Please log in again.";
       } else if (error.message.includes("permission")) {
         errorMessage = "You don't have permission to view this file";
-      } else if (error.message.includes("Popup was blocked")) {
-        errorMessage =
-          "Please allow popups in your browser to view files in new tabs";
       } else {
         errorMessage =
           error.message || "Failed to open file. Please try again.";
