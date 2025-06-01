@@ -1,4 +1,4 @@
-// src/components/Layout/Navbar.jsx - Updated for better responsive design
+// src/components/Layout/Navbar.jsx - Fixed mobile UI issues
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -37,21 +37,13 @@ const Navbar = ({ onMenuClick }) => {
   return (
     <>
       <nav className="bg-white shadow-md relative z-40">
-        <div className="max-w-full px-4">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              {/* Logo positioned at the start */}
-              <Link to="/" className="flex items-center flex-shrink-0">
-                <img
-                  src="/image2.png"
-                  alt="Compass Point Health Logo"
-                  className="h-10 w-auto"
-                />
-              </Link>
-
-              {/* Mobile menu button after logo */}
+        <div className="max-w-full px-3 sm:px-4">
+          <div className="flex justify-between items-center h-16">
+            {/* Left side - Logo and Menu */}
+            <div className="flex items-center min-w-0 flex-1">
+              {/* Mobile menu button */}
               <button
-                className="inline-flex items-center justify-center p-2 ml-3 text-gray-600 lg:hidden hover:bg-gray-100 rounded-md transition-colors"
+                className="inline-flex items-center justify-center p-2 text-gray-600 lg:hidden hover:bg-gray-100 rounded-md transition-colors mr-2 flex-shrink-0"
                 onClick={onMenuClick}
                 aria-label="Toggle sidebar"
               >
@@ -70,112 +62,165 @@ const Navbar = ({ onMenuClick }) => {
                 </svg>
               </button>
 
-              {/* Application name with responsive design */}
-              <div className="hidden md:flex items-center ml-8">
-                <span className="text-xl font-bold text-teal-700">
+              {/* Logo */}
+              <Link to="/" className="flex items-center flex-shrink-0 mr-2">
+                <img
+                  src="/image2.png"
+                  alt="Compass Point Health Logo"
+                  className="h-8 w-auto sm:h-10"
+                />
+              </Link>
+
+              {/* Application name - responsive */}
+              <div className="min-w-0 flex-1">
+                {/* Full name for larger screens */}
+                <span className="hidden lg:inline text-xl font-bold text-teal-700 truncate">
                   Patient Records Management System
                 </span>
-              </div>
-
-              {/* Shortened name for smaller screens */}
-              <div className="flex md:hidden items-center ml-4">
-                <span className="text-lg font-bold text-teal-700">PRMS</span>
+                {/* Medium screens */}
+                <span className="hidden md:inline lg:hidden text-lg font-bold text-teal-700 truncate">
+                  Patient Records System
+                </span>
+                {/* Small screens */}
+                <span className="inline md:hidden text-base font-bold text-teal-700 truncate">
+                  PRMS
+                </span>
               </div>
             </div>
 
+            {/* Right side - User info and logout */}
             {currentUser && (
-              <div className="flex items-center space-x-2 sm:space-x-4">
-                {/* User info with responsive text */}
-                <div className="text-right">
-                  <div className="text-gray-700 font-medium truncate max-w-[120px] sm:max-w-none">
-                    {currentUser.name}
+              <div className="flex items-center space-x-1 sm:space-x-3 flex-shrink-0">
+                {/* User info - mobile optimized */}
+                <div className="text-right min-w-0">
+                  {/* User name - responsive */}
+                  <div className="text-gray-700 font-medium text-sm sm:text-base truncate max-w-[80px] sm:max-w-[120px] md:max-w-none">
+                    {/* Show first name only on very small screens */}
+                    <span className="inline sm:hidden">
+                      {currentUser.name.split(" ")[0]}
+                    </span>
+                    {/* Show full name on larger screens */}
+                    <span className="hidden sm:inline">{currentUser.name}</span>
                   </div>
-                  <div className="hidden sm:block text-sm text-gray-500">
+                  {/* Role - only show on medium+ screens */}
+                  <div className="hidden md:block text-xs text-gray-500 capitalize truncate">
                     ({currentUser.role})
                   </div>
                 </div>
 
-                {/* Enhanced logout button */}
-                <div className="relative group">
-                  <button
-                    onClick={() => setLogoutModalOpen(true)}
-                    className="text-gray-700 hover:text-teal-600 transition-colors flex items-center px-3 py-2 rounded-md hover:bg-gray-100"
-                    aria-label="Logout options"
+                {/* Logout button - mobile optimized */}
+                <button
+                  onClick={() => setLogoutModalOpen(true)}
+                  className="text-gray-700 hover:text-teal-600 transition-colors flex items-center px-2 py-2 rounded-md hover:bg-gray-100 flex-shrink-0"
+                  aria-label="Logout options"
+                >
+                  {/* Mobile icon only */}
+                  <svg
+                    className="inline sm:hidden h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    <span className="hidden sm:inline">Logout</span>
-                    <svg
-                      className="sm:hidden h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                      />
-                    </svg>
-                    <svg
-                      className="hidden sm:inline w-4 h-4 ml-1"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </button>
-                </div>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                    />
+                  </svg>
+                  {/* Desktop text with icon */}
+                  <span className="hidden sm:inline text-sm">Logout</span>
+                  <svg
+                    className="hidden sm:inline w-4 h-4 ml-1"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </button>
               </div>
             )}
           </div>
         </div>
       </nav>
 
-      {/* Enhanced Logout Modal */}
+      {/* Enhanced Logout Modal - Mobile Optimized */}
       <Modal
         isOpen={logoutModalOpen}
         onClose={() => !loggingOut && setLogoutModalOpen(false)}
         title="Secure Logout Options"
         footer={
-          <div className="flex flex-col sm:flex-row gap-3 w-full">
+          <div className="flex flex-col space-y-3 w-full">
+            {/* Primary logout button */}
             <Button
               color="blue"
               onClick={handleLogout}
               disabled={loggingOut}
-              className="flex-1"
+              className="w-full"
             >
-              {loggingOut ? "Logging out..." : "Logout This Session"}
+              {loggingOut ? (
+                <span className="flex items-center justify-center">
+                  <svg
+                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Logging out...
+                </span>
+              ) : (
+                "Logout This Session"
+              )}
             </Button>
+
+            {/* Secondary logout all button */}
             <Button
               color="red"
               onClick={handleLogoutAllSessions}
               disabled={loggingOut}
-              className="flex-1"
+              className="w-full"
             >
               {loggingOut ? "Logging out..." : "Logout All Sessions"}
             </Button>
+
+            {/* Cancel button */}
             <Button
               color="gray"
               onClick={() => setLogoutModalOpen(false)}
               disabled={loggingOut}
-              className="flex-1"
+              className="w-full"
             >
               Cancel
             </Button>
           </div>
         }
       >
-        <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* Security Notice */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <div className="flex items-start">
               <svg
-                className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0"
+                className="h-5 w-5 text-blue-500 mt-0.5 mr-2 flex-shrink-0"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -187,7 +232,7 @@ const Navbar = ({ onMenuClick }) => {
                   d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              <div>
+              <div className="min-w-0">
                 <h4 className="text-sm font-medium text-blue-800 mb-1">
                   Security Notice
                 </h4>
@@ -199,11 +244,13 @@ const Navbar = ({ onMenuClick }) => {
             </div>
           </div>
 
+          {/* Logout Options */}
           <div className="space-y-3">
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center mb-2">
+            {/* This Session Option */}
+            <div className="border border-gray-200 rounded-lg p-3">
+              <div className="flex items-start">
                 <svg
-                  className="h-5 w-5 text-green-600 mr-2 flex-shrink-0"
+                  className="h-5 w-5 text-green-600 mr-2 mt-0.5 flex-shrink-0"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -215,20 +262,23 @@ const Navbar = ({ onMenuClick }) => {
                     d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <h4 className="text-sm font-medium text-gray-900">
-                  Logout This Session
-                </h4>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 mb-1">
+                    Logout This Session
+                  </h4>
+                  <p className="text-sm text-gray-600">
+                    Logout from this browser/device only. Other sessions will
+                    remain active.
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-gray-600">
-                Logout from this browser/device only. Other sessions will remain
-                active.
-              </p>
             </div>
 
-            <div className="border border-red-200 rounded-lg p-4 bg-red-50">
-              <div className="flex items-center mb-2">
+            {/* All Sessions Option */}
+            <div className="border border-red-200 rounded-lg p-3 bg-red-50">
+              <div className="flex items-start">
                 <svg
-                  className="h-5 w-5 text-red-600 mr-2 flex-shrink-0"
+                  className="h-5 w-5 text-red-600 mr-2 mt-0.5 flex-shrink-0"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -240,22 +290,25 @@ const Navbar = ({ onMenuClick }) => {
                     d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
                   />
                 </svg>
-                <h4 className="text-sm font-medium text-red-800">
-                  Logout All Sessions
-                </h4>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-medium text-red-800 mb-1">
+                    Logout All Sessions
+                  </h4>
+                  <p className="text-sm text-red-700">
+                    <strong>Security Action:</strong> Logout from all devices
+                    and browsers. Recommended if you suspect unauthorized access
+                    or are using a shared computer.
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-red-700">
-                <strong>Security Action:</strong> Logout from all devices and
-                browsers. Recommended if you suspect unauthorized access or are
-                using a shared computer.
-              </p>
             </div>
           </div>
 
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          {/* Important Notice */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
             <div className="flex items-start">
               <svg
-                className="h-5 w-5 text-yellow-500 mt-0.5 mr-3 flex-shrink-0"
+                className="h-5 w-5 text-yellow-500 mt-0.5 mr-2 flex-shrink-0"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -267,7 +320,7 @@ const Navbar = ({ onMenuClick }) => {
                   d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
                 />
               </svg>
-              <div>
+              <div className="min-w-0">
                 <h4 className="text-sm font-medium text-yellow-800 mb-1">
                   Important
                 </h4>
