@@ -66,9 +66,6 @@
       </div>
       <% } %>
 
-      <!-- Safari iOS Compatibility Notice -->
-      <!-- Removed as requested -->
-
       <!-- Patient Header -->
       <div class="bg-white rounded-lg shadow-md p-6 mb-6">
         <div class="flex items-center justify-between">
@@ -105,22 +102,51 @@
         class="bg-white rounded-lg shadow-md overflow-hidden"
       >
         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <h2 class="text-xl font-semibold text-gray-800 flex items-center">
-            <i class="fas fa-file-medical-alt text-green-600 mr-2"></i>
-            Patient Medical Files <% if (files && files.length > 0) { %>
-            <span
-              class="ml-2 bg-blue-500 text-white px-2 py-1 rounded-full text-sm"
-            >
-              <%= files.length %> files
-            </span>
-            <% } %>
-            <span class="ml-3 text-sm font-normal text-gray-600">
-              (Tap to view files)
-            </span>
-          </h2>
+          <div class="flex items-center justify-between">
+            <h2 class="text-xl font-semibold text-gray-800 flex items-center">
+              <i class="fas fa-file-medical-alt text-green-600 mr-2"></i>
+              Patient Medical Files <% if (files && files.length > 0) { %>
+              <span
+                class="ml-2 bg-blue-500 text-white px-2 py-1 rounded-full text-sm"
+              >
+                <%= files.length %> files
+              </span>
+              <% } %>
+            </h2>
+            <div class="text-right">
+              <div
+                class="flex items-center text-sm text-gray-600 bg-blue-50 px-3 py-2 rounded-lg"
+              >
+                <i class="fas fa-mobile-alt mr-2 text-blue-600"></i>
+                <span class="font-medium" id="file-access-instructions">
+                  Tap to view files
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="p-6">
+          <!-- Safari iOS Notice -->
+          <div
+            id="safari-ios-notice"
+            class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg"
+            style="display: none"
+          >
+            <div class="flex items-start">
+              <i class="fas fa-info-circle text-yellow-600 mt-0.5 mr-2"></i>
+              <div>
+                <p class="text-sm font-medium text-yellow-800">
+                  iPhone/iPad Notice
+                </p>
+                <p class="text-sm text-yellow-700">
+                  Files will open in the same tab. Use the back button to return
+                  to this page.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <% if (!files || files.length === 0) { %>
           <div class="text-center py-12">
             <i class="fas fa-folder-open text-gray-400 text-6xl mb-4"></i>
@@ -178,14 +204,17 @@
                         <button
                           onclick="viewFile('<%= containerName %>', '<%= folderName %>', '<%= encodeURIComponent(file.name) %>')"
                           class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left transition-colors duration-200 file-link w-full"
-                          title="Tap to view file (view only, no download)"
+                          title="Tap to view file"
                         >
                           <div class="flex items-center">
                             <i class="fas fa-eye mr-2 text-gray-400"></i>
                             <div class="flex-1">
                               <div class="font-medium"><%= file.name %></div>
-                              <div class="text-xs text-gray-500">
-                                Tap to open in new tab
+                              <div
+                                class="text-xs text-gray-500"
+                                id="file-instruction-<%= index %>"
+                              >
+                                Tap to open
                               </div>
                             </div>
                           </div>
@@ -278,7 +307,17 @@
     </div>
 
     <script>
-      // Universal file viewer function that works on all browsers
+      // Detect Safari iOS
+      function isSafariIOS() {
+        const userAgent = navigator.userAgent.toLowerCase();
+        return (
+          /iphone|ipad|ipod/.test(userAgent) &&
+          /safari/.test(userAgent) &&
+          !/chrome|crios|fxios|edgios/.test(userAgent)
+        );
+      }
+
+      // Universal file viewer function that works on all browsers including Safari iOS
       function viewFile(containerName, folderName, fileName) {
         if (window.isExpired) {
           alert("Session has expired. Please scan the SmartToken again.");
@@ -289,11 +328,22 @@
           // Use the emergency view-only endpoint (no authentication needed)
           const viewUrl = `/patients/file/${containerName}/${folderName}/${fileName}/view`;
 
-          // Universal approach that works on all browsers including Safari iOS
-          window.open(viewUrl, "_blank");
+          // Safari iOS specific handling
+          if (isSafariIOS()) {
+            // For Safari iOS, navigate in the same window to avoid popup blocking
+            window.location.href = viewUrl;
+          } else {
+            // For all other browsers, open in new tab
+            const newWindow = window.open(viewUrl, "_blank");
 
-          // Show user feedback
-          showFileOpenFeedback(fileName);
+            if (!newWindow) {
+              // Fallback: navigate in same window
+              window.location.href = viewUrl;
+            } else {
+              // Show user feedback for successful new tab opening
+              showFileOpenFeedback(fileName, "new tab");
+            }
+          }
         } catch (error) {
           console.error("Error opening file:", error);
           alert("Error opening file. Please try again.");
@@ -301,17 +351,25 @@
       }
 
       // Show user feedback when file is being opened
-      function showFileOpenFeedback(fileName) {
+      function showFileOpenFeedback(fileName, method) {
         // Create a temporary notification
         const notification = document.createElement("div");
         notification.className =
           "fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50";
+
+        const message =
+          method === "new tab"
+            ? `Opening ${fileName.substring(0, 20)}${
+                fileName.length > 20 ? "..." : ""
+              } in new tab`
+            : `Opening ${fileName.substring(0, 20)}${
+                fileName.length > 20 ? "..." : ""
+              }`;
+
         notification.innerHTML = `
           <div class="flex items-center">
             <i class="fas fa-external-link-alt mr-2"></i>
-            <span>Opening ${fileName.substring(0, 20)}${
-          fileName.length > 20 ? "..." : ""
-        }</span>
+            <span>${message}</span>
           </div>
         `;
 
@@ -325,28 +383,33 @@
         }, 3000);
       }
 
-      // Show popup blocked message
-      function showPopupBlockedMessage() {
-        const notification = document.createElement("div");
-        notification.className =
-          "fixed top-4 right-4 bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-lg z-50";
-        notification.innerHTML = `
-          <div class="flex items-center">
-            <i class="fas fa-exclamation-triangle mr-2"></i>
-            <span>Please allow popups for this site</span>
-          </div>
-        `;
-
-        document.body.appendChild(notification);
-
-        setTimeout(() => {
-          if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-          }
-        }, 5000);
-      }
-
       document.addEventListener("DOMContentLoaded", function () {
+        // Update UI for Safari iOS
+        if (isSafariIOS()) {
+          // Show Safari iOS notice
+          const notice = document.getElementById("safari-ios-notice");
+          if (notice) {
+            notice.style.display = "block";
+          }
+
+          // Update file access instructions
+          const instructions = document.getElementById(
+            "file-access-instructions"
+          );
+          if (instructions) {
+            instructions.innerHTML =
+              '<i class="fas fa-mobile-alt mr-2"></i>Tap to open files (same tab)';
+          }
+
+          // Update individual file instructions
+          const fileInstructions = document.querySelectorAll(
+            '[id^="file-instruction-"]'
+          );
+          fileInstructions.forEach((instruction) => {
+            instruction.textContent = "Tap to open file";
+          });
+        }
+
         // Display access time in user's local timezone
         function displayLocalAccessTime() {
           const accessTimeElement = document.getElementById(
@@ -354,10 +417,6 @@
           );
           if (accessTimeElement) {
             const accessTime = new Date("<%= accessTime %>");
-
-            // Get user's timezone name
-            const userTimezone =
-              Intl.DateTimeFormat().resolvedOptions().timeZone;
 
             // Format time in user's local timezone
             const localTimeString = accessTime.toLocaleString(undefined, {
@@ -372,9 +431,6 @@
             });
 
             accessTimeElement.textContent = localTimeString;
-
-            // Log timezone info for debugging
-           
           }
         }
 
@@ -444,8 +500,6 @@
           if (patientContent) {
             patientContent.classList.add("opacity-50");
           }
-
-         
         }
 
         // Start the session timer
@@ -465,8 +519,7 @@
 
         // Warning at 1 minute remaining
         function showWarning() {
-          // You could add a warning notification here if desired
-       
+          // Warning notification could be added here if desired
         }
 
         // Display local access time
@@ -486,9 +539,6 @@
               "Your session has expired. Please scan the SmartToken again.";
           }
         });
-
-        // Enhanced browser compatibility - removed Safari specific code
-       
       });
     </script>
   </body>
