@@ -1,11 +1,11 @@
-// routes/blobs.js - Updated with view-only support
+// routes/blobs.js - SIMPLE NEW TAB ONLY VERSION
 const express = require("express");
 const router = express.Router();
 
 const {
   getBlobs,
   getBlobSasUrl,
-  viewBlob, // NEW: View-only endpoint
+  viewBlob, // View-only endpoint for new tabs (no iframe support)
   uploadBlob,
   deleteBlob,
   getAuditLogs,
@@ -19,7 +19,7 @@ const { checkRole } = require("../middleware/role-check.js");
 router.get("/:containerName/:folderName", auth, getBlobs);
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/view
-// @desc    View file content directly (no download)
+// @desc    View file content directly in new tab (no download) - SECURE WITH AUTH
 // @access  Private
 router.get("/:containerName/:folderName/:blobName/view", auth, viewBlob);
 
@@ -48,6 +48,9 @@ router.delete(
   deleteBlob
 );
 
+// @route   GET api/blobs/audit
+// @desc    Get audit logs for file operations
+// @access  Private/Admin
 router.get("/audit", auth, checkRole(["admin"]), getAuditLogs);
 
 module.exports = router;

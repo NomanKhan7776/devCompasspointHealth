@@ -1,11 +1,11 @@
-// routes/smartTokenRoutes.js - Production version with view-only file access
+// routes/smartTokenRoutes.js - SECURE version with proper route separation
 
 const express = require("express");
 const router = express.Router();
 const {
   verifySmartToken,
   getPatientFile,
-  getPatientFileViewOnly, // NEW: View-only endpoint
+  getPatientFileViewOnly, // Emergency access (no auth needed)
   getUnclaimedTokens,
   assignTokenToPatient,
   getAllAssignedTokens,
@@ -17,16 +17,19 @@ const {
 const auth = require("../middleware/auth");
 const { checkRole } = require("../middleware/role-check");
 
-// Public routes (no authentication required)
+// PUBLIC ROUTES (no authentication required)
+// Emergency access for SmartTokens
 router.get("/verify/:id", verifySmartToken);
-
-// NEW: View-only file access for emergency situations
-router.get("/file/:containerName/:folderName/:fileName/view", getPatientFileViewOnly);
+router.get(
+  "/file/:containerName/:folderName/:fileName/view",
+  getPatientFileViewOnly
+);
 
 // Legacy file route (kept for backward compatibility)
 router.get("/file/:containerName/:folderName/:fileName", getPatientFile);
 
-// Admin routes (authentication required)
+// AUTHENTICATED ROUTES (auth middleware required)
+// Admin routes
 router.get("/admin/unclaimed", auth, checkRole(["admin"]), getUnclaimedTokens);
 router.get("/admin/assigned", auth, checkRole(["admin"]), getAllAssignedTokens);
 router.post("/admin/assign", auth, checkRole(["admin"]), assignTokenToPatient);

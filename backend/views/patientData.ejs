@@ -1,4 +1,4 @@
-<!-- views/patientData.ejs -->
+<!-- views/patientData.ejs - Fixed version with correct view URLs -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -270,15 +270,15 @@
     </div>
 
     <script>
-      // Function to view files with cross-browser compatibility
+      // Function to view files with cross-browser compatibility - EMERGENCY ACCESS
       function viewFile(containerName, folderName, fileName) {
-        if (isExpired) {
+        if (window.isExpired) {
           alert("Session has expired. Please scan the SmartToken again.");
           return;
         }
 
         try {
-          // Use the view-only endpoint
+          // Use the emergency view-only endpoint (no authentication needed)
           const viewUrl = `/patients/file/${containerName}/${folderName}/${fileName}/view`;
 
           // Open in new window/tab - works on all browsers including Safari iOS

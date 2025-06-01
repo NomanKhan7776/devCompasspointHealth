@@ -1,4 +1,4 @@
-// controllers/blobController.js - VIEW ONLY VERSION (NO DOWNLOADS)
+// controllers/blobController.js - SIMPLIFIED - Auth handled by middleware
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -9,16 +9,16 @@ const { blobServiceClient } = require("../config/azure-storage");
 const { pool, sql } = require("../config/database");
 const multer = require("multer");
 
-// Configure multer to use memory storage instead of disk storage
+// Configure multer
 const memoryStorage = multer.memoryStorage();
 const upload = multer({
   storage: memoryStorage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // Limit file size to 10MB
+    fileSize: 10 * 1024 * 1024, // 10MB limit
   },
 });
 
-// Helper function to log file operations for audit trail
+// Simplified file operation logging
 const logFileOperation = async (
   userId,
   containerName,
@@ -28,7 +28,6 @@ const logFileOperation = async (
 ) => {
   try {
     await pool.connect();
-
     await pool
       .request()
       .input("userId", userId)
@@ -41,17 +40,15 @@ const logFileOperation = async (
       `);
   } catch (err) {
     console.error("Error logging file operation:", err.message);
-    // Don't throw error - this is a non-critical operation
+    // Don't throw - this is non-critical
   }
 };
 
-// Helper function to check if user has access to container/folder
+// Check user access to container/folder
 const checkUserAccess = async (userId, containerName, folderName) => {
   try {
-    // Make sure we're connected to the database
     await pool.connect();
 
-    // Get user role - handle case where user doesn't exist
     const userResult = await pool
       .request()
       .input("id", userId)
@@ -81,7 +78,7 @@ const checkUserAccess = async (userId, containerName, folderName) => {
       return false;
     }
 
-    // If folderName is provided, check folder assignment
+    // Check folder assignment if specified
     if (folderName) {
       const folderResult = await pool
         .request()
@@ -104,62 +101,6 @@ const checkUserAccess = async (userId, containerName, folderName) => {
   }
 };
 
-// Helper function to generate SAS token for READ-ONLY access (no download)
-const generateViewOnlySasToken = (containerName, blobName) => {
-  try {
-    // Try to get account name and key from individual environment variables first
-    let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-    let accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
-
-    // If account key is not set individually, extract from connection string
-    if (!accountKey && process.env.AZURE_STORAGE_CONNECTION_STRING) {
-      const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-
-      // Extract account name from connection string
-      const accountNameMatch = connectionString.match(/AccountName=([^;]+)/);
-      if (accountNameMatch) {
-        accountName = accountNameMatch[1];
-      }
-
-      // Extract account key from connection string
-      const accountKeyMatch = connectionString.match(/AccountKey=([^;]+)/);
-      if (accountKeyMatch) {
-        accountKey = accountKeyMatch[1];
-      }
-    }
-
-    if (!accountName || !accountKey) {
-      throw new Error("Missing Azure Storage credentials");
-    }
-
-    const sharedKeyCredential = new StorageSharedKeyCredential(
-      accountName,
-      accountKey
-    );
-
-    // Only READ permission - no download capability
-    const permissions = BlobSASPermissions.parse("r");
-
-    const sasOptions = {
-      containerName,
-      blobName,
-      permissions: permissions,
-      startsOn: new Date(),
-      expiresOn: new Date(new Date().valueOf() + 3600 * 1000), // 1 hour
-    };
-
-    const sasToken = generateBlobSASQueryParameters(
-      sasOptions,
-      sharedKeyCredential
-    ).toString();
-
-    return sasToken;
-  } catch (err) {
-    console.error("SAS token generation error:", err.message);
-    throw err;
-  }
-};
-
 // @route   GET api/blobs/:containerName/:folderName
 // @desc    Get all blobs in a folder
 // @access  Private
@@ -167,9 +108,7 @@ exports.getBlobs = async (req, res) => {
   try {
     const { containerName, folderName } = req.params;
 
-    await pool.connect();
-
-    // Check if user has access
+    // User is already authenticated by middleware
     const hasAccess = await checkUserAccess(
       req.user.userId,
       containerName,
@@ -182,10 +121,7 @@ exports.getBlobs = async (req, res) => {
       });
     }
 
-    // Get container client
     const containerClient = blobServiceClient.getContainerClient(containerName);
-
-    // Check if container exists
     const containerExists = await containerClient.exists();
     if (!containerExists) {
       return res.status(404).json({
@@ -194,7 +130,6 @@ exports.getBlobs = async (req, res) => {
       });
     }
 
-    // List blobs in folder
     const blobs = [];
     const folderPrefix = `${folderName}/`;
     const blobIterator = containerClient.listBlobsFlat({
@@ -202,14 +137,11 @@ exports.getBlobs = async (req, res) => {
     });
 
     for await (const blob of blobIterator) {
-      // Skip the folder itself (if it exists as a blob)
       if (blob.name === folderPrefix) {
         continue;
       }
 
-      // Get blob name (without folder prefix)
       const blobName = blob.name.replace(folderPrefix, "");
-
       blobs.push({
         name: blobName,
         fullPath: blob.name,
@@ -220,7 +152,6 @@ exports.getBlobs = async (req, res) => {
       });
     }
 
-    // Log the list operation for audit
     await logFileOperation(
       req.user.userId,
       containerName,
@@ -245,121 +176,190 @@ exports.getBlobs = async (req, res) => {
 };
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/view
-// @desc    Get file content for viewing (not downloading) - NEW ENDPOINT
-// @access  Private
+// @desc    View file content directly in new tab - SIMPLIFIED
+// @access  Private (authenticated by middleware)
 exports.viewBlob = async (req, res) => {
   try {
     const { containerName, folderName, blobName } = req.params;
 
-    // Check if user is authenticated
-    if (!req.user || !req.user.userId) {
-      return res.status(401).json({
-        success: false,
-        message: "User not authenticated",
-      });
-    }
+    // User is already authenticated by middleware (either via headers or query params)
+    const user = req.user;
 
-    // Connect to database
-    await pool.connect();
-
-    // Check if user has access
+    // Check user access
     const hasAccess = await checkUserAccess(
-      req.user.userId,
+      user.userId,
       containerName,
       folderName
     );
 
     if (!hasAccess) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied",
-      });
+      return res.status(403).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Access Denied</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              text-align: center; 
+              padding: 50px; 
+              background: #f5f5f5; 
+            }
+            .error-box { 
+              background: white; 
+              border-radius: 8px; 
+              padding: 2rem; 
+              box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+              max-width: 400px; 
+              margin: 0 auto; 
+            }
+          </style>
+        </head>
+        <body>
+          <div class="error-box">
+            <h1>Access Denied</h1>
+            <p>You don't have permission to view this file.</p>
+          </div>
+          <script>
+            setTimeout(() => {
+              if (window.opener) {
+                window.opener.focus();
+                window.close();
+              }
+            }, 3000);
+          </script>
+        </body>
+        </html>
+      `);
     }
 
-    // Get container client
+    // Get the file from Azure Storage
     const containerClient = blobServiceClient.getContainerClient(containerName);
-
-    // Check if container exists
     const containerExists = await containerClient.exists();
+
     if (!containerExists) {
-      return res.status(404).json({
-        success: false,
-        message: "Container not found",
-      });
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Container Not Found</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>Container Not Found</h1>
+          <p>The requested container does not exist.</p>
+          <script>
+            setTimeout(() => {
+              if (window.opener) {
+                window.opener.focus();
+                window.close();
+              }
+            }, 3000);
+          </script>
+        </body>
+        </html>
+      `);
     }
 
-    // Get blob client
     const fullBlobName = `${folderName}/${blobName}`;
     const blobClient = containerClient.getBlobClient(fullBlobName);
-
-    // Check if blob exists
     const blobExists = await blobClient.exists();
+
     if (!blobExists) {
-      return res.status(404).json({
-        success: false,
-        message: "File not found",
-      });
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>File Not Found</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>File Not Found</h1>
+          <p>The requested file does not exist.</p>
+          <script>
+            setTimeout(() => {
+              if (window.opener) {
+                window.opener.focus();
+                window.close();
+              }
+            }, 3000);
+          </script>
+        </body>
+        </html>
+      `);
     }
 
-    // Get blob properties to determine content type
+    // Get blob properties and content
     const properties = await blobClient.getProperties();
     const contentType = properties.contentType || "application/octet-stream";
-
-    // Download blob content
     const downloadResponse = await blobClient.download();
 
-    // Set headers for viewing (not downloading)
+    // Set secure headers for viewing only
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", "inline"); // Force inline viewing, not download
+    res.setHeader("Content-Disposition", "inline");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader(
+      "Cache-Control",
+      "no-cache, no-store, must-revalidate, private"
+    );
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Content-Security-Policy", "default-src 'self'");
 
-    // For PDF files, explicitly set headers to prevent download
+    // Special handling for different file types
     if (contentType.includes("pdf")) {
       res.setHeader("Content-Disposition", 'inline; filename="document.pdf"');
     }
 
-    // Log the view operation for audit
+    if (contentType.includes("image")) {
+      res.setHeader("Content-Disposition", "inline");
+    }
+
+    // Add security indicator headers
+    if (req.isFileAccess) {
+      res.setHeader("X-Access-Type", "temporary");
+      res.setHeader("X-Link-Expires", "5min");
+    } else {
+      res.setHeader("X-Access-Type", "session");
+    }
+
+    // Log the view operation
     await logFileOperation(
-      req.user.userId,
+      user.userId,
       containerName,
       folderName,
       blobName,
       "VIEW"
     );
 
-    // Stream the file content directly to response
+    // Stream the file content
     downloadResponse.readableStreamBody.pipe(res);
   } catch (err) {
     console.error("viewBlob error:", err.message);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Server Error</title></head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h1>Server Error</h1>
+        <p>An error occurred while processing your request.</p>
+        <p><small>Error: ${err.message}</small></p>
+        <script>
+          setTimeout(() => {
+            if (window.opener) {
+              window.opener.focus();
+              window.close();
+            }
+          }, 3000);
+        </script>
+      </body>
+      </html>
+    `);
   }
 };
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/url
-// @desc    Get SAS URL for a blob (DEPRECATED - use /view endpoint instead)
-// @access  Private
+// @desc    Get SAS URL for a blob (returns view URL)
+// @access  Private (authenticated by middleware)
 exports.getBlobSasUrl = async (req, res) => {
   try {
     const { containerName, folderName, blobName } = req.params;
 
-    // Check if user is authenticated
-    if (!req.user || !req.user.userId) {
-      return res.status(401).json({
-        success: false,
-        message: "User not authenticated",
-      });
-    }
-
-    // Connect to database
-    await pool.connect();
-
-    // Check if user has access
     const hasAccess = await checkUserAccess(
       req.user.userId,
       containerName,
@@ -373,93 +373,17 @@ exports.getBlobSasUrl = async (req, res) => {
       });
     }
 
-    // Check Azure Storage configuration
-    if (
-      !process.env.AZURE_STORAGE_CONNECTION_STRING &&
-      (!process.env.AZURE_STORAGE_ACCOUNT_NAME ||
-        !process.env.AZURE_STORAGE_ACCOUNT_KEY)
-    ) {
-      console.error("Missing Azure Storage configuration");
-      return res.status(500).json({
-        success: false,
-        message: "Storage configuration error",
-      });
-    }
-
-    // Get container client
-    const containerClient = blobServiceClient.getContainerClient(containerName);
-
-    // Check if container exists
-    let containerExists;
-    try {
-      containerExists = await containerClient.exists();
-    } catch (containerError) {
-      console.error("Container check error:", containerError.message);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to check container existence",
-      });
-    }
-
-    if (!containerExists) {
-      return res.status(404).json({
-        success: false,
-        message: "Container not found",
-      });
-    }
-
-    // Get blob client
-    const fullBlobName = `${folderName}/${blobName}`;
-    const blobClient = containerClient.getBlobClient(fullBlobName);
-
-    // Check if blob exists
-    let blobExists;
-    try {
-      blobExists = await blobClient.exists();
-    } catch (blobError) {
-      console.error("Blob check error:", blobError.message);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to check blob existence",
-      });
-    }
-
-    if (!blobExists) {
-      return res.status(404).json({
-        success: false,
-        message: "Blob not found",
-      });
-    }
-
-    // Generate view-only SAS token (no download capability)
-    let sasToken;
-    try {
-      sasToken = generateViewOnlySasToken(containerName, fullBlobName);
-    } catch (sasError) {
-      console.error("SAS token generation failed:", sasError.message);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to generate SAS token",
-      });
-    }
-
-    const sasUrl = `${blobClient.url}?${sasToken}`;
-
-    // Log the view operation for audit
-    await logFileOperation(
-      req.user.userId,
-      containerName,
-      folderName,
-      blobName,
-      "VIEW"
-    );
+    const viewUrl = `/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+      blobName
+    )}/view`;
 
     res.json({
       success: true,
-      sasUrl,
-      viewOnly: true, // Indicate this is view-only
+      viewUrl,
+      viewOnly: true,
       canModify: req.user.role === "admin",
       canUpload: ["admin", "doctor", "nurse"].includes(req.user.role),
+      message: "Use viewUrl for secure new tab viewing",
     });
   } catch (err) {
     console.error("getBlobSasUrl error:", err.message);
@@ -472,9 +396,8 @@ exports.getBlobSasUrl = async (req, res) => {
 
 // @route   POST api/blobs/:containerName/:folderName
 // @desc    Upload a blob with original filename
-// @access  Private/Admin,Doctor,Nurse
+// @access  Private/Admin,Doctor,Nurse (authenticated by middleware + role check)
 exports.uploadBlob = async (req, res) => {
-  // Use multer middleware to handle file upload
   upload.single("file")(req, res, async (err) => {
     if (err) {
       console.error("Upload middleware error:", err.message);
@@ -484,7 +407,6 @@ exports.uploadBlob = async (req, res) => {
       });
     }
 
-    // Check if file was uploaded
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -494,11 +416,9 @@ exports.uploadBlob = async (req, res) => {
 
     try {
       const { containerName, folderName } = req.params;
-      // Use the original filename if provided, otherwise use the uploaded file's original name
       const { filename } = req.body;
       const originalFilename = filename || req.file.originalname;
 
-      // Check if user has access to this folder
       const hasAccess = await checkUserAccess(
         req.user.userId,
         containerName,
@@ -511,11 +431,8 @@ exports.uploadBlob = async (req, res) => {
         });
       }
 
-      // Get container client
       const containerClient =
         blobServiceClient.getContainerClient(containerName);
-
-      // Check if container exists
       const containerExists = await containerClient.exists();
       if (!containerExists) {
         return res.status(404).json({
@@ -524,29 +441,23 @@ exports.uploadBlob = async (req, res) => {
         });
       }
 
-      // Use the original filename directly
       const blobName = originalFilename;
       const fullBlobName = `${folderName}/${blobName}`;
-
-      // Get blob client
       const blobClient = containerClient.getBlobClient(fullBlobName);
       const blockBlobClient = blobClient.getBlockBlobClient();
 
-      // Upload file - using buffer from memory storage
       const uploadOptions = {
         blobHTTPHeaders: {
           blobContentType: req.file.mimetype,
         },
       };
 
-      // Upload directly from buffer
       await blockBlobClient.upload(
         req.file.buffer,
         req.file.size,
         uploadOptions
       );
 
-      // Log the upload operation for audit
       await logFileOperation(
         req.user.userId,
         containerName,
@@ -582,16 +493,13 @@ exports.uploadBlob = async (req, res) => {
 
 // @route   DELETE api/blobs/:containerName/:folderName/:blobName
 // @desc    Delete a blob
-// @access  Private/Admin
+// @access  Private/Admin (authenticated by middleware + role check)
 exports.deleteBlob = async (req, res) => {
   try {
     const { containerName, folderName, blobName } = req.params;
-
-    // Get container client
     const containerClient = blobServiceClient.getContainerClient(containerName);
-
-    // Check if container exists
     const containerExists = await containerClient.exists();
+
     if (!containerExists) {
       return res.status(404).json({
         success: false,
@@ -599,12 +507,10 @@ exports.deleteBlob = async (req, res) => {
       });
     }
 
-    // Get blob client
     const fullBlobName = `${folderName}/${blobName}`;
     const blobClient = containerClient.getBlobClient(fullBlobName);
-
-    // Check if blob exists
     const blobExists = await blobClient.exists();
+
     if (!blobExists) {
       return res.status(404).json({
         success: false,
@@ -612,10 +518,8 @@ exports.deleteBlob = async (req, res) => {
       });
     }
 
-    // Delete the blob
     await blobClient.delete();
 
-    // Log the delete operation for audit
     await logFileOperation(
       req.user.userId,
       containerName,
@@ -642,7 +546,7 @@ exports.deleteBlob = async (req, res) => {
 
 // @route   GET api/blobs/audit
 // @desc    Get audit logs for file operations
-// @access  Private/Admin
+// @access  Private/Admin (authenticated by middleware + role check)
 exports.getAuditLogs = async (req, res) => {
   try {
     const {
@@ -658,7 +562,6 @@ exports.getAuditLogs = async (req, res) => {
 
     await pool.connect();
 
-    // Build the query
     let query =
       "SELECT fa.*, u.name, u.username, u.role FROM FileAudit fa JOIN Users u ON fa.userId = u.userId WHERE 1=1";
     const queryParams = [];
@@ -698,10 +601,7 @@ exports.getAuditLogs = async (req, res) => {
     queryParams.push({ name: "offset", value: parseInt(offset) });
     queryParams.push({ name: "limit", value: parseInt(limit) });
 
-    // Execute the query
     const request = pool.request();
-
-    // Add parameters to the request
     queryParams.forEach((param) => {
       request.input(param.name, param.value);
     });

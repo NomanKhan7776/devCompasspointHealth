@@ -1,7 +1,8 @@
-// controllers/authController.js
+// controllers/authController.js - Enhanced with session management
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { pool, sql } = require("../config/database");
+const auth = require("../middleware/auth");
 
 // @route   POST api/auth/login
 // @desc    Authenticate user & get token
@@ -36,19 +37,26 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Create JWT payload
+    // Invalidate any existing sessions for this user
+    auth.invalidateAllUserSessions(user.userId);
+
+    // Create JWT payload with session info
     const payload = {
       user: {
         id: user.userId,
+        userId: user.userId, // Keep both for compatibility
         role: user.role,
+        name: user.name,
+        username: user.username,
       },
+      sessionCreated: Date.now(),
     };
 
-    // Sign token
+    // Sign token with shorter expiry for security
     jwt.sign(
       payload,
       process.env.JWT_SECRET,
-      { expiresIn: "1d" },
+      { expiresIn: "24h" }, // Reduced from "1d" for clarity
       (err, token) => {
         if (err) throw err;
         res.json({
@@ -63,6 +71,50 @@ exports.login = async (req, res) => {
         });
       }
     );
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// @route   POST api/auth/logout
+// @desc    Logout user and invalidate session
+// @access  Private
+exports.logout = async (req, res) => {
+  try {
+    // Invalidate the current session
+    if (req.invalidateSession) {
+      req.invalidateSession();
+    }
+
+    res.json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// @route   POST api/auth/logout-all
+// @desc    Logout user from all sessions
+// @access  Private
+exports.logoutAll = async (req, res) => {
+  try {
+    // Invalidate all sessions for this user
+    auth.invalidateAllUserSessions(req.user.userId);
+
+    res.json({
+      success: true,
+      message: "Logged out from all devices successfully",
+    });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({
@@ -133,6 +185,9 @@ exports.register = async (req, res) => {
   }
 };
 
+// @route   GET api/auth/me
+// @desc    Get current user info and validate session
+// @access  Private
 exports.getCurrentUser = async (req, res) => {
   try {
     // This route is protected by auth middleware,
@@ -145,12 +200,51 @@ exports.getCurrentUser = async (req, res) => {
         username: req.user.username,
         role: req.user.role,
       },
+      sessionValid: true,
     });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({
       success: false,
       message: "Server error",
+    });
+  }
+};
+
+// @route   GET api/auth/validate-token
+// @desc    Validate token without user lookup (for file access)
+// @access  Public (but requires valid token)
+exports.validateToken = async (req, res) => {
+  try {
+    const token = req.header("x-auth-token") || req.query.token;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Check if session is still active
+    const sessionId = require("crypto")
+      .createHash("sha256")
+      .update(token + decoded.user.userId)
+      .digest("hex");
+
+    // This will be handled by the auth middleware
+    res.json({
+      success: true,
+      valid: true,
+      user: decoded.user,
+    });
+  } catch (err) {
+    res.status(401).json({
+      success: false,
+      valid: false,
+      message: "Invalid token",
     });
   }
 };

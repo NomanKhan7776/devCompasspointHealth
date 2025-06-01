@@ -19,7 +19,7 @@ const app = express();
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// Helmet configuration - allow inline styles for emergency pages
+// Enhanced Helmet configuration for security
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -43,12 +43,15 @@ app.use(
         ],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
+        frameAncestors: ["'self'"], // Prevent embedding in iframes
       },
     },
+    crossOriginEmbedderPolicy: false, // Allow file viewing in new windows
+    crossOriginResourcePolicy: { policy: "same-site" },
   })
 );
 
-// CORS configuration - UPDATED for production
+// CORS configuration - UPDATED for production with enhanced security
 app.use(
   cors({
     origin:
@@ -61,6 +64,26 @@ app.use(
   })
 );
 
+// Security middleware for file viewing
+app.use((req, res, next) => {
+  // Add security headers for all responses
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+
+  // Special headers for file viewing endpoints
+  if (req.url.includes("/view")) {
+    res.setHeader(
+      "Cache-Control",
+      "no-cache, no-store, must-revalidate, private"
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
+
+  next();
+});
+
 // Middleware for different route types
 app.use("/api/auth", express.json());
 app.use("/api/users", express.json());
@@ -71,15 +94,60 @@ app.use("/patients", express.json());
 // Additional middleware
 app.use(express.urlencoded({ extended: true }));
 
-// Logging - simplified for production
+// Enhanced logging for security monitoring
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("combined"));
 } else {
-  app.use(morgan("common"));
+  // Production logging with IP tracking
+  app.use(
+    morgan("combined", {
+      skip: function (req, res) {
+        // Don't log successful file views to reduce log noise
+        return req.url.includes("/view") && res.statusCode < 400;
+      },
+    })
+  );
 }
 
-// Serve static files
-app.use("/static", express.static(path.join(__dirname, "public")));
+// Rate limiting for authentication endpoints (production)
+if (process.env.NODE_ENV === "production") {
+  const rateLimit = require("express-rate-limit");
+
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // Limit each IP to 5 login requests per windowMs
+    message: {
+      error: "Too many login attempts, please try again later.",
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: {
+      error: "Too many requests, please try again later.",
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Apply rate limiting
+  app.use("/api/auth/login", authLimiter);
+  app.use("/api/", generalLimiter);
+}
+
+// Serve static files with security headers
+app.use(
+  "/static",
+  express.static(path.join(__dirname, "public"), {
+    setHeaders: (res, path) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "public, max-age=31536000"); // 1 year for static assets
+    },
+  })
+);
 
 // Routes
 app.use("/patients", smartTokenRoutes);
@@ -88,31 +156,53 @@ app.use("/api/users", userRoutes);
 app.use("/api/assignments", assignmentRoutes);
 app.use("/api/blobs", blobRoutes);
 
-// Health check endpoint
+// Health check endpoint with session info (for monitoring)
 app.get("/", (req, res) => {
+  const auth = require("./middleware/auth");
   res.status(200).json({
     status: "ok",
     message: "CompassPoint Health PRMS Server is running",
     timestamp: new Date().toISOString(),
     version: "1.0.0",
+    security: "enhanced",
+    activeSessions: auth.getActiveSessionsCount
+      ? auth.getActiveSessionsCount()
+      : "unknown",
   });
 });
 
-// API status endpoint
+// API status endpoint with security info
 app.get("/api/status", (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "CompassPoint Health PRMS API",
     timestamp: new Date().toISOString(),
     version: "1.0.0",
+    security: {
+      sessionTracking: "enabled",
+      fileProtection: "enhanced",
+      corsEnabled: true,
+      rateLimiting:
+        process.env.NODE_ENV === "production" ? "enabled" : "disabled",
+    },
   });
 });
 
-// Error handling middleware
+// Enhanced error handling middleware with security focus
 app.use((err, req, res, next) => {
-  // Log errors server-side only
+  // Log errors server-side only (don't expose internal details)
   if (process.env.NODE_ENV === "development") {
     console.error("Application Error:", err.stack);
+  } else {
+    // In production, log errors but don't expose stack traces
+    console.error("Application Error:", {
+      message: err.message,
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      userAgent: req.get("User-Agent"),
+      timestamp: new Date().toISOString(),
+    });
   }
 
   // Handle different error types
@@ -132,6 +222,12 @@ app.use((err, req, res, next) => {
     });
   }
 
+  // Security: Don't expose internal errors in production
+  const isProduction = process.env.NODE_ENV === "production";
+  const errorMessage = isProduction
+    ? "An unexpected error occurred"
+    : err.message;
+
   // Check if it's an API request (JSON response) or web request (HTML response)
   if (
     req.originalUrl.startsWith("/api/") ||
@@ -140,22 +236,32 @@ app.use((err, req, res, next) => {
     res.status(500).json({
       success: false,
       message: "Internal server error",
-      error:
-        process.env.NODE_ENV === "development" ? err.message : "Server error",
+      error: isProduction ? "Server error" : err.message,
     });
   } else {
     // Render error page for web requests (SmartToken access)
     res.status(500).render("error", {
       title: "System Error",
-      message: "An unexpected error occurred",
+      message: errorMessage,
       errorCode: "SYSTEM_ERROR",
       instructions: "Please try again or contact technical support",
     });
   }
 });
 
-// 404 Handler
+// Enhanced 404 Handler with security logging
 app.use("*", (req, res) => {
+  // Log 404s for security monitoring (potential probing)
+  if (process.env.NODE_ENV === "production") {
+    console.warn("404 Request:", {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      userAgent: req.get("User-Agent"),
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   // Check if it's an API request
   if (
     req.originalUrl.startsWith("/api/") ||
@@ -178,7 +284,18 @@ app.use("*", (req, res) => {
   }
 });
 
-// Start server
+// Graceful shutdown handling
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, shutting down gracefully");
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT received, shutting down gracefully");
+  process.exit(0);
+});
+
+// Enhanced startup logging
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   if (process.env.NODE_ENV === "development") {
@@ -187,10 +304,15 @@ app.listen(PORT, () => {
 📍 Health Check: http://localhost:${PORT}/
 🔗 SmartToken Endpoint: http://localhost:${PORT}/patients/verify/:id
 📊 API Status: http://localhost:${PORT}/api/status
+🔒 Security Features: Enhanced session tracking, file protection, CORS enabled
 🕐 Started at: ${new Date().toISOString()}
     `);
   } else {
-    console.log(`CompassPoint Health PRMS Server running on port ${PORT}`);
+    console.log(`
+🏥 CompassPoint Health PRMS Server running on port ${PORT}
+🔒 Security: Enhanced protection enabled
+🕐 Started: ${new Date().toISOString()}
+    `);
   }
 });
 
