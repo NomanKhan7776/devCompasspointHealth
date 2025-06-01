@@ -1,4 +1,4 @@
-// api/index.js - SAFARI iOS COMPATIBLE VERSION
+// api/index.js - FIXED VERSION TO PREVENT DOUBLE OPENING
 import axios from "axios";
 
 // Create axios instance
@@ -147,122 +147,83 @@ if (!window.fileViewerWindows) {
   window.fileViewerWindows = [];
 }
 
-// Universal File Viewer - Works on all browsers including Safari iOS
-const createUniversalFileViewer = async (
-  containerName,
-  folderName,
-  blobName
-) => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        reject(
-          new Error("No authentication token found. Please log in again.")
-        );
-        return;
-      }
-
-      // First validate the session
-      await authAPI.validateToken();
-
-      // Create URL with authentication
-      const timestamp = Date.now();
-      const secureUrl = `${
-        import.meta.env.VITE_REACT_API_URL
-      }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
-        blobName
-      )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
-
-      // Try window.open first - this should work for most browsers
-      const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
-
-      // Check if window.open succeeded
-      if (newWindow && !newWindow.closed) {
-        // Window opened successfully - track it for cleanup
-        if (!window.fileViewerWindows) {
-          window.fileViewerWindows = [];
-        }
-        window.fileViewerWindows.push(newWindow);
-
-        // Clean up closed windows
-        window.fileViewerWindows = window.fileViewerWindows.filter(
-          (win) => !win.closed
-        );
-
-        // Set up session validation interval
-        const sessionCheckInterval = setInterval(async () => {
-          if (newWindow.closed) {
-            clearInterval(sessionCheckInterval);
-            return;
-          }
-
-          try {
-            await authAPI.validateToken();
-          } catch (error) {
-            // Session invalid, close the window
-            if (!newWindow.closed) {
-              newWindow.close();
-            }
-            clearInterval(sessionCheckInterval);
-          }
-        }, 30000); // Check every 30 seconds
-
-        resolve({
-          success: true,
-          method: "window_open",
-          message: "File opened successfully",
-        });
-      } else {
-        // Window.open failed (likely popup blocker)
-        // Only use fallback if user explicitly allows it
-        const userWantsToNavigate = confirm(
-          "Popup was blocked. Would you like to open the file in the current tab instead?"
-        );
-
-        if (userWantsToNavigate) {
-          window.location.href = secureUrl;
-          resolve({
-            success: true,
-            method: "location_redirect",
-            message: "File opened in current tab",
-          });
-        } else {
-          reject(
-            new Error(
-              "File opening was cancelled. Please allow popups for this site or try again."
-            )
-          );
-        }
-      }
-    } catch (error) {
-      reject(error);
+// FIXED: Simple and reliable file viewer that doesn't cause double opening
+const createFileViewer = async (containerName, folderName, blobName) => {
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      throw new Error("No authentication token found. Please log in again.");
     }
-  });
+
+    // First validate the session
+    await authAPI.validateToken();
+
+    // Create URL with authentication
+    const timestamp = Date.now();
+    const secureUrl = `${
+      import.meta.env.VITE_REACT_API_URL
+    }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+      blobName
+    )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
+
+    // Try to open in new window/tab
+    const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
+
+    if (newWindow) {
+      // Window opened successfully - track it for cleanup
+      if (!window.fileViewerWindows) {
+        window.fileViewerWindows = [];
+      }
+      window.fileViewerWindows.push(newWindow);
+
+      // Clean up closed windows
+      window.fileViewerWindows = window.fileViewerWindows.filter(
+        (win) => !win.closed
+      );
+
+      // Set up session validation interval
+      const sessionCheckInterval = setInterval(async () => {
+        if (newWindow.closed) {
+          clearInterval(sessionCheckInterval);
+          return;
+        }
+
+        try {
+          await authAPI.validateToken();
+        } catch (error) {
+          // Session invalid, close the window
+          if (!newWindow.closed) {
+            newWindow.close();
+          }
+          clearInterval(sessionCheckInterval);
+        }
+      }, 30000); // Check every 30 seconds
+
+      return {
+        success: true,
+        method: "window_open",
+        message: "File opened in new tab",
+      };
+    } else {
+      // Popup was blocked - show message instead of redirecting
+      throw new Error(
+        "Popup was blocked. Please allow popups for this site to view files in new tabs."
+      );
+    }
+  } catch (error) {
+    throw error;
+  }
 };
 
-// Blobs API - SAFARI COMPATIBLE VERSION
+// Blobs API - FIXED VERSION
 const blobsAPI = {
   getBlobs: (containerName, folderName) =>
     api.get(`/blobs/${containerName}/${folderName}`),
 
-  // SAFARI iOS COMPATIBLE: View file with enhanced browser compatibility
+  // FIXED: View file - only opens in new tab, no fallback to current tab
   viewBlob: async (containerName, folderName, blobName) => {
     try {
-      // First validate the current session
-      await authAPI.validateToken();
-
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw new Error("No authentication token found. Please log in again.");
-      }
-
-      // Use universal viewer that works on all browsers
-      return await createUniversalFileViewer(
-        containerName,
-        folderName,
-        blobName
-      );
+      return await createFileViewer(containerName, folderName, blobName);
     } catch (error) {
       console.error("Error opening file:", error);
 
@@ -270,6 +231,10 @@ const blobsAPI = {
         throw new Error("Your session has expired. Please log in again.");
       } else if (error.message.includes("Access denied")) {
         throw new Error("You don't have permission to view this file.");
+      } else if (error.message.includes("Popup was blocked")) {
+        throw new Error(
+          "Popup was blocked. Please allow popups for this site to view files."
+        );
       } else {
         throw new Error(
           "Failed to open file. Please try again or contact support."

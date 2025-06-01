@@ -144,13 +144,18 @@ const BlobViewer = () => {
     }
   };
 
-  // UNIVERSAL: View a blob with enhanced browser support
+  // FIXED: View a blob - only opens in new tab, prevents double opening
   const handleFileClick = async (blobName) => {
+    // Prevent multiple clicks while processing
+    if (viewingFile === blobName) {
+      return;
+    }
+
     try {
       setError("");
       setViewingFile(blobName);
 
-      // Use the universal file viewing API method
+      // Use the fixed file viewing API method
       const result = await blobsAPI.viewBlob(
         containerName,
         folderName,
@@ -158,8 +163,7 @@ const BlobViewer = () => {
       );
 
       if (result.success) {
-        // Show success message
-        setSuccessMessage("File opened successfully");
+        setSuccessMessage("File opened in new tab");
 
         // Clear success message after 3 seconds
         setTimeout(() => {
@@ -174,12 +178,9 @@ const BlobViewer = () => {
         errorMessage = "Your session has expired. Please log in again.";
       } else if (error.message.includes("permission")) {
         errorMessage = "You don't have permission to view this file";
-      } else if (error.message.includes("cancelled")) {
+      } else if (error.message.includes("Popup was blocked")) {
         errorMessage =
-          "File opening was cancelled. Please allow popups for this site to view files in new tabs.";
-      } else if (error.message.includes("popups")) {
-        errorMessage =
-          "Please allow popups for this site to view files in new tabs.";
+          "Please allow popups in your browser to view files in new tabs";
       } else {
         errorMessage =
           error.message || "Failed to open file. Please try again.";
@@ -192,7 +193,10 @@ const BlobViewer = () => {
         setError("");
       }, 5000);
     } finally {
-      setViewingFile("");
+      // Reset viewing state after a short delay to prevent rapid clicks
+      setTimeout(() => {
+        setViewingFile("");
+      }, 1000);
     }
   };
 
