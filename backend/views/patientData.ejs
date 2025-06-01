@@ -374,8 +374,7 @@
             accessTimeElement.textContent = localTimeString;
 
             // Log timezone info for debugging
-            console.log("User timezone:", userTimezone);
-            console.log("Local access time:", localTimeString);
+           
           }
         }
 
@@ -446,7 +445,7 @@
             patientContent.classList.add("opacity-50");
           }
 
-          console.log("Emergency access session has expired");
+         
         }
 
         // Start the session timer
@@ -467,7 +466,7 @@
         // Warning at 1 minute remaining
         function showWarning() {
           // You could add a warning notification here if desired
-          console.log("Warning: Session expires in 1 minute");
+       
         }
 
         // Display local access time
@@ -489,9 +488,7 @@
         });
 
         // Enhanced browser compatibility - removed Safari specific code
-        console.log(
-          "Patient data page loaded - 5 minute session timer started with universal file access"
-        );
+       
       });
     </script>
   </body>
