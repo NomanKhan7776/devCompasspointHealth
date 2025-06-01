@@ -1,4 +1,4 @@
-// api/index.js - SECURE VERSION - NO TOKENS IN URLS
+// api/index.js - SAFARI iOS COMPATIBLE VERSION
 import axios from "axios";
 
 // Create axios instance
@@ -147,8 +147,30 @@ if (!window.fileViewerWindows) {
   window.fileViewerWindows = [];
 }
 
-// SECURE: Create a secure file viewer that opens in a new window with session validation
-const createSecureFileViewer = async (containerName, folderName, blobName) => {
+// Detect Safari browser
+const isSafari = () => {
+  const userAgent = navigator.userAgent.toLowerCase();
+  return (
+    userAgent.includes("safari") &&
+    !userAgent.includes("chrome") &&
+    !userAgent.includes("firefox")
+  );
+};
+
+// Detect iOS
+const isIOS = () => {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+};
+
+// Safari iOS Compatible File Viewer
+const createSafariCompatibleFileViewer = async (
+  containerName,
+  folderName,
+  blobName
+) => {
   return new Promise(async (resolve, reject) => {
     try {
       const token = localStorage.getItem("token");
@@ -162,115 +184,116 @@ const createSecureFileViewer = async (containerName, folderName, blobName) => {
       // First validate the session
       await authAPI.validateToken();
 
-      // Create secure URL WITHOUT token in the URL
-      const secureUrl = `${
-        import.meta.env.VITE_REACT_API_URL
-      }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
-        blobName
-      )}/view`;
+      // For Safari iOS, use a different approach
+      if (isSafari() && isIOS()) {
+        // Create a form that submits to the server with authentication
+        const form = document.createElement("form");
+        form.method = "POST";
+        form.action = `${
+          import.meta.env.VITE_REACT_API_URL
+        }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+          blobName
+        )}/view`;
+        form.target = "_blank";
+        form.style.display = "none";
 
-      // Create a new window and load content with proper authentication
-      const newWindow = window.open(
-        "about:blank",
-        "_blank",
-        "noopener,noreferrer"
-      );
+        // Add authentication token as hidden input
+        const tokenInput = document.createElement("input");
+        tokenInput.type = "hidden";
+        tokenInput.name = "auth_token";
+        tokenInput.value = token;
+        form.appendChild(tokenInput);
 
-      if (!newWindow) {
-        reject(new Error("Please allow popups for this site to view files"));
-        return;
-      }
+        // Add timestamp for security
+        const timestampInput = document.createElement("input");
+        timestampInput.type = "hidden";
+        timestampInput.name = "t";
+        timestampInput.value = Date.now().toString();
+        form.appendChild(timestampInput);
 
-      // Track the window for cleanup
-      window.fileViewerWindows.push(newWindow);
+        // Add to document and submit
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
 
-      // Clean up closed windows
-      window.fileViewerWindows = window.fileViewerWindows.filter(
-        (win) => !win.closed
-      );
+        resolve({
+          success: true,
+          method: "safari_ios_form_submit",
+          message: "File opened in new tab (Safari iOS compatible)",
+        });
+      } else {
+        // For other browsers, use the existing method but with improved popup handling
+        const timestamp = Date.now();
+        const secureUrl = `${
+          import.meta.env.VITE_REACT_API_URL
+        }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+          blobName
+        )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
 
-      // Create a form that will navigate to the secure URL
-      const formHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Loading Secure File...</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              height: 100vh;
-              margin: 0;
-              background: #f5f5f5;
-            }
-            .loading {
-              text-align: center;
-            }
-            .spinner {
-              border: 3px solid #f3f3f3;
-              border-top: 3px solid #3498db;
-              border-radius: 50%;
-              width: 30px;
-              height: 30px;
-              animation: spin 1s linear infinite;
-              margin: 0 auto 20px;
-            }
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="loading">
-            <div class="spinner"></div>
-            <p>Loading secure file viewer...</p>
-          </div>
-          <script>
-            // Navigate to the secure URL
-            window.location.href = '${secureUrl}';
-          </script>
-        </body>
-        </html>
-      `;
+        // Use window.open with immediate user interaction
+        const newWindow = window.open("", "_blank");
 
-      // Write the loading page to the new window
-      newWindow.document.write(formHtml);
-      newWindow.document.close();
+        if (newWindow) {
+          // Navigate to the secure URL
+          newWindow.location.href = secureUrl;
 
-      // Set up session validation interval for the new window
-      const sessionCheckInterval = setInterval(async () => {
-        if (newWindow.closed) {
-          clearInterval(sessionCheckInterval);
-          return;
-        }
-
-        try {
-          await authAPI.validateToken();
-        } catch (error) {
-          // Session invalid, close the window
-          if (!newWindow.closed) {
-            newWindow.close();
+          // Track the window for cleanup
+          if (!window.fileViewerWindows) {
+            window.fileViewerWindows = [];
           }
-          clearInterval(sessionCheckInterval);
-        }
-      }, 30000); // Check every 30 seconds
+          window.fileViewerWindows.push(newWindow);
 
-      resolve({ success: true, method: "secure_window_navigation" });
+          // Clean up closed windows
+          window.fileViewerWindows = window.fileViewerWindows.filter(
+            (win) => !win.closed
+          );
+
+          // Set up session validation interval
+          const sessionCheckInterval = setInterval(async () => {
+            if (newWindow.closed) {
+              clearInterval(sessionCheckInterval);
+              return;
+            }
+
+            try {
+              await authAPI.validateToken();
+            } catch (error) {
+              // Session invalid, close the window
+              if (!newWindow.closed) {
+                newWindow.close();
+              }
+              clearInterval(sessionCheckInterval);
+            }
+          }, 30000); // Check every 30 seconds
+
+          resolve({
+            success: true,
+            method: "standard_window_open",
+            windowReference: "tracked",
+            message: "File opened successfully",
+          });
+        } else {
+          // Fallback: try direct navigation
+          window.location.href = secureUrl;
+          resolve({
+            success: true,
+            method: "direct_navigation_fallback",
+            message: "File opened (popup blocked, using direct navigation)",
+          });
+        }
+      }
     } catch (error) {
       reject(error);
     }
   });
 };
 
-// Blobs API - SECURE VERSION - NO TOKENS IN URLS
+// Blobs API - SAFARI COMPATIBLE VERSION
 const blobsAPI = {
   getBlobs: (containerName, folderName) =>
     api.get(`/blobs/${containerName}/${folderName}`),
 
-  // FIXED: View file in new tab with better popup handling
+  // SAFARI iOS COMPATIBLE: View file with enhanced browser compatibility
   viewBlob: async (containerName, folderName, blobName) => {
     try {
       // First validate the current session
@@ -281,58 +304,12 @@ const blobsAPI = {
         throw new Error("No authentication token found. Please log in again.");
       }
 
-      // Create a temporary secure URL with a time-limited token
-      const timestamp = Date.now();
-      const secureUrl = `${
-        import.meta.env.VITE_REACT_API_URL
-      }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+      // Use Safari-compatible viewer
+      return await createSafariCompatibleFileViewer(
+        containerName,
+        folderName,
         blobName
-      )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
-
-      // Try to open the file in a new window
-      const newWindow = window.open(secureUrl, '_blank', 'noopener,noreferrer');
-      
-      // FIXED: Don't throw error if newWindow is null - the file might still open
-      // This handles cases where popup blocker blocks the reference but allows the window
-      
-      // Track the window for cleanup only if we got a reference
-      if (newWindow) {
-        if (!window.fileViewerWindows) {
-          window.fileViewerWindows = [];
-        }
-        window.fileViewerWindows.push(newWindow);
-
-        // Clean up closed windows
-        window.fileViewerWindows = window.fileViewerWindows.filter(
-          (win) => !win.closed
-        );
-
-        // Set up session validation interval
-        const sessionCheckInterval = setInterval(async () => {
-          if (newWindow.closed) {
-            clearInterval(sessionCheckInterval);
-            return;
-          }
-
-          try {
-            await authAPI.validateToken();
-          } catch (error) {
-            // Session invalid, close the window
-            if (!newWindow.closed) {
-              newWindow.close();
-            }
-            clearInterval(sessionCheckInterval);
-          }
-        }, 30000); // Check every 30 seconds
-      }
-
-      // Always return success - the file should open even if we can't track the window
-      return { 
-        success: true, 
-        method: "temporary_secure_url",
-        windowReference: newWindow ? "tracked" : "blocked_but_opened",
-        message: newWindow ? "File opened successfully" : "File opened (popup blocker may have blocked window tracking)"
-      };
+      );
     } catch (error) {
       console.error("Error opening file:", error);
 

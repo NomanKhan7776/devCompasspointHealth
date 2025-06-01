@@ -24,11 +24,25 @@ const BlobViewer = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [blobToDelete, setBlobToDelete] = useState(null);
 
+  // Safari iOS detection
+  const [isSafariIOS, setIsSafariIOS] = useState(false);
+
   // Determine user permissions
   const isAdmin = currentUser?.role === "admin";
   const canUpload =
     isAdmin || currentUser?.role === "doctor" || currentUser?.role === "nurse";
   const canDelete = isAdmin;
+
+  // Detect Safari iOS on component mount
+  useEffect(() => {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const safariIOS =
+      /ipad|iphone|ipod/.test(userAgent) &&
+      /safari/.test(userAgent) &&
+      !/chrome/.test(userAgent) &&
+      !/firefox/.test(userAgent);
+    setIsSafariIOS(safariIOS);
+  }, []);
 
   // Handle back navigation based on user role
   const handleBack = () => {
@@ -108,7 +122,6 @@ const BlobViewer = () => {
 
       if (err.response) {
         // The server responded with an error
-       
         errorMessage =
           err.response.data?.message || "Server rejected the file upload";
       } else if (err.request) {
@@ -145,13 +158,13 @@ const BlobViewer = () => {
     }
   };
 
-  // SIMPLE: View a blob in new tab only
+  // SAFARI iOS COMPATIBLE: View a blob with enhanced browser support
   const handleFileClick = async (blobName) => {
     try {
       setError("");
       setViewingFile(blobName);
 
-      // Use the API to view the blob
+      // Use the Safari iOS compatible API method
       const result = await blobsAPI.viewBlob(
         containerName,
         folderName,
@@ -159,8 +172,13 @@ const BlobViewer = () => {
       );
 
       if (result.success) {
-        // Show success message briefly
-        setSuccessMessage("File opened in new tab");
+        // Show success message with method used
+        const methodMessage =
+          result.method === "safari_ios_form_submit"
+            ? "File opened (Safari iOS optimized)"
+            : "File opened in new tab";
+
+        setSuccessMessage(methodMessage);
 
         // Clear success message after 3 seconds
         setTimeout(() => {
@@ -176,7 +194,6 @@ const BlobViewer = () => {
       } else if (error.message.includes("permission")) {
         errorMessage = "You don't have permission to view this file";
       } else if (error.message.includes("popups")) {
-        // REMOVED: Don't show popup blocker error since files can still open
         errorMessage =
           "File may have opened in a new tab. If not, please check your browser's popup settings.";
       } else {
@@ -221,6 +238,31 @@ const BlobViewer = () => {
         />
       )}
 
+      {/* Safari iOS Compatibility Notice */}
+      {isSafariIOS && (
+        <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded-r-lg shadow-sm">
+          <div className="flex items-center">
+            <svg
+              className="w-5 h-5 mr-2"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <div>
+              <p className="font-semibold text-sm">Safari iOS Optimized</p>
+              <p className="text-xs">
+                File viewing optimized for your Safari browser
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {canUpload && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">
@@ -240,7 +282,7 @@ const BlobViewer = () => {
               />
               <p className="mt-1 text-sm text-gray-500">
                 Maximum file size: 10MB. Files will be saved with their original
-                names and opened in new tabs for secure viewing.
+                names and opened optimally for your browser.
               </p>
             </div>
 
@@ -287,20 +329,39 @@ const BlobViewer = () => {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-800">Patient Files</h2>
           <div className="flex items-center text-sm text-gray-600 bg-blue-50 px-3 py-2 rounded-lg">
-            <svg
-              className="w-4 h-4 mr-2 text-blue-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-              />
-            </svg>
-            <span className="font-medium">Opens in New Tab</span>
+            {isSafariIOS ? (
+              <>
+                <svg
+                  className="w-4 h-4 mr-2 text-blue-600"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span className="font-medium">Safari iOS Compatible</span>
+              </>
+            ) : (
+              <>
+                <svg
+                  className="w-4 h-4 mr-2 text-blue-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                  />
+                </svg>
+                <span className="font-medium">Opens in New Tab</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -361,12 +422,19 @@ const BlobViewer = () => {
                           viewingFile === blob.name
                             ? "text-gray-400 cursor-wait"
                             : "text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
-                        }`}
+                        } ${isSafariIOS ? "touch-manipulation" : ""}`}
                         title={
                           viewingFile === blob.name
-                            ? "Opening file in new tab..."
+                            ? "Opening file..."
+                            : isSafariIOS
+                            ? "Tap to view file (Safari iOS optimized)"
                             : "Click to view file in new tab"
                         }
+                        style={{
+                          WebkitTapHighlightColor: isSafariIOS
+                            ? "rgba(0, 0, 0, 0.1)"
+                            : "initial",
+                        }}
                       >
                         <div className="flex items-center w-full">
                           {viewingFile === blob.name ? (
@@ -402,7 +470,9 @@ const BlobViewer = () => {
                             <div className="font-medium">{blob.name}</div>
                             <div className="text-xs text-gray-500">
                               {viewingFile === blob.name
-                                ? "Opening in new tab..."
+                                ? "Opening file..."
+                                : isSafariIOS
+                                ? "Tap to open (Safari optimized)"
                                 : "Click to open in new tab"}
                             </div>
                           </div>
