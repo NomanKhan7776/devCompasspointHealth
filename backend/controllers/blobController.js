@@ -176,122 +176,14 @@ exports.getBlobs = async (req, res) => {
 };
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/view
-// @route   POST api/blobs/:containerName/:folderName/:blobName/view
-// @desc    View file content directly in new tab - SAFARI iOS COMPATIBLE
+// @desc    View file content directly in new tab - UNIVERSAL BROWSER COMPATIBLE
 // @access  Private (authenticated by middleware)
 exports.viewBlob = async (req, res) => {
   try {
     const { containerName, folderName, blobName } = req.params;
 
-    // Handle both GET and POST requests for Safari iOS compatibility
+    // User is already authenticated by middleware
     const user = req.user;
-
-    // For POST requests from Safari iOS forms, get token from body
-    if (req.method === "POST" && req.body.auth_token) {
-      const jwt = require("jsonwebtoken");
-
-      try {
-        const decoded = jwt.verify(req.body.auth_token, process.env.JWT_SECRET);
-
-        // Get user from database
-        await pool.connect();
-        const result = await pool
-          .request()
-          .input("userId", decoded.user.id || decoded.user.userId)
-          .query("SELECT * FROM Users WHERE userId = @userId");
-
-        if (result.recordset.length === 0) {
-          return res.status(401).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <title>Authentication Failed</title>
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <style>
-                body { 
-                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-                  text-align: center; 
-                  padding: 20px; 
-                  background: #f5f5f5; 
-                  margin: 0;
-                }
-                .error-box { 
-                  background: white; 
-                  border-radius: 8px; 
-                  padding: 2rem; 
-                  box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-                  max-width: 400px; 
-                  margin: 0 auto; 
-                }
-              </style>
-            </head>
-            <body>
-              <div class="error-box">
-                <h1>Authentication Failed</h1>
-                <p>Your session has expired. Please log in again.</p>
-              </div>
-              <script>
-                setTimeout(() => {
-                  if (window.opener) {
-                    window.opener.focus();
-                    window.close();
-                  } else {
-                    window.history.back();
-                  }
-                }, 3000);
-              </script>
-            </body>
-            </html>
-          `);
-        }
-
-        // Override req.user for POST requests
-        req.user = result.recordset[0];
-      } catch (jwtErr) {
-        return res.status(401).send(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Invalid Token</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-              body { 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-                text-align: center; 
-                padding: 20px; 
-                background: #f5f5f5; 
-                margin: 0;
-              }
-              .error-box { 
-                background: white; 
-                border-radius: 8px; 
-                padding: 2rem; 
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-                max-width: 400px; 
-                margin: 0 auto; 
-              }
-            </style>
-          </head>
-          <body>
-            <div class="error-box">
-              <h1>Invalid Token</h1>
-              <p>Authentication token is invalid. Please try again.</p>
-            </div>
-            <script>
-              setTimeout(() => {
-                if (window.opener) {
-                  window.opener.focus();
-                  window.close();
-                } else {
-                  window.history.back();
-                }
-              }, 3000);
-            </script>
-          </body>
-          </html>
-        `);
-      }
-    }
 
     // Check user access
     const hasAccess = await checkUserAccess(
@@ -410,7 +302,7 @@ exports.viewBlob = async (req, res) => {
     const contentType = properties.contentType || "application/octet-stream";
     const downloadResponse = await blobClient.download();
 
-    // Set secure headers for viewing only - Safari iOS compatible
+    // Set secure headers for viewing only - Universal browser compatible
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", "inline");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -420,9 +312,9 @@ exports.viewBlob = async (req, res) => {
     );
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN"); // Changed from DENY for Safari compatibility
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
 
-    // More permissive CSP for Safari iOS
+    // Universal CSP for all browsers
     res.setHeader(
       "Content-Security-Policy",
       "default-src 'self' 'unsafe-inline'; img-src 'self' data:; style-src 'self' 'unsafe-inline';"

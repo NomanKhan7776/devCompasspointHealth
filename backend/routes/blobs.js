@@ -18,16 +18,10 @@ const { checkRole } = require("../middleware/role-check.js");
 // @access  Private
 router.get("/:containerName/:folderName", auth, getBlobs);
 
-// @route   GET/POST api/blobs/:containerName/:folderName/:blobName/view
-// @desc    View file content directly in new tab (no download) - SAFARI iOS COMPATIBLE
+// @route   GET api/blobs/:containerName/:folderName/:blobName/view
+// @desc    View file content directly in new tab - Universal browser compatible
 // @access  Private
-// Support both GET and POST for Safari iOS form submission compatibility
 router.get("/:containerName/:folderName/:blobName/view", auth, viewBlob);
-router.post(
-  "/:containerName/:folderName/:blobName/view",
-  express.urlencoded({ extended: true }),
-  viewBlob
-);
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/url
 // @desc    Get SAS URL for a blob (view-only)

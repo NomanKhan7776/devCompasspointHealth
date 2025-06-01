@@ -287,7 +287,7 @@ exports.verifySmartToken = async (req, res) => {
         // Log access for audit
         await logTokenAccess(id, token.containerName, token.folderName, req.ip);
 
-        // Render patient data page with view-only access - SAFARI iOS COMPATIBLE
+        // Render patient data page with view-only access - Universal browser compatible
         return res.render("patientData", {
           title: `Patient Data - ${token.patientName || token.folderName}`,
           patientName: token.patientName || token.folderName,
@@ -298,7 +298,6 @@ exports.verifySmartToken = async (req, res) => {
           accessTime: new Date().toISOString(),
           tokenId: id,
           formatFileSize: formatFileSize,
-          isSafariIOS: isUserAgentSafariIOS(req.get("User-Agent") || ""),
         });
       } else {
         return res.render("tokenStatus", {
@@ -348,16 +347,7 @@ exports.verifySmartToken = async (req, res) => {
   }
 };
 
-// Helper function to detect Safari iOS
-const isUserAgentSafariIOS = (userAgent) => {
-  const ua = userAgent.toLowerCase();
-  return (
-    /ipad|iphone|ipod/.test(ua) &&
-    /safari/.test(ua) &&
-    !/chrome/.test(ua) &&
-    !/firefox/.test(ua)
-  );
-};
+// Helper function removed as requested
 
 // Handle offline mode when VivoKey API is unavailable
 const handleOfflineMode = async (req, res, tokenId) => {
@@ -426,7 +416,6 @@ const handleOfflineMode = async (req, res, tokenId) => {
           accessTime: new Date().toISOString(),
           tokenId: tokenId,
           formatFileSize: formatFileSize,
-          isSafariIOS: isUserAgentSafariIOS(req.get("User-Agent") || ""),
         });
       } else {
         return res.render("tokenStatus", {
@@ -498,7 +487,7 @@ exports.getPatientFile = async (req, res) => {
   }
 };
 
-// NEW: Get file with view-only access (no download) for SmartToken emergency access - SAFARI iOS COMPATIBLE
+// NEW: Get file with view-only access (no download) for SmartToken emergency access - Universal browser compatible
 exports.getPatientFileViewOnly = async (req, res) => {
   try {
     const { containerName, folderName, fileName } = req.params;
@@ -562,14 +551,14 @@ exports.getPatientFileViewOnly = async (req, res) => {
     // Download blob content
     const downloadResponse = await blobClient.download();
 
-    // Set headers for viewing only (prevent download) - Safari iOS compatible
+    // Set headers for viewing only (prevent download) - Universal browser compatible
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", "inline"); // Force inline viewing
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN"); // More permissive for Safari iOS
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
 
     // For PDF files, explicitly prevent download
     if (contentType.includes("pdf")) {
@@ -740,14 +729,14 @@ exports.getPatientFileViewOnlyAuth = async (req, res) => {
     // Download blob content
     const downloadResponse = await blobClient.download();
 
-    // Set headers for viewing only (prevent download) - Safari iOS compatible
+    // Set headers for viewing only (prevent download) - Universal browser compatible
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", "inline"); // Force inline viewing
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN"); // More permissive for Safari iOS
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
 
     // For PDF files, explicitly prevent download
     if (contentType.includes("pdf")) {
