@@ -1,65 +1,148 @@
-// src/components/Layout/Sidebar.jsx
+// src/components/Layout/Sidebar.jsx - Updated with collapsible functionality
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 
-const Sidebar = ({ closeSidebar }) => {
+const Sidebar = ({ closeSidebar, isCollapsed, toggleSidebar }) => {
   const { currentUser } = useAuth();
   const location = useLocation();
 
   const isAdmin = currentUser?.role === "admin";
 
-  const NavItem = ({ to, children, icon }) => {
+  const NavItem = ({ to, children, icon, title }) => {
     const isActive =
       location.pathname === to || location.pathname.startsWith(`${to}/`);
     return (
       <Link
         to={to}
-        className={`flex items-center px-4 py-2 rounded-md transition-colors duration-200 ${
+        className={`flex items-center px-4 py-2 rounded-md transition-colors duration-200 group relative ${
           isActive
             ? "bg-blue-500 text-white"
             : "text-gray-700 hover:bg-blue-100 hover:text-blue-600"
         }`}
         onClick={closeSidebar}
+        title={isCollapsed ? title : undefined}
       >
-        {icon && <span className="mr-3">{icon}</span>}
-        {children}
+        {icon && (
+          <span className={`${isCollapsed ? "mx-auto" : "mr-3"} flex-shrink-0`}>
+            {icon}
+          </span>
+        )}
+        {!isCollapsed && (
+          <span className="whitespace-nowrap overflow-hidden">{children}</span>
+        )}
+        
+        {/* Tooltip for collapsed state */}
+        {isCollapsed && (
+          <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-sm rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 whitespace-nowrap">
+            {title}
+          </div>
+        )}
       </Link>
     );
   };
 
+  const SectionHeader = ({ children }) => {
+    if (isCollapsed) {
+      return (
+        <div className="px-4 py-2">
+          <div className="h-px bg-gray-300"></div>
+        </div>
+      );
+    }
+    return (
+      <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        {children}
+      </div>
+    );
+  };
+
   return (
-    <div className="h-full flex flex-col overflow-y-auto pt-5 pb-4 px-3">
-      <div className="flex items-center justify-between mb-6 px-1 lg:hidden">
-        <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
-        <button
-          onClick={closeSidebar}
-          className="p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-        >
-          <svg
-            className="h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
+    <div className={`h-full flex flex-col overflow-y-auto pt-5 pb-4 px-3 bg-white transition-all duration-300 ${
+      isCollapsed ? "w-16" : "w-64"
+    }`}>
+      {/* Header with toggle button */}
+      <div className={`flex items-center justify-between mb-6 px-1 ${
+        isCollapsed ? "justify-center" : ""
+      }`}>
+        {!isCollapsed && (
+          <>
+            {/* Mobile close button */}
+            <h2 className="text-xl font-bold text-gray-800 lg:hidden">Dashboard</h2>
+            <button
+              onClick={closeSidebar}
+              className="p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 lg:hidden"
+            >
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </>
+        )}
+        
+        {/* Desktop header and toggle */}
+        <div className={`hidden lg:flex items-center ${
+          isCollapsed ? "justify-center w-full" : "justify-between w-full"
+        }`}>
+          {!isCollapsed && (
+            <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
+          )}
+          
+          {/* Toggle button */}
+          <button
+            onClick={toggleSidebar}
+            className="p-2 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
+            {isCollapsed ? (
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 5l7 7-7 7M5 5l7 7-7 7"
+                />
+              </svg>
+            ) : (
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M11 19l-7-7 7-7M19 19l-7-7 7-7"
+                />
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
 
-      <div className="hidden lg:block mb-6 px-1">
-        <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
-      </div>
-
-      <ul className="space-y-2">
+      {/* Navigation Menu */}
+      <ul className="space-y-2 flex-grow">
         <li>
           <NavItem
             to="/dashboard"
+            title="Home"
             icon={
               <svg
                 className="h-5 w-5"
@@ -83,13 +166,12 @@ const Sidebar = ({ closeSidebar }) => {
         {isAdmin && (
           <>
             <li className="pt-4">
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                User Management
-              </div>
+              <SectionHeader>User Management</SectionHeader>
             </li>
             <li>
               <NavItem
                 to="/users"
+                title="Users"
                 icon={
                   <svg
                     className="h-5 w-5"
@@ -112,6 +194,7 @@ const Sidebar = ({ closeSidebar }) => {
             <li>
               <NavItem
                 to="/assignments"
+                title="Assignments"
                 icon={
                   <svg
                     className="h-5 w-5"
@@ -133,13 +216,12 @@ const Sidebar = ({ closeSidebar }) => {
             </li>
 
             <li className="pt-4">
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                System Management
-              </div>
+              <SectionHeader>System Management</SectionHeader>
             </li>
             <li>
               <NavItem
                 to="/admin/containers"
+                title="Storage Management"
                 icon={
                   <svg
                     className="h-5 w-5"
@@ -162,6 +244,7 @@ const Sidebar = ({ closeSidebar }) => {
             <li>
               <NavItem
                 to="/admin/smart-tokens"
+                title="SmartToken Management"
                 icon={
                   <svg
                     className="h-5 w-5"
@@ -183,13 +266,12 @@ const Sidebar = ({ closeSidebar }) => {
             </li>
 
             <li className="pt-4">
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Monitoring
-              </div>
+              <SectionHeader>Monitoring</SectionHeader>
             </li>
             <li>
               <NavItem
                 to="/audit-logs"
+                title="Audit Logs"
                 icon={
                   <svg
                     className="h-5 w-5"
@@ -215,13 +297,12 @@ const Sidebar = ({ closeSidebar }) => {
         {!isAdmin && (
           <>
             <li className="pt-4">
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                My Access
-              </div>
+              <SectionHeader>My Access</SectionHeader>
             </li>
             <li>
               <NavItem
                 to="/my-assignments"
+                title="My Assignments"
                 icon={
                   <svg
                     className="h-5 w-5"
@@ -246,25 +327,32 @@ const Sidebar = ({ closeSidebar }) => {
       </ul>
 
       {/* User Info at Bottom */}
-      <div className="mt-auto pt-4 border-t border-gray-200">
-        <div className="px-4 py-2">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center">
-                <span className="text-white text-sm font-medium">
-                  {currentUser?.name.charAt(0).toUpperCase()}
-                </span>
-              </div>
+      <div className={`mt-auto pt-4 border-t border-gray-200 ${
+        isCollapsed ? "px-1" : "px-4"
+      }`}>
+        <div className={`flex items-center ${isCollapsed ? "justify-center" : ""}`}>
+          <div className="flex-shrink-0">
+            <div className={`${isCollapsed ? "h-10 w-10" : "h-8 w-8"} rounded-full bg-blue-500 flex items-center justify-center`}>
+              <span className="text-white text-sm font-medium">
+                {currentUser?.name.charAt(0).toUpperCase()}
+              </span>
             </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-700">
+          </div>
+          {!isCollapsed && (
+            <div className="ml-3 min-w-0 flex-1">
+              <p className="text-sm font-medium text-gray-700 truncate">
                 {currentUser?.name}
               </p>
               <p className="text-xs text-gray-500 capitalize">
                 {currentUser?.role}
               </p>
             </div>
-          </div>
+          )}
+          {isCollapsed && (
+            <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-sm rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 whitespace-nowrap">
+              {currentUser?.name} ({currentUser?.role})
+            </div>
+          )}
         </div>
       </div>
     </div>

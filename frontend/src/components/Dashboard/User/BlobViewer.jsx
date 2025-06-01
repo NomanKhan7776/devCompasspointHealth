@@ -18,6 +18,7 @@ const BlobViewer = () => {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [file, setFile] = useState(null);
+  const [viewingFile, setViewingFile] = useState("");
 
   // Modal states
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -107,7 +108,7 @@ const BlobViewer = () => {
 
       if (err.response) {
         // The server responded with an error
-        console.log("Server error response:", err.response.data);
+       
         errorMessage =
           err.response.data?.message || "Server rejected the file upload";
       } else if (err.request) {
@@ -144,63 +145,53 @@ const BlobViewer = () => {
     }
   };
 
-  // View a blob - Cross-browser compatible, no download
+  // SIMPLE: View a blob in new tab only
   const handleFileClick = async (blobName) => {
     try {
-      // Use the new view endpoint that streams content directly
-      const viewUrl = `${
-        import.meta.env.VITE_REACT_API_URL
-      }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+      setError("");
+      setViewingFile(blobName);
+
+      // Use the API to view the blob
+      const result = await blobsAPI.viewBlob(
+        containerName,
+        folderName,
         blobName
-      )}/view`;
+      );
 
-      // Get the token for authentication
-      const token = localStorage.getItem("token");
+      if (result.success) {
+        // Show success message briefly
+        setSuccessMessage("File opened in new tab");
 
-      // For cross-browser compatibility, especially Safari on iOS
-      // Create a form and submit it to open the file in a new tab
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = viewUrl;
-      form.target = "_blank";
-      form.style.display = "none";
-
-      // Add auth token as a hidden field
-      const tokenInput = document.createElement("input");
-      tokenInput.type = "hidden";
-      tokenInput.name = "token";
-      tokenInput.value = token;
-      form.appendChild(tokenInput);
-
-      document.body.appendChild(form);
-      form.submit();
-      document.body.removeChild(form);
-    } catch (err) {
-      setError("Failed to open file");
-      console.error("File open error:", err);
-    }
-  };
-
-  // Alternative method for viewing files using window.open with auth headers
-  const handleFileClickAlternative = async (blobName) => {
-    try {
-      const token = localStorage.getItem("token");
-      const viewUrl = `${
-        import.meta.env.VITE_REACT_API_URL
-      }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
-        blobName
-      )}/view?token=${encodeURIComponent(token)}`;
-
-      // Open in new window/tab - works across all browsers including Safari iOS
-      const newWindow = window.open(viewUrl, "_blank", "noopener,noreferrer");
-
-      if (!newWindow) {
-        // Fallback if popup was blocked
-        setError("Please allow popups for this site to view files");
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          setSuccessMessage("");
+        }, 3000);
       }
-    } catch (err) {
-      setError("Failed to open file");
-      console.error("File open error:", err);
+    } catch (error) {
+      console.error("File view error:", error);
+
+      let errorMessage = "Failed to open file";
+      if (error.message.includes("session")) {
+        errorMessage = "Your session has expired. Please log in again.";
+      } else if (error.message.includes("permission")) {
+        errorMessage = "You don't have permission to view this file";
+      } else if (error.message.includes("popups")) {
+        // REMOVED: Don't show popup blocker error since files can still open
+        errorMessage =
+          "File may have opened in a new tab. If not, please check your browser's popup settings.";
+      } else {
+        errorMessage =
+          error.message || "Failed to open file. Please try again.";
+      }
+
+      setError(errorMessage);
+
+      // Clear error after 5 seconds
+      setTimeout(() => {
+        setError("");
+      }, 5000);
+    } finally {
+      setViewingFile("");
     }
   };
 
@@ -249,7 +240,7 @@ const BlobViewer = () => {
               />
               <p className="mt-1 text-sm text-gray-500">
                 Maximum file size: 10MB. Files will be saved with their original
-                names and opened for viewing only (no downloads allowed).
+                names and opened in new tabs for secure viewing.
               </p>
             </div>
 
@@ -293,15 +284,48 @@ const BlobViewer = () => {
       )}
 
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">
-          Patient Files
-          <span className="text-sm font-normal text-gray-600 ml-2">
-            (Click file names to view - No downloads allowed)
-          </span>
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-800">Patient Files</h2>
+          <div className="flex items-center text-sm text-gray-600 bg-blue-50 px-3 py-2 rounded-lg">
+            <svg
+              className="w-4 h-4 mr-2 text-blue-600"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+              />
+            </svg>
+            <span className="font-medium">Opens in New Tab</span>
+          </div>
+        </div>
 
         {blobs.length === 0 ? (
-          <p className="text-gray-600">No files found in this folder.</p>
+          <div className="text-center py-12">
+            <svg
+              className="mx-auto h-12 w-12 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1}
+                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
+            </svg>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">
+              No files found
+            </h3>
+            <p className="mt-1 text-sm text-gray-500">
+              No files found in this folder.
+            </p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -331,31 +355,57 @@ const BlobViewer = () => {
                   <tr key={blob.name} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <button
-                        onClick={() => handleFileClickAlternative(blob.name)}
-                        className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left transition-colors duration-200"
-                        title="Click to view file (view only, no download)"
+                        onClick={() => handleFileClick(blob.name)}
+                        disabled={viewingFile === blob.name}
+                        className={`text-sm font-medium text-left transition-colors duration-200 flex items-center group w-full ${
+                          viewingFile === blob.name
+                            ? "text-gray-400 cursor-wait"
+                            : "text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                        }`}
+                        title={
+                          viewingFile === blob.name
+                            ? "Opening file in new tab..."
+                            : "Click to view file in new tab"
+                        }
                       >
-                        <div className="flex items-center">
-                          <svg
-                            className="w-4 h-4 mr-2 text-gray-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                            />
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                            />
-                          </svg>
-                          {blob.name}
+                        <div className="flex items-center w-full">
+                          {viewingFile === blob.name ? (
+                            <svg
+                              className="w-4 h-4 mr-2 text-blue-500 animate-spin"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                              />
+                            </svg>
+                          ) : (
+                            <svg
+                              className="w-4 h-4 mr-2 text-blue-500 group-hover:text-blue-700"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                              />
+                            </svg>
+                          )}
+                          <div className="flex-1">
+                            <div className="font-medium">{blob.name}</div>
+                            <div className="text-xs text-gray-500">
+                              {viewingFile === blob.name
+                                ? "Opening in new tab..."
+                                : "Click to open in new tab"}
+                            </div>
+                          </div>
                         </div>
                       </button>
                     </td>
@@ -376,6 +426,7 @@ const BlobViewer = () => {
                           color="red"
                           className="text-xs py-1 px-2"
                           onClick={() => confirmDelete(blob)}
+                          disabled={viewingFile === blob.name}
                         >
                           Delete
                         </Button>
@@ -413,12 +464,41 @@ const BlobViewer = () => {
           </>
         }
       >
-        <p className="text-sm text-gray-500">
-          Are you sure you want to delete the file{" "}
-          <span className="font-bold">{blobToDelete?.name}</span>? This action
-          cannot be undone and the file will be permanently removed from
-          storage.
-        </p>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Are you sure you want to delete the file{" "}
+            <span className="font-bold">{blobToDelete?.name}</span>? This action
+            cannot be undone and the file will be permanently removed from
+            storage.
+          </p>
+
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex">
+              <svg
+                className="h-5 w-5 text-red-400 mr-3 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                />
+              </svg>
+              <div>
+                <h4 className="text-sm font-medium text-red-800">
+                  Warning: Permanent Deletion
+                </h4>
+                <p className="text-sm text-red-700 mt-1">
+                  This file will be permanently deleted from secure storage and
+                  cannot be recovered.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </Modal>
     </div>
   );

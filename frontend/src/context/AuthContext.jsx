@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { authAPI } from "../api";
+import { authAPI, enhancedLogout } from "../api";
 import { AuthContext } from "../hooks/useAuth";
 
 export const AuthProvider = ({ children }) => {
@@ -75,12 +75,36 @@ export const AuthProvider = ({ children }) => {
         console.error("Token validation failed:", err);
         localStorage.removeItem("token");
         setCurrentUser(null);
+
+        // Close any open file viewer windows
+        if (window.fileViewerWindows) {
+          window.fileViewerWindows.forEach((win) => {
+            if (!win.closed) {
+              win.close();
+            }
+          });
+          window.fileViewerWindows = [];
+        }
       } finally {
         setLoading(false);
       }
     };
 
     loadUserFromToken();
+  }, []);
+
+  // Listen for app logout events
+  useEffect(() => {
+    const handleAppLogout = () => {
+      setCurrentUser(null);
+      localStorage.removeItem("token");
+      sessionStorage.clear();
+    };
+
+    window.addEventListener("app:logout", handleAppLogout);
+    return () => {
+      window.removeEventListener("app:logout", handleAppLogout);
+    };
   }, []);
 
   const login = async (username, password) => {
@@ -92,6 +116,16 @@ export const AuthProvider = ({ children }) => {
 
       // Clear any cached data from other context providers
       sessionStorage.clear();
+
+      // Close any existing file viewer windows
+      if (window.fileViewerWindows) {
+        window.fileViewerWindows.forEach((win) => {
+          if (!win.closed) {
+            win.close();
+          }
+        });
+        window.fileViewerWindows = [];
+      }
 
       const response = await authAPI.login(username, password);
 
@@ -115,19 +149,55 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    // Clear authentication data
-    localStorage.removeItem("token");
+  const logout = async () => {
+    try {
+      // Use enhanced logout to close file windows and call API
+      await enhancedLogout();
+    } catch (error) {
+      console.error("Logout error:", error);
+    } finally {
+      // Reset state regardless of API call success
+      setCurrentUser(null);
 
-    // Clear any cached data
-    localStorage.removeItem("lastFetched");
-    sessionStorage.clear();
+      // Force clear any in-memory data states
+      window.dispatchEvent(new Event("app:logout"));
+    }
+  };
 
-    // Reset state
-    setCurrentUser(null);
+  // Enhanced logout that closes file windows from all sessions
+  const logoutAllSessions = async () => {
+    try {
+      // Close all file viewer windows
+      if (window.fileViewerWindows) {
+        window.fileViewerWindows.forEach((win) => {
+          if (!win.closed) {
+            win.close();
+          }
+        });
+        window.fileViewerWindows = [];
+      }
 
-    // Force clear any in-memory data states
-    window.dispatchEvent(new Event("app:logout"));
+      // Call logout-all API to invalidate all sessions
+      await authAPI.logoutAll();
+    } catch (error) {
+      console.error("Logout all sessions error:", error);
+    } finally {
+      // Clear authentication data
+      localStorage.removeItem("token");
+
+      // Clear any cached data
+      localStorage.removeItem("lastFetched");
+      sessionStorage.clear();
+
+      // Reset state
+      setCurrentUser(null);
+
+      // Force clear any in-memory data states
+      window.dispatchEvent(new Event("app:logout"));
+
+      // Redirect to login
+      window.location.href = "/login";
+    }
   };
 
   const isAdmin = () => {
@@ -152,6 +222,7 @@ export const AuthProvider = ({ children }) => {
     error,
     login,
     logout,
+    logoutAllSessions,
     isAdmin,
     isDoctor,
     isNurse,
