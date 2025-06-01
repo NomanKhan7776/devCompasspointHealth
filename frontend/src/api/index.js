@@ -147,26 +147,8 @@ if (!window.fileViewerWindows) {
   window.fileViewerWindows = [];
 }
 
-// Detect Safari browser
-const isSafari = () => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return (
-    userAgent.includes("safari") &&
-    !userAgent.includes("chrome") &&
-    !userAgent.includes("firefox")
-  );
-};
-
-// Detect iOS
-const isIOS = () => {
-  return (
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
-  );
-};
-
-// Safari iOS Compatible File Viewer
-const createSafariCompatibleFileViewer = async (
+// Universal File Viewer - Works on all browsers including Safari iOS
+const createUniversalFileViewer = async (
   containerName,
   folderName,
   blobName
@@ -184,103 +166,60 @@ const createSafariCompatibleFileViewer = async (
       // First validate the session
       await authAPI.validateToken();
 
-      // For Safari iOS, use a different approach
-      if (isSafari() && isIOS()) {
-        // Create a form that submits to the server with authentication
-        const form = document.createElement("form");
-        form.method = "POST";
-        form.action = `${
-          import.meta.env.VITE_REACT_API_URL
-        }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
-          blobName
-        )}/view`;
-        form.target = "_blank";
-        form.style.display = "none";
+      // Create URL with authentication
+      const timestamp = Date.now();
+      const secureUrl = `${
+        import.meta.env.VITE_REACT_API_URL
+      }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+        blobName
+      )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
 
-        // Add authentication token as hidden input
-        const tokenInput = document.createElement("input");
-        tokenInput.type = "hidden";
-        tokenInput.name = "auth_token";
-        tokenInput.value = token;
-        form.appendChild(tokenInput);
+      // Try window.open first (works for most browsers)
+      const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
 
-        // Add timestamp for security
-        const timestampInput = document.createElement("input");
-        timestampInput.type = "hidden";
-        timestampInput.name = "t";
-        timestampInput.value = Date.now().toString();
-        form.appendChild(timestampInput);
+      if (newWindow) {
+        // Track the window for cleanup
+        if (!window.fileViewerWindows) {
+          window.fileViewerWindows = [];
+        }
+        window.fileViewerWindows.push(newWindow);
 
-        // Add to document and submit
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
+        // Clean up closed windows
+        window.fileViewerWindows = window.fileViewerWindows.filter(
+          (win) => !win.closed
+        );
+
+        // Set up session validation interval
+        const sessionCheckInterval = setInterval(async () => {
+          if (newWindow.closed) {
+            clearInterval(sessionCheckInterval);
+            return;
+          }
+
+          try {
+            await authAPI.validateToken();
+          } catch (error) {
+            // Session invalid, close the window
+            if (!newWindow.closed) {
+              newWindow.close();
+            }
+            clearInterval(sessionCheckInterval);
+          }
+        }, 30000); // Check every 30 seconds
 
         resolve({
           success: true,
-          method: "safari_ios_form_submit",
-          message: "File opened in new tab (Safari iOS compatible)",
+          method: "window_open",
+          message: "File opened successfully",
         });
       } else {
-        // For other browsers, use the existing method but with improved popup handling
-        const timestamp = Date.now();
-        const secureUrl = `${
-          import.meta.env.VITE_REACT_API_URL
-        }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
-          blobName
-        )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
-
-        // Use window.open with immediate user interaction
-        const newWindow = window.open("", "_blank");
-
-        if (newWindow) {
-          // Navigate to the secure URL
-          newWindow.location.href = secureUrl;
-
-          // Track the window for cleanup
-          if (!window.fileViewerWindows) {
-            window.fileViewerWindows = [];
-          }
-          window.fileViewerWindows.push(newWindow);
-
-          // Clean up closed windows
-          window.fileViewerWindows = window.fileViewerWindows.filter(
-            (win) => !win.closed
-          );
-
-          // Set up session validation interval
-          const sessionCheckInterval = setInterval(async () => {
-            if (newWindow.closed) {
-              clearInterval(sessionCheckInterval);
-              return;
-            }
-
-            try {
-              await authAPI.validateToken();
-            } catch (error) {
-              // Session invalid, close the window
-              if (!newWindow.closed) {
-                newWindow.close();
-              }
-              clearInterval(sessionCheckInterval);
-            }
-          }, 30000); // Check every 30 seconds
-
-          resolve({
-            success: true,
-            method: "standard_window_open",
-            windowReference: "tracked",
-            message: "File opened successfully",
-          });
-        } else {
-          // Fallback: try direct navigation
-          window.location.href = secureUrl;
-          resolve({
-            success: true,
-            method: "direct_navigation_fallback",
-            message: "File opened (popup blocked, using direct navigation)",
-          });
-        }
+        // If window.open fails (Safari iOS or popup blocker), use location.href
+        window.location.href = secureUrl;
+        resolve({
+          success: true,
+          method: "location_redirect",
+          message: "File opened successfully",
+        });
       }
     } catch (error) {
       reject(error);
@@ -304,8 +243,8 @@ const blobsAPI = {
         throw new Error("No authentication token found. Please log in again.");
       }
 
-      // Use Safari-compatible viewer
-      return await createSafariCompatibleFileViewer(
+      // Use universal viewer that works on all browsers
+      return await createUniversalFileViewer(
         containerName,
         folderName,
         blobName
