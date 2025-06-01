@@ -150,16 +150,23 @@
             </p>
           </div>
           <% } else { %>
-          <!-- Files Grid -->
-          <div class="grid gap-4">
+          <!-- Files List -->
+          <div class="space-y-3">
             <% files.forEach(function(file, index) { %>
             <div
-              class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all duration-200"
+              class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200"
             >
-              <div class="flex items-center justify-between">
-                <div class="flex items-center flex-1">
+              <!-- File Card Content -->
+              <button
+                class="file-link w-full text-left"
+                data-container="<%= containerName %>"
+                data-folder="<%= folderName %>"
+                data-filename="<%= encodeURIComponent(file.name) %>"
+                title="Tap to open file"
+              >
+                <div class="flex items-start space-x-4">
                   <!-- File Icon -->
-                  <div class="flex-shrink-0 mr-4">
+                  <div class="flex-shrink-0">
                     <% let fileIcon = 'fa-file text-gray-500'; let iconBg =
                     'bg-gray-100'; if (file.contentType) { if
                     (file.contentType.includes('image')) { fileIcon =
@@ -169,70 +176,76 @@
                     (file.contentType.includes('word')) { fileIcon =
                     'fa-file-word text-blue-600'; iconBg = 'bg-blue-100'; } else
                     if (file.contentType.includes('excel')) { fileIcon =
-                    'fa-file-excel text-green-700'; iconBg = 'bg-green-100'; } }
-                    %>
-                    <div class="<%= iconBg %> rounded-lg p-3">
-                      <i class="fas <%= fileIcon %> text-xl"></i>
+                    'fa-file-excel text-green-700'; iconBg = 'bg-green-100'; }
+                    else if (file.contentType.includes('text')) { fileIcon =
+                    'fa-file-alt text-gray-600'; iconBg = 'bg-gray-100'; } } %>
+                    <div
+                      class="<%= iconBg %> rounded-lg p-3 w-12 h-12 flex items-center justify-center"
+                    >
+                      <i class="fas <%= fileIcon %> text-lg"></i>
                     </div>
                   </div>
 
-                  <!-- File Info -->
+                  <!-- File Details -->
                   <div class="flex-1 min-w-0">
-                    <button
-                      class="file-link text-left w-full hover:bg-blue-50 p-2 rounded-lg transition-colors duration-200"
-                      data-container="<%= containerName %>"
-                      data-folder="<%= folderName %>"
-                      data-filename="<%= encodeURIComponent(file.name) %>"
-                      title="Tap to open file"
+                    <!-- File Name -->
+                    <h3
+                      class="text-lg font-semibold text-blue-600 hover:text-blue-800 mb-2 break-words"
                     >
-                      <h4
-                        class="text-lg font-medium text-blue-600 hover:text-blue-800 truncate mb-1 underline"
-                      >
-                        <%= file.name %>
-                      </h4>
-                      <div
-                        class="flex flex-wrap items-center gap-3 text-sm text-gray-500"
-                      >
-                        <span>
-                          <i class="fas fa-calendar mr-1"></i>
-                          <%= new Date(file.lastModified).toLocaleDateString()
-                          %>
-                        </span>
-                        <span>
-                          <i class="fas fa-weight-hanging mr-1"></i>
-                          <% function formatFileSize(bytes) { if (bytes === 0)
-                          return "0 Bytes"; const k = 1024; const sizes =
-                          ["Bytes", "KB", "MB", "GB"]; const i =
-                          Math.floor(Math.log(bytes) / Math.log(k)); return
-                          parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " "
-                          + sizes[i]; } %> <%=
-                          formatFileSize(file.contentLength) %>
-                        </span>
-                        <span
-                          class="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs"
-                        >
-                          <%= file.contentType || 'Unknown' %>
-                        </span>
-                      </div>
-                      <p class="text-xs text-blue-500 mt-1">
-                        <i class="fas fa-hand-pointer mr-1"></i>
-                        Tap to open file
-                      </p>
-                    </button>
-                  </div>
-                </div>
+                      <%= file.name %>
+                    </h3>
 
-                <!-- File Type Badge -->
-                <div class="flex-shrink-0 ml-4">
-                  <div
-                    class="bg-gray-100 text-gray-600 px-3 py-2 rounded-lg text-sm font-medium"
-                  >
-                    <i class="fas fa-eye mr-1"></i>
-                    <span class="hidden sm:inline">View Only</span>
-                    <span class="sm:hidden">View</span>
+                    <!-- File Metadata -->
+                    <div class="space-y-2">
+                      <!-- Date and Size Row -->
+                      <div
+                        class="flex flex-wrap items-center gap-4 text-sm text-gray-600"
+                      >
+                        <div class="flex items-center">
+                          <i class="fas fa-calendar-alt mr-2 text-gray-400"></i>
+                          <span
+                            ><%= new
+                            Date(file.lastModified).toLocaleDateString()
+                            %></span
+                          >
+                        </div>
+                        <div class="flex items-center">
+                          <i class="fas fa-file-alt mr-2 text-gray-400"></i>
+                          <span>
+                            <% function formatFileSize(bytes) { if (bytes === 0)
+                            return "0 Bytes"; const k = 1024; const sizes =
+                            ["Bytes", "KB", "MB", "GB"]; const i =
+                            Math.floor(Math.log(bytes) / Math.log(k)); return
+                            parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + "
+                            " + sizes[i]; } %> <%=
+                            formatFileSize(file.contentLength) %>
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- File Type and Action Row -->
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                          <span
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                          >
+                            <i class="fas fa-tag mr-1"></i>
+                            <%= file.contentType ?
+                            file.contentType.split('/')[1].toUpperCase() :
+                            'UNKNOWN' %>
+                          </span>
+                        </div>
+                        <div
+                          class="flex items-center text-blue-500 text-sm font-medium"
+                        >
+                          <i class="fas fa-hand-pointer mr-1"></i>
+                          <span>Tap to open</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </button>
             </div>
             <% }); %>
           </div>
