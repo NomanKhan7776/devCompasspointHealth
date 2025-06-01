@@ -18,7 +18,6 @@ const BlobViewer = () => {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [file, setFile] = useState(null);
-  const [viewingFile, setViewingFile] = useState("");
 
   // Modal states
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -144,18 +143,12 @@ const BlobViewer = () => {
     }
   };
 
-  // Universal file viewer that works across all browsers without showing popup messages
+  // SIMPLEST file viewer approach
   const handleFileClick = async (blobName) => {
-    // Prevent multiple clicks while processing
-    if (viewingFile === blobName) {
-      return;
-    }
-
     try {
       setError("");
-      setViewingFile(blobName);
 
-      // Use the universal file viewing API method
+      // Use the simple direct file opening
       const result = await blobsAPI.viewBlob(
         containerName,
         folderName,
@@ -163,37 +156,31 @@ const BlobViewer = () => {
       );
 
       if (result.success) {
-        setSuccessMessage("File opened successfully");
-
-        // Clear success message after 3 seconds
-        setTimeout(() => {
-          setSuccessMessage("");
-        }, 3000);
+        setSuccessMessage("File opened in new tab");
+        setTimeout(() => setSuccessMessage(""), 3000);
       }
     } catch (error) {
       console.error("File view error:", error);
 
       let errorMessage = "Failed to open file";
-      if (error.message.includes("session")) {
+
+      if (
+        error.message.includes("session") ||
+        error.message.includes("expired")
+      ) {
         errorMessage = "Your session has expired. Please log in again.";
       } else if (error.message.includes("permission")) {
         errorMessage = "You don't have permission to view this file";
+      } else if (error.message.includes("Popup blocked")) {
+        errorMessage =
+          "Popup blocked by browser. Please allow popups for this site and try again.";
       } else {
         errorMessage =
           error.message || "Failed to open file. Please try again.";
       }
 
       setError(errorMessage);
-
-      // Clear error after 5 seconds
-      setTimeout(() => {
-        setError("");
-      }, 5000);
-    } finally {
-      // Reset viewing state after a short delay to prevent rapid clicks
-      setTimeout(() => {
-        setViewingFile("");
-      }, 1000);
+      setTimeout(() => setError(""), 7000);
     }
   };
 
@@ -302,7 +289,7 @@ const BlobViewer = () => {
                 d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
               />
             </svg>
-            <span className="font-medium">Opens in New Tab</span>
+            <span className="font-medium">Click to Open in New Tab</span>
           </div>
         </div>
 
@@ -358,54 +345,27 @@ const BlobViewer = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <button
                         onClick={() => handleFileClick(blob.name)}
-                        disabled={viewingFile === blob.name}
-                        className={`text-sm font-medium text-left transition-colors duration-200 flex items-center group w-full ${
-                          viewingFile === blob.name
-                            ? "text-gray-400 cursor-wait"
-                            : "text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
-                        }`}
-                        title={
-                          viewingFile === blob.name
-                            ? "Opening file..."
-                            : "Click to view file in new tab"
-                        }
+                        className="text-sm font-medium text-left transition-colors duration-200 flex items-center group w-full text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                        title="Click to open file in new tab"
                       >
                         <div className="flex items-center w-full">
-                          {viewingFile === blob.name ? (
-                            <svg
-                              className="w-4 h-4 mr-2 text-blue-500 animate-spin"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                              />
-                            </svg>
-                          ) : (
-                            <svg
-                              className="w-4 h-4 mr-2 text-blue-500 group-hover:text-blue-700"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                              />
-                            </svg>
-                          )}
+                          <svg
+                            className="w-4 h-4 mr-2 text-blue-500 group-hover:text-blue-700"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                            />
+                          </svg>
                           <div className="flex-1">
                             <div className="font-medium">{blob.name}</div>
                             <div className="text-xs text-gray-500">
-                              {viewingFile === blob.name
-                                ? "Opening file..."
-                                : "Click to open in new tab"}
+                              Click to open in new tab
                             </div>
                           </div>
                         </div>
@@ -428,7 +388,6 @@ const BlobViewer = () => {
                           color="red"
                           className="text-xs py-1 px-2"
                           onClick={() => confirmDelete(blob)}
-                          disabled={viewingFile === blob.name}
                         >
                           Delete
                         </Button>

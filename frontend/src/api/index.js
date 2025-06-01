@@ -1,4 +1,4 @@
-// api/index.js - UNIVERSAL BROWSER COMPATIBLE VERSION
+// api/index.js - SIMPLEST APPROACH THAT WORKS
 import axios from "axios";
 
 // Create axios instance
@@ -23,20 +23,15 @@ api.interceptors.request.use(
   }
 );
 
-// Add response interceptor to handle auth errors and session validation
+// Add response interceptor to handle auth errors
 api.interceptors.response.use(
   (response) => {
     return response;
   },
   (error) => {
-    // Handle authentication errors
     if (error.response && error.response.status === 401) {
-      // Only redirect if not already on the login page
       if (!window.location.pathname.includes("/login")) {
-        // Clear auth data
         localStorage.removeItem("token");
-
-        // Close any open file viewer windows
         if (window.fileViewerWindows) {
           window.fileViewerWindows.forEach((win) => {
             if (!win.closed) {
@@ -45,8 +40,6 @@ api.interceptors.response.use(
           });
           window.fileViewerWindows = [];
         }
-
-        // Force page refresh to reset the application state
         window.location.href = "/login?session=expired";
       }
     }
@@ -54,9 +47,9 @@ api.interceptors.response.use(
   }
 );
 
-// Create separate axios instance for SmartToken APIs (different base path)
+// Create separate axios instance for SmartToken APIs
 const smartTokenAxios = axios.create({
-  baseURL: import.meta.env.VITE_REACT_API_URL, // Direct to backend without /api
+  baseURL: import.meta.env.VITE_REACT_API_URL,
   headers: {
     "Content-Type": "application/json",
   },
@@ -82,12 +75,9 @@ smartTokenAxios.interceptors.response.use(
     return response;
   },
   (error) => {
-    // Handle authentication errors
     if (error.response && error.response.status === 401) {
       if (!window.location.pathname.includes("/login")) {
         localStorage.removeItem("token");
-
-        // Close any open file viewer windows
         if (window.fileViewerWindows) {
           window.fileViewerWindows.forEach((win) => {
             if (!win.closed) {
@@ -96,7 +86,6 @@ smartTokenAxios.interceptors.response.use(
           });
           window.fileViewerWindows = [];
         }
-
         window.location.href = "/login?session=expired";
       }
     }
@@ -147,189 +136,73 @@ if (!window.fileViewerWindows) {
   window.fileViewerWindows = [];
 }
 
-// Detect browser and device type
-const getBrowserInfo = () => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  const isMobile = /mobile|android|iphone|ipad|phone/i.test(userAgent);
-  const isIOS = /iphone|ipad|ipod/i.test(userAgent);
-  const isSafari =
-    /safari/i.test(userAgent) &&
-    !/chrome|chromium|crios|fxios/i.test(userAgent);
-  const isChrome = /chrome|chromium|crios/i.test(userAgent);
-  const isFirefox = /firefox|fxios/i.test(userAgent);
-  const isEdge = /edge|edgios/i.test(userAgent);
+// SIMPLEST APPROACH: Just open the URL directly
+const openFileInNewTab = (containerName, folderName, blobName) => {
+  const token = localStorage.getItem("token");
+  if (!token) {
+    throw new Error("No authentication token found. Please log in again.");
+  }
+
+  // Build URL with token
+  const timestamp = Date.now();
+  const fileUrl = `${
+    import.meta.env.VITE_REACT_API_URL
+  }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
+    blobName
+  )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
+
+  // Just open it directly - this should work
+  const newWindow = window.open(fileUrl, "_blank");
+
+  if (!newWindow) {
+    throw new Error("Popup blocked. Please allow popups for this site.");
+  }
+
+  // Track window
+  if (!window.fileViewerWindows) {
+    window.fileViewerWindows = [];
+  }
+  window.fileViewerWindows.push(newWindow);
 
   return {
-    isMobile,
-    isIOS,
-    isSafari,
-    isChrome,
-    isFirefox,
-    isEdge,
+    success: true,
+    method: "direct",
+    message: "File opened in new tab",
   };
 };
 
-// Universal file viewer that works across all browsers and devices
-const createUniversalFileViewer = async (
-  containerName,
-  folderName,
-  blobName
-) => {
-  try {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      throw new Error("No authentication token found. Please log in again.");
-    }
-
-    // First validate the session
-    await authAPI.validateToken();
-
-    // Create URL with authentication
-    const timestamp = Date.now();
-    const secureUrl = `${
-      import.meta.env.VITE_REACT_API_URL
-    }/api/blobs/${containerName}/${folderName}/${encodeURIComponent(
-      blobName
-    )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
-
-    const browserInfo = getBrowserInfo();
-
-    // For Safari on iOS, use direct navigation
-    if (browserInfo.isIOS && browserInfo.isSafari) {
-      window.location.href = secureUrl;
-
-      return {
-        success: true,
-        method: "safari_ios_navigate",
-        message: "File opened successfully",
-      };
-    }
-
-    // For Chrome and other desktop browsers
-    if (!browserInfo.isMobile) {
-      const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
-
-      // Improved popup detection - wait a moment to check if window actually opened
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          if (newWindow && !newWindow.closed && newWindow.location !== null) {
-            // Window opened successfully - track it for cleanup
-            if (!window.fileViewerWindows) {
-              window.fileViewerWindows = [];
-            }
-            window.fileViewerWindows.push(newWindow);
-
-            // Clean up closed windows
-            window.fileViewerWindows = window.fileViewerWindows.filter(
-              (win) => !win.closed
-            );
-
-            // Set up session validation interval
-            const sessionCheckInterval = setInterval(async () => {
-              if (newWindow.closed) {
-                clearInterval(sessionCheckInterval);
-                return;
-              }
-
-              try {
-                await authAPI.validateToken();
-              } catch (error) {
-                // Session invalid, close the window
-                if (!newWindow.closed) {
-                  newWindow.close();
-                }
-                clearInterval(sessionCheckInterval);
-              }
-            }, 30000); // Check every 30 seconds
-
-            resolve({
-              success: true,
-              method: "window_open",
-              message: "File opened in new tab",
-            });
-          } else {
-            // Popup was blocked, use fallback
-            if (newWindow) {
-              try {
-                newWindow.close();
-              } catch (e) {
-                // Ignore errors
-              }
-            }
-
-            window.location.href = secureUrl;
-            resolve({
-              success: true,
-              method: "location_navigate",
-              message: "File opened successfully",
-            });
-          }
-        }, 100); // Short delay to check popup status
-      });
-    }
-
-    // For other mobile browsers (not Safari iOS)
-    if (browserInfo.isMobile) {
-      const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
-
-      // For mobile, if window.open returns null or undefined, use fallback
-      if (!newWindow || newWindow === null) {
-        window.location.href = secureUrl;
-        return {
-          success: true,
-          method: "mobile_navigate",
-          message: "File opened successfully",
-        };
-      }
-
-      return {
-        success: true,
-        method: "mobile_popup",
-        message: "File opened successfully",
-      };
-    }
-
-    // Default fallback
-    window.location.href = secureUrl;
-    return {
-      success: true,
-      method: "default_navigate",
-      message: "File opened successfully",
-    };
-  } catch (error) {
-    throw error;
-  }
-};
-
-// Blobs API - UNIVERSAL BROWSER COMPATIBLE VERSION
+// Blobs API - SIMPLEST VERSION
 const blobsAPI = {
   getBlobs: (containerName, folderName) =>
     api.get(`/blobs/${containerName}/${folderName}`),
 
-  // Universal file viewer that works on all browsers without showing popup messages
+  // SIMPLEST file viewer - just open the URL
   viewBlob: async (containerName, folderName, blobName) => {
     try {
-      return await createUniversalFileViewer(
-        containerName,
-        folderName,
-        blobName
-      );
+      // Quick token validation (optional)
+      await authAPI.validateToken();
+
+      // Open file directly
+      return openFileInNewTab(containerName, folderName, blobName);
     } catch (error) {
       console.error("Error opening file:", error);
 
-      if (error.message.includes("Authentication")) {
+      if (error.response && error.response.status === 401) {
         throw new Error("Your session has expired. Please log in again.");
-      } else if (error.message.includes("Access denied")) {
+      } else if (error.response && error.response.status === 403) {
         throw new Error("You don't have permission to view this file.");
+      } else if (error.message.includes("Popup blocked")) {
+        throw new Error(
+          "Popup blocked. Please allow popups for this site and try again."
+        );
       } else {
         throw new Error(
-          "Failed to open file. Please try again or contact support."
+          error.message || "Failed to open file. Please try again."
         );
       }
     }
   },
 
-  // Rest of the API functions remain the same...
   getBlobUrl: (containerName, folderName, blobName) =>
     api.get(`/blobs/${containerName}/${folderName}/${blobName}/url`),
   uploadBlob: (containerName, folderName, formData) => {
@@ -345,16 +218,12 @@ const blobsAPI = {
   getAuditLogs: (params) => api.get("/blobs/audit", { params }),
 };
 
-// SmartToken API - Complete version with remote disconnect functionality
+// SmartToken API
 const smartTokenAPI = {
-  // Token Management
   getUnclaimedTokens: () => smartTokenAxios.get("/patients/admin/unclaimed"),
   getAllAssignedTokens: () => smartTokenAxios.get("/patients/admin/assigned"),
-
-  // Token Assignment
   assignTokenToPatient: (tokenData) => {
     const { tokenId, containerName, folderName, patientName } = tokenData;
-
     return smartTokenAxios.post("/patients/admin/assign", {
       tokenId,
       containerName,
@@ -362,15 +231,12 @@ const smartTokenAPI = {
       patientName: patientName || "Unknown Patient",
     });
   },
-
-  // Remote Disconnect Functions
   revokeToken: (tokenId, reason) => {
     return smartTokenAxios.post("/patients/admin/revoke", {
       tokenId: tokenId,
       reason: reason,
     });
   },
-
   reactivateToken: (tokenId) => {
     return smartTokenAxios.post("/patients/admin/reactivate", {
       tokenId: tokenId,
@@ -380,15 +246,12 @@ const smartTokenAPI = {
 
 // Utility functions for SmartToken API
 const smartTokenUtils = {
-  // Format token ID for display
   formatTokenId: (tokenId) => {
     if (!tokenId || tokenId.length < 16) return tokenId;
     return `${tokenId.substring(0, 8)}...${tokenId.substring(
       tokenId.length - 8
     )}`;
   },
-
-  // Get status color for UI
   getStatusColor: (status) => {
     switch (status) {
       case "assigned":
@@ -401,8 +264,6 @@ const smartTokenUtils = {
         return "gray";
     }
   },
-
-  // Get status display text
   getStatusText: (status) => {
     switch (status) {
       case "assigned":
@@ -415,8 +276,6 @@ const smartTokenUtils = {
         return "Unknown";
     }
   },
-
-  // Format dates consistently
   formatDate: (dateString) => {
     try {
       return new Date(dateString).toLocaleString(undefined, {
@@ -433,8 +292,6 @@ const smartTokenUtils = {
       return "Invalid Date";
     }
   },
-
-  // Error handler for API calls
   handleApiError: (error, defaultMessage = "An error occurred") => {
     if (error.response && error.response.data && error.response.data.message) {
       return error.response.data.message;
@@ -446,10 +303,9 @@ const smartTokenUtils = {
   },
 };
 
-// Enhanced logout function to close all file viewer windows
+// Enhanced logout function
 const enhancedLogout = async () => {
   try {
-    // Close all file viewer windows
     if (window.fileViewerWindows) {
       window.fileViewerWindows.forEach((win) => {
         if (!win.closed) {
@@ -458,16 +314,11 @@ const enhancedLogout = async () => {
       });
       window.fileViewerWindows = [];
     }
-
-    // Call logout API to invalidate session
     await authAPI.logout();
   } catch (error) {
     console.error("Logout error:", error);
   } finally {
-    // Clear local storage regardless of API call success
     localStorage.removeItem("token");
-
-    // Redirect to login
     window.location.href = "/login";
   }
 };
@@ -475,7 +326,6 @@ const enhancedLogout = async () => {
 // Listen for logout events from other tabs
 window.addEventListener("storage", (e) => {
   if (e.key === "token" && e.newValue === null) {
-    // Token was removed in another tab, close file windows and redirect
     if (window.fileViewerWindows) {
       window.fileViewerWindows.forEach((win) => {
         if (!win.closed) {
