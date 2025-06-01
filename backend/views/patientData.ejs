@@ -178,47 +178,59 @@
 
                   <!-- File Info -->
                   <div class="flex-1 min-w-0">
-                    <h4 class="text-lg font-medium text-gray-900 truncate mb-1">
-                      <%= file.name %>
-                    </h4>
-                    <div
-                      class="flex flex-wrap items-center gap-3 text-sm text-gray-500"
+                    <button
+                      class="file-link text-left w-full hover:bg-blue-50 p-2 rounded-lg transition-colors duration-200"
+                      data-container="<%= containerName %>"
+                      data-folder="<%= folderName %>"
+                      data-filename="<%= encodeURIComponent(file.name) %>"
+                      title="Tap to open file"
                     >
-                      <span>
-                        <i class="fas fa-calendar mr-1"></i>
-                        <%= new Date(file.lastModified).toLocaleDateString() %>
-                      </span>
-                      <span>
-                        <i class="fas fa-weight-hanging mr-1"></i>
-                        <% function formatFileSize(bytes) { if (bytes === 0)
-                        return "0 Bytes"; const k = 1024; const sizes =
-                        ["Bytes", "KB", "MB", "GB"]; const i =
-                        Math.floor(Math.log(bytes) / Math.log(k)); return
-                        parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " +
-                        sizes[i]; } %> <%= formatFileSize(file.contentLength) %>
-                      </span>
-                      <span
-                        class="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs"
+                      <h4
+                        class="text-lg font-medium text-blue-600 hover:text-blue-800 truncate mb-1 underline"
                       >
-                        <%= file.contentType || 'Unknown' %>
-                      </span>
-                    </div>
+                        <%= file.name %>
+                      </h4>
+                      <div
+                        class="flex flex-wrap items-center gap-3 text-sm text-gray-500"
+                      >
+                        <span>
+                          <i class="fas fa-calendar mr-1"></i>
+                          <%= new Date(file.lastModified).toLocaleDateString()
+                          %>
+                        </span>
+                        <span>
+                          <i class="fas fa-weight-hanging mr-1"></i>
+                          <% function formatFileSize(bytes) { if (bytes === 0)
+                          return "0 Bytes"; const k = 1024; const sizes =
+                          ["Bytes", "KB", "MB", "GB"]; const i =
+                          Math.floor(Math.log(bytes) / Math.log(k)); return
+                          parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " "
+                          + sizes[i]; } %> <%=
+                          formatFileSize(file.contentLength) %>
+                        </span>
+                        <span
+                          class="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs"
+                        >
+                          <%= file.contentType || 'Unknown' %>
+                        </span>
+                      </div>
+                      <p class="text-xs text-blue-500 mt-1">
+                        <i class="fas fa-hand-pointer mr-1"></i>
+                        Tap to open file
+                      </p>
+                    </button>
                   </div>
                 </div>
 
-                <!-- View Button -->
+                <!-- File Type Badge -->
                 <div class="flex-shrink-0 ml-4">
-                  <button
-                    class="file-link bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center shadow-lg hover:shadow-xl"
-                    data-container="<%= containerName %>"
-                    data-folder="<%= folderName %>"
-                    data-filename="<%= encodeURIComponent(file.name) %>"
-                    title="Tap to view file"
+                  <div
+                    class="bg-gray-100 text-gray-600 px-3 py-2 rounded-lg text-sm font-medium"
                   >
-                    <i class="fas fa-eye mr-2"></i>
-                    <span class="hidden sm:inline">View File</span>
+                    <i class="fas fa-eye mr-1"></i>
+                    <span class="hidden sm:inline">View Only</span>
                     <span class="sm:hidden">View</span>
-                  </button>
+                  </div>
                 </div>
               </div>
             </div>
