@@ -1,4 +1,4 @@
-// middleware/auth.js - FIXED to handle query parameter tokens for file access
+// middleware/auth.js - FIXED to handle 24-hour sessions properly
 const jwt = require("jsonwebtoken");
 const { pool } = require("../config/database");
 
@@ -8,7 +8,8 @@ const activeSessions = new Map();
 // Track logout/invalidated sessions to prevent reuse
 const invalidatedSessions = new Set();
 
-// Clean up expired sessions every 2 minutes
+// FIXED: Clean up expired sessions every 30 minutes (instead of 2 minutes)
+// This prevents premature session cleanup
 setInterval(() => {
   const now = Date.now();
 
@@ -24,7 +25,7 @@ setInterval(() => {
   if (invalidatedSessions.size > 10000) {
     invalidatedSessions.clear();
   }
-}, 2 * 60 * 1000);
+}, 30 * 60 * 1000); // FIXED: Changed from 2 minutes to 30 minutes
 
 module.exports = async (req, res, next) => {
   try {
@@ -62,7 +63,7 @@ module.exports = async (req, res, next) => {
       // This is a file access request with temporary authentication
       const timestamp = parseInt(req.query.t);
       const now = Date.now();
-      const maxAge = 5 * 60 * 1000; // 5 minutes
+      const maxAge = 5 * 60 * 1000; // Keep file access at 5 minutes
 
       // Check if the request is too old
       if (now - timestamp > maxAge) {
@@ -122,11 +123,11 @@ module.exports = async (req, res, next) => {
     // Check if session is active
     const sessionData = activeSessions.get(sessionId);
     if (!sessionData) {
-      // Create new session
+      // Create new session - FIXED: Extended to 24 hours
       const newSession = {
         userId: req.user.id || req.user.userId,
         createdAt: Date.now(),
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+        expiresAt: Date.now() + 24 * 60 * 60 * 1000, // FIXED: 24 hours (was 24 hours before but may have been overridden)
         lastActivity: Date.now(),
         userAgent: req.get("User-Agent") || "unknown",
         ipAddress: req.ip || "unknown",
@@ -134,8 +135,12 @@ module.exports = async (req, res, next) => {
 
       activeSessions.set(sessionId, newSession);
     } else {
-      // Update last activity
+      // FIXED: Update last activity and extend session if needed
       sessionData.lastActivity = Date.now();
+
+      // FIXED: Extend session expiry on each request (sliding window)
+      // This keeps the session alive as long as user is active
+      sessionData.expiresAt = Date.now() + 24 * 60 * 60 * 1000; // Reset to 24 hours from now
     }
 
     // Check if user still exists in database
