@@ -1,4 +1,4 @@
-<!-- views/patientData.ejs - Fixed version with correct view URLs -->
+<!-- views/patientData.ejs - SAFARI iOS COMPATIBLE VERSION -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -66,6 +66,23 @@
       </div>
       <% } %>
 
+      <!-- Safari iOS Compatibility Notice -->
+      <% if (typeof isSafariIOS !== 'undefined' && isSafariIOS) { %>
+      <div
+        class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded-r-lg shadow-sm"
+      >
+        <div class="flex items-center">
+          <i class="fab fa-safari text-blue-500 text-xl mr-3"></i>
+          <div>
+            <p class="font-semibold">Safari iOS Optimized</p>
+            <p class="text-sm">
+              Files optimized for viewing on Safari for iOS devices
+            </p>
+          </div>
+        </div>
+      </div>
+      <% } %>
+
       <!-- Patient Header -->
       <div class="bg-white rounded-lg shadow-md p-6 mb-6">
         <div class="flex items-center justify-between">
@@ -112,7 +129,7 @@
             </span>
             <% } %>
             <span class="ml-3 text-sm font-normal text-gray-600">
-              (Click to view - No downloads)
+              (Tap to view - Safari iOS compatible)
             </span>
           </h2>
         </div>
@@ -171,18 +188,23 @@
                       'fa-file-excel text-green-600'; } } %>
                       <i class="fas <%= fileIcon %> mr-3 text-lg"></i>
                       <div class="flex-1">
-                        <!-- Make file name clickable for view-only access -->
+                        <!-- Safari iOS Compatible File Link -->
                         <button
                           onclick="viewFile('<%= containerName %>', '<%= folderName %>', '<%= encodeURIComponent(file.name) %>')"
-                          class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left transition-colors duration-200 file-link"
-                          title="Click to view file (view only, no download)"
+                          class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left transition-colors duration-200 file-link w-full"
+                          title="Tap to view file (view only, no download)"
                         >
                           <div class="flex items-center">
                             <i class="fas fa-eye mr-2 text-gray-400"></i>
-                            <%= file.name %>
+                            <div class="flex-1">
+                              <div class="font-medium"><%= file.name %></div>
+                              <div class="text-xs text-gray-500">
+                                Tap to open in new tab
+                              </div>
+                            </div>
                           </div>
                         </button>
-                        <p class="text-xs text-gray-500">
+                        <p class="text-xs text-gray-500 mt-1">
                           <%= file.fullPath %>
                         </p>
                       </div>
@@ -270,7 +292,18 @@
     </div>
 
     <script>
-      // Function to view files with cross-browser compatibility - EMERGENCY ACCESS
+      // Browser detection for Safari iOS
+      const isSafariIOS = () => {
+        const ua = navigator.userAgent.toLowerCase();
+        return (
+          /ipad|iphone|ipod/.test(ua) &&
+          /safari/.test(ua) &&
+          !/chrome/.test(ua) &&
+          !/firefox/.test(ua)
+        );
+      };
+
+      // Safari iOS Compatible File Viewer Function
       function viewFile(containerName, folderName, fileName) {
         if (window.isExpired) {
           alert("Session has expired. Please scan the SmartToken again.");
@@ -281,21 +314,93 @@
           // Use the emergency view-only endpoint (no authentication needed)
           const viewUrl = `/patients/file/${containerName}/${folderName}/${fileName}/view`;
 
-          // Open in new window/tab - works on all browsers including Safari iOS
-          const newWindow = window.open(
-            viewUrl,
-            "_blank",
-            "noopener,noreferrer"
-          );
+          // Safari iOS Compatible approach
+          if (isSafariIOS()) {
+            // For Safari iOS, create a form and submit it
+            const form = document.createElement("form");
+            form.method = "GET";
+            form.action = viewUrl;
+            form.target = "_blank";
+            form.style.display = "none";
 
-          if (!newWindow) {
-            // Fallback if popup was blocked
-            alert("Please allow popups for this site to view medical files");
+            // Add form to document temporarily
+            document.body.appendChild(form);
+
+            // Submit form immediately
+            form.submit();
+
+            // Clean up
+            setTimeout(() => {
+              document.body.removeChild(form);
+            }, 100);
+
+            // Show user feedback
+            showFileOpenFeedback(fileName);
+          } else {
+            // For other browsers, use standard window.open
+            const newWindow = window.open(
+              viewUrl,
+              "_blank",
+              "noopener,noreferrer"
+            );
+
+            if (!newWindow) {
+              // Fallback for popup blockers
+              showPopupBlockedMessage();
+            } else {
+              showFileOpenFeedback(fileName);
+            }
           }
         } catch (error) {
           console.error("Error opening file:", error);
           alert("Error opening file. Please try again.");
         }
+      }
+
+      // Show user feedback when file is being opened
+      function showFileOpenFeedback(fileName) {
+        // Create a temporary notification
+        const notification = document.createElement("div");
+        notification.className =
+          "fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50";
+        notification.innerHTML = `
+          <div class="flex items-center">
+            <i class="fas fa-external-link-alt mr-2"></i>
+            <span>Opening ${fileName.substring(0, 20)}${
+          fileName.length > 20 ? "..." : ""
+        }</span>
+          </div>
+        `;
+
+        document.body.appendChild(notification);
+
+        // Remove notification after 3 seconds
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 3000);
+      }
+
+      // Show popup blocked message
+      function showPopupBlockedMessage() {
+        const notification = document.createElement("div");
+        notification.className =
+          "fixed top-4 right-4 bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-lg z-50";
+        notification.innerHTML = `
+          <div class="flex items-center">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            <span>Please allow popups for this site</span>
+          </div>
+        `;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 5000);
       }
 
       document.addEventListener("DOMContentLoaded", function () {
@@ -440,8 +545,34 @@
           }
         });
 
+        // Enhanced Safari iOS compatibility
+        if (isSafariIOS()) {
+          console.log(
+            "Safari iOS detected - using enhanced compatibility mode"
+          );
+
+          // Add special styling for Safari iOS
+          document.body.classList.add("safari-ios");
+
+          // Improve touch responsiveness
+          const style = document.createElement("style");
+          style.textContent = `
+            .safari-ios .file-link {
+              -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+              -webkit-touch-callout: none;
+              -webkit-user-select: none;
+              user-select: none;
+            }
+            .safari-ios .file-link:active {
+              transform: scale(0.98);
+              transition: transform 0.1s ease;
+            }
+          `;
+          document.head.appendChild(style);
+        }
+
         console.log(
-          "Patient data page loaded - 5 minute session timer started with view-only file access"
+          "Patient data page loaded - 5 minute session timer started with Safari iOS compatible file access"
         );
       });
     </script>

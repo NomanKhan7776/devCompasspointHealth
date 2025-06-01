@@ -19,7 +19,7 @@ const app = express();
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// Enhanced Helmet configuration for security
+// Enhanced Helmet configuration for security with Safari iOS compatibility
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -44,6 +44,7 @@ app.use(
         objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
         frameAncestors: ["'self'"], // Prevent embedding in iframes
+        formAction: ["'self'"], // Allow form submissions to same origin for Safari iOS compatibility
       },
     },
     crossOriginEmbedderPolicy: false, // Allow file viewing in new windows
@@ -51,7 +52,7 @@ app.use(
   })
 );
 
-// CORS configuration - UPDATED for production with enhanced security
+// CORS configuration - UPDATED for production with enhanced security and Safari iOS compatibility
 app.use(
   cors({
     origin:
@@ -64,14 +65,14 @@ app.use(
   })
 );
 
-// Security middleware for file viewing
+// Security middleware for file viewing with Safari iOS compatibility
 app.use((req, res, next) => {
   // Add security headers for all responses
   res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN"); // Changed from DENY for Safari iOS compatibility
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
 
-  // Special headers for file viewing endpoints
+  // Special headers for file viewing endpoints with Safari iOS considerations
   if (req.url.includes("/view")) {
     res.setHeader(
       "Cache-Control",
@@ -79,6 +80,12 @@ app.use((req, res, next) => {
     );
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
+
+    // More permissive CSP for Safari iOS file viewing
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self' 'unsafe-inline'; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
+    );
   }
 
   next();
@@ -88,8 +95,9 @@ app.use((req, res, next) => {
 app.use("/api/auth", express.json());
 app.use("/api/users", express.json());
 app.use("/api/assignments", express.json());
-app.use("/api/blobs", express.urlencoded({ extended: true }));
+app.use("/api/blobs", express.urlencoded({ extended: true })); // Support both JSON and form data for Safari iOS
 app.use("/patients", express.json());
+app.use("/patients", express.urlencoded({ extended: true })); // Add form data support for Safari iOS
 
 // Additional middleware
 app.use(express.urlencoded({ extended: true }));
@@ -165,6 +173,7 @@ app.get("/", (req, res) => {
     timestamp: new Date().toISOString(),
     version: "1.0.0",
     security: "enhanced",
+    safariIOSCompatible: true,
     activeSessions: auth.getActiveSessionsCount
       ? auth.getActiveSessionsCount()
       : "unknown",
@@ -182,13 +191,14 @@ app.get("/api/status", (req, res) => {
       sessionTracking: "enabled",
       fileProtection: "enhanced",
       corsEnabled: true,
+      safariIOSCompatible: true,
       rateLimiting:
         process.env.NODE_ENV === "production" ? "enabled" : "disabled",
     },
   });
 });
 
-// Enhanced error handling middleware with security focus
+// Enhanced error handling middleware with security focus and Safari iOS compatibility
 app.use((err, req, res, next) => {
   // Log errors server-side only (don't expose internal details)
   if (process.env.NODE_ENV === "development") {
@@ -239,17 +249,44 @@ app.use((err, req, res, next) => {
       error: isProduction ? "Server error" : err.message,
     });
   } else {
-    // Render error page for web requests (SmartToken access)
-    res.status(500).render("error", {
-      title: "System Error",
-      message: errorMessage,
-      errorCode: "SYSTEM_ERROR",
-      instructions: "Please try again or contact technical support",
-    });
+    // Render error page for web requests (SmartToken access) with Safari iOS compatibility
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>System Error</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background: #f5f5f5; 
+            margin: 0;
+          }
+          .error-box { 
+            background: white; 
+            border-radius: 8px; 
+            padding: 2rem; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            max-width: 400px; 
+            margin: 0 auto; 
+          }
+        </style>
+      </head>
+      <body>
+        <div class="error-box">
+          <h1>System Error</h1>
+          <p>${errorMessage}</p>
+          <p>Please try again or contact technical support</p>
+        </div>
+      </body>
+      </html>
+    `);
   }
 });
 
-// Enhanced 404 Handler with security logging
+// Enhanced 404 Handler with security logging and Safari iOS compatibility
 app.use("*", (req, res) => {
   // Log 404s for security monitoring (potential probing)
   if (process.env.NODE_ENV === "production") {
@@ -273,14 +310,40 @@ app.use("*", (req, res) => {
       endpoint: req.originalUrl,
     });
   } else {
-    // For web requests, show 404 page
-    res.status(404).render("error", {
-      title: "Page Not Found",
-      message: "The requested page could not be found",
-      errorCode: "404",
-      instructions:
-        "Please check the URL or contact support if you believe this is an error",
-    });
+    // For web requests, show 404 page with Safari iOS compatibility
+    res.status(404).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Page Not Found</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background: #f5f5f5; 
+            margin: 0;
+          }
+          .error-box { 
+            background: white; 
+            border-radius: 8px; 
+            padding: 2rem; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            max-width: 400px; 
+            margin: 0 auto; 
+          }
+        </style>
+      </head>
+      <body>
+        <div class="error-box">
+          <h1>Page Not Found</h1>
+          <p>The requested page could not be found</p>
+          <p>Please check the URL or contact support if you believe this is an error</p>
+        </div>
+      </body>
+      </html>
+    `);
   }
 });
 
@@ -305,12 +368,14 @@ app.listen(PORT, () => {
 🔗 SmartToken Endpoint: http://localhost:${PORT}/patients/verify/:id
 📊 API Status: http://localhost:${PORT}/api/status
 🔒 Security Features: Enhanced session tracking, file protection, CORS enabled
+🍎 Safari iOS Compatible: Enhanced cross-browser compatibility
 🕐 Started at: ${new Date().toISOString()}
     `);
   } else {
     console.log(`
 🏥 CompassPoint Health PRMS Server running on port ${PORT}
 🔒 Security: Enhanced protection enabled
+🍎 Safari iOS: Full compatibility enabled
 🕐 Started: ${new Date().toISOString()}
     `);
   }

@@ -1,4 +1,4 @@
-// controllers/blobController.js - SIMPLIFIED - Auth handled by middleware
+// controllers/blobController.js - SAFARI iOS COMPATIBLE VERSION
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -176,18 +176,126 @@ exports.getBlobs = async (req, res) => {
 };
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/view
-// @desc    View file content directly in new tab - SIMPLIFIED
+// @route   POST api/blobs/:containerName/:folderName/:blobName/view
+// @desc    View file content directly in new tab - SAFARI iOS COMPATIBLE
 // @access  Private (authenticated by middleware)
 exports.viewBlob = async (req, res) => {
   try {
     const { containerName, folderName, blobName } = req.params;
 
-    // User is already authenticated by middleware (either via headers or query params)
+    // Handle both GET and POST requests for Safari iOS compatibility
     const user = req.user;
+
+    // For POST requests from Safari iOS forms, get token from body
+    if (req.method === "POST" && req.body.auth_token) {
+      const jwt = require("jsonwebtoken");
+
+      try {
+        const decoded = jwt.verify(req.body.auth_token, process.env.JWT_SECRET);
+
+        // Get user from database
+        await pool.connect();
+        const result = await pool
+          .request()
+          .input("userId", decoded.user.id || decoded.user.userId)
+          .query("SELECT * FROM Users WHERE userId = @userId");
+
+        if (result.recordset.length === 0) {
+          return res.status(401).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Authentication Failed</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <style>
+                body { 
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+                  text-align: center; 
+                  padding: 20px; 
+                  background: #f5f5f5; 
+                  margin: 0;
+                }
+                .error-box { 
+                  background: white; 
+                  border-radius: 8px; 
+                  padding: 2rem; 
+                  box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+                  max-width: 400px; 
+                  margin: 0 auto; 
+                }
+              </style>
+            </head>
+            <body>
+              <div class="error-box">
+                <h1>Authentication Failed</h1>
+                <p>Your session has expired. Please log in again.</p>
+              </div>
+              <script>
+                setTimeout(() => {
+                  if (window.opener) {
+                    window.opener.focus();
+                    window.close();
+                  } else {
+                    window.history.back();
+                  }
+                }, 3000);
+              </script>
+            </body>
+            </html>
+          `);
+        }
+
+        // Override req.user for POST requests
+        req.user = result.recordset[0];
+      } catch (jwtErr) {
+        return res.status(401).send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Invalid Token</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              body { 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+                text-align: center; 
+                padding: 20px; 
+                background: #f5f5f5; 
+                margin: 0;
+              }
+              .error-box { 
+                background: white; 
+                border-radius: 8px; 
+                padding: 2rem; 
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+                max-width: 400px; 
+                margin: 0 auto; 
+              }
+            </style>
+          </head>
+          <body>
+            <div class="error-box">
+              <h1>Invalid Token</h1>
+              <p>Authentication token is invalid. Please try again.</p>
+            </div>
+            <script>
+              setTimeout(() => {
+                if (window.opener) {
+                  window.opener.focus();
+                  window.close();
+                } else {
+                  window.history.back();
+                }
+              }, 3000);
+            </script>
+          </body>
+          </html>
+        `);
+      }
+    }
 
     // Check user access
     const hasAccess = await checkUserAccess(
-      user.userId,
+      req.user.userId,
       containerName,
       folderName
     );
@@ -198,12 +306,14 @@ exports.viewBlob = async (req, res) => {
         <html>
         <head>
           <title>Access Denied</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
             body { 
-              font-family: Arial, sans-serif; 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
               text-align: center; 
-              padding: 50px; 
+              padding: 20px; 
               background: #f5f5f5; 
+              margin: 0;
             }
             .error-box { 
               background: white; 
@@ -225,6 +335,8 @@ exports.viewBlob = async (req, res) => {
               if (window.opener) {
                 window.opener.focus();
                 window.close();
+              } else {
+                window.history.back();
               }
             }, 3000);
           </script>
@@ -241,8 +353,11 @@ exports.viewBlob = async (req, res) => {
       return res.status(404).send(`
         <!DOCTYPE html>
         <html>
-        <head><title>Container Not Found</title></head>
-        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <head>
+          <title>Container Not Found</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; text-align: center; padding: 20px; background: #f5f5f5; margin: 0;">
           <h1>Container Not Found</h1>
           <p>The requested container does not exist.</p>
           <script>
@@ -250,6 +365,8 @@ exports.viewBlob = async (req, res) => {
               if (window.opener) {
                 window.opener.focus();
                 window.close();
+              } else {
+                window.history.back();
               }
             }, 3000);
           </script>
@@ -266,8 +383,11 @@ exports.viewBlob = async (req, res) => {
       return res.status(404).send(`
         <!DOCTYPE html>
         <html>
-        <head><title>File Not Found</title></head>
-        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <head>
+          <title>File Not Found</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; text-align: center; padding: 20px; background: #f5f5f5; margin: 0;">
           <h1>File Not Found</h1>
           <p>The requested file does not exist.</p>
           <script>
@@ -275,6 +395,8 @@ exports.viewBlob = async (req, res) => {
               if (window.opener) {
                 window.opener.focus();
                 window.close();
+              } else {
+                window.history.back();
               }
             }, 3000);
           </script>
@@ -288,7 +410,7 @@ exports.viewBlob = async (req, res) => {
     const contentType = properties.contentType || "application/octet-stream";
     const downloadResponse = await blobClient.download();
 
-    // Set secure headers for viewing only
+    // Set secure headers for viewing only - Safari iOS compatible
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", "inline");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -298,10 +420,15 @@ exports.viewBlob = async (req, res) => {
     );
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("Content-Security-Policy", "default-src 'self'");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN"); // Changed from DENY for Safari compatibility
 
-    // Special handling for different file types
+    // More permissive CSP for Safari iOS
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self' 'unsafe-inline'; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
+    );
+
+    // Special handling for different file types with Safari iOS compatibility
     if (contentType.includes("pdf")) {
       res.setHeader("Content-Disposition", 'inline; filename="document.pdf"');
     }
@@ -320,7 +447,7 @@ exports.viewBlob = async (req, res) => {
 
     // Log the view operation
     await logFileOperation(
-      user.userId,
+      req.user.userId,
       containerName,
       folderName,
       blobName,
@@ -334,16 +461,40 @@ exports.viewBlob = async (req, res) => {
     res.status(500).send(`
       <!DOCTYPE html>
       <html>
-      <head><title>Server Error</title></head>
-      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-        <h1>Server Error</h1>
-        <p>An error occurred while processing your request.</p>
-        <p><small>Error: ${err.message}</small></p>
+      <head>
+        <title>Server Error</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background: #f5f5f5; 
+            margin: 0;
+          }
+          .error-box { 
+            background: white; 
+            border-radius: 8px; 
+            padding: 2rem; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            max-width: 400px; 
+            margin: 0 auto; 
+          }
+        </style>
+      </head>
+      <body>
+        <div class="error-box">
+          <h1>Server Error</h1>
+          <p>An error occurred while processing your request.</p>
+          <p><small>Error: ${err.message}</small></p>
+        </div>
         <script>
           setTimeout(() => {
             if (window.opener) {
               window.opener.focus();
               window.close();
+            } else {
+              window.history.back();
             }
           }, 3000);
         </script>

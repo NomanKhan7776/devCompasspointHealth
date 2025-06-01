@@ -1,11 +1,11 @@
-// routes/blobs.js - SIMPLE NEW TAB ONLY VERSION
+// routes/blobs.js - SAFARI iOS COMPATIBLE VERSION
 const express = require("express");
 const router = express.Router();
 
 const {
   getBlobs,
   getBlobSasUrl,
-  viewBlob, // View-only endpoint for new tabs (no iframe support)
+  viewBlob, // View-only endpoint for new tabs (supports both GET and POST for Safari iOS)
   uploadBlob,
   deleteBlob,
   getAuditLogs,
@@ -18,10 +18,16 @@ const { checkRole } = require("../middleware/role-check.js");
 // @access  Private
 router.get("/:containerName/:folderName", auth, getBlobs);
 
-// @route   GET api/blobs/:containerName/:folderName/:blobName/view
-// @desc    View file content directly in new tab (no download) - SECURE WITH AUTH
+// @route   GET/POST api/blobs/:containerName/:folderName/:blobName/view
+// @desc    View file content directly in new tab (no download) - SAFARI iOS COMPATIBLE
 // @access  Private
+// Support both GET and POST for Safari iOS form submission compatibility
 router.get("/:containerName/:folderName/:blobName/view", auth, viewBlob);
+router.post(
+  "/:containerName/:folderName/:blobName/view",
+  express.urlencoded({ extended: true }),
+  viewBlob
+);
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/url
 // @desc    Get SAS URL for a blob (view-only)

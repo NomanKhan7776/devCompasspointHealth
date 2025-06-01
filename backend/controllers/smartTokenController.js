@@ -1,4 +1,4 @@
-// controllers/smartTokenController.js - Complete Updated Version with View-Only Access
+// controllers/smartTokenController.js - SAFARI iOS COMPATIBLE VERSION
 const { pool, sql } = require("../config/database");
 const { blobServiceClient } = require("../config/azure-storage");
 const {
@@ -287,7 +287,7 @@ exports.verifySmartToken = async (req, res) => {
         // Log access for audit
         await logTokenAccess(id, token.containerName, token.folderName, req.ip);
 
-        // Render patient data page with view-only access
+        // Render patient data page with view-only access - SAFARI iOS COMPATIBLE
         return res.render("patientData", {
           title: `Patient Data - ${token.patientName || token.folderName}`,
           patientName: token.patientName || token.folderName,
@@ -298,6 +298,7 @@ exports.verifySmartToken = async (req, res) => {
           accessTime: new Date().toISOString(),
           tokenId: id,
           formatFileSize: formatFileSize,
+          isSafariIOS: isUserAgentSafariIOS(req.get("User-Agent") || ""),
         });
       } else {
         return res.render("tokenStatus", {
@@ -345,6 +346,17 @@ exports.verifySmartToken = async (req, res) => {
       instructions: "Please try again or contact technical support.",
     });
   }
+};
+
+// Helper function to detect Safari iOS
+const isUserAgentSafariIOS = (userAgent) => {
+  const ua = userAgent.toLowerCase();
+  return (
+    /ipad|iphone|ipod/.test(ua) &&
+    /safari/.test(ua) &&
+    !/chrome/.test(ua) &&
+    !/firefox/.test(ua)
+  );
 };
 
 // Handle offline mode when VivoKey API is unavailable
@@ -414,6 +426,7 @@ const handleOfflineMode = async (req, res, tokenId) => {
           accessTime: new Date().toISOString(),
           tokenId: tokenId,
           formatFileSize: formatFileSize,
+          isSafariIOS: isUserAgentSafariIOS(req.get("User-Agent") || ""),
         });
       } else {
         return res.render("tokenStatus", {
@@ -485,7 +498,7 @@ exports.getPatientFile = async (req, res) => {
   }
 };
 
-// NEW: Get file with view-only access (no download) for SmartToken emergency access
+// NEW: Get file with view-only access (no download) for SmartToken emergency access - SAFARI iOS COMPATIBLE
 exports.getPatientFileViewOnly = async (req, res) => {
   try {
     const { containerName, folderName, fileName } = req.params;
@@ -498,10 +511,48 @@ exports.getPatientFileViewOnly = async (req, res) => {
     // Check if blob exists
     const blobExists = await blobClient.exists();
     if (!blobExists) {
-      return res.status(404).json({
-        success: false,
-        message: "File not found",
-      });
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>File Not Found</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+              text-align: center; 
+              padding: 20px; 
+              background: #f5f5f5; 
+              margin: 0;
+            }
+            .error-box { 
+              background: white; 
+              border-radius: 8px; 
+              padding: 2rem; 
+              box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+              max-width: 400px; 
+              margin: 0 auto; 
+            }
+          </style>
+        </head>
+        <body>
+          <div class="error-box">
+            <h1>File Not Found</h1>
+            <p>The requested medical file could not be found.</p>
+          </div>
+          <script>
+            setTimeout(() => {
+              if (window.opener) {
+                window.opener.focus();
+                window.close();
+              } else {
+                window.history.back();
+              }
+            }, 3000);
+          </script>
+        </body>
+        </html>
+      `);
     }
 
     // Get blob properties to determine content type
@@ -511,13 +562,14 @@ exports.getPatientFileViewOnly = async (req, res) => {
     // Download blob content
     const downloadResponse = await blobClient.download();
 
-    // Set headers for viewing only (prevent download)
+    // Set headers for viewing only (prevent download) - Safari iOS compatible
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", "inline"); // Force inline viewing
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN"); // More permissive for Safari iOS
 
     // For PDF files, explicitly prevent download
     if (contentType.includes("pdf")) {
@@ -538,10 +590,48 @@ exports.getPatientFileViewOnly = async (req, res) => {
     if (process.env.NODE_ENV === "development") {
       console.error("File view error:", error);
     }
-    res.status(500).json({
-      success: false,
-      message: "Error accessing file",
-    });
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Server Error</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background: #f5f5f5; 
+            margin: 0;
+          }
+          .error-box { 
+            background: white; 
+            border-radius: 8px; 
+            padding: 2rem; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            max-width: 400px; 
+            margin: 0 auto; 
+          }
+        </style>
+      </head>
+      <body>
+        <div class="error-box">
+          <h1>Server Error</h1>
+          <p>An error occurred while accessing the medical file.</p>
+        </div>
+        <script>
+          setTimeout(() => {
+            if (window.opener) {
+              window.opener.focus();
+              window.close();
+            } else {
+              window.history.back();
+            }
+          }, 3000);
+        </script>
+      </body>
+      </html>
+    `);
   }
 };
 
@@ -650,13 +740,14 @@ exports.getPatientFileViewOnlyAuth = async (req, res) => {
     // Download blob content
     const downloadResponse = await blobClient.download();
 
-    // Set headers for viewing only (prevent download)
+    // Set headers for viewing only (prevent download) - Safari iOS compatible
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", "inline"); // Force inline viewing
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN"); // More permissive for Safari iOS
 
     // For PDF files, explicitly prevent download
     if (contentType.includes("pdf")) {
