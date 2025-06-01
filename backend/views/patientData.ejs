@@ -1,4 +1,4 @@
-<!-- views/patientData.ejs - IMPROVED UI FOR EMERGENCY ACCESS -->
+<!-- views/patientData.ejs - FIXED VERSION WITHOUT EJS ERRORS -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -152,7 +152,24 @@
           <% } else { %>
           <!-- Files List -->
           <div class="space-y-3">
-            <% files.forEach(function(file, index) { %>
+            <% files.forEach(function(file, index) { // Define file icon and
+            background based on content type let fileIcon = 'fa-file
+            text-gray-500'; let iconBg = 'bg-gray-100'; if (file.contentType) {
+            if (file.contentType.includes('image')) { fileIcon = 'fa-file-image
+            text-green-600'; iconBg = 'bg-green-100'; } else if
+            (file.contentType.includes('pdf')) { fileIcon = 'fa-file-pdf
+            text-red-600'; iconBg = 'bg-red-100'; } else if
+            (file.contentType.includes('word')) { fileIcon = 'fa-file-word
+            text-blue-600'; iconBg = 'bg-blue-100'; } else if
+            (file.contentType.includes('excel')) { fileIcon = 'fa-file-excel
+            text-green-700'; iconBg = 'bg-green-100'; } else if
+            (file.contentType.includes('text')) { fileIcon = 'fa-file-alt
+            text-gray-600'; iconBg = 'bg-gray-100'; } } // Helper function for
+            file size formatting function formatFileSize(bytes) { if (bytes ===
+            0) return "0 Bytes"; const k = 1024; const sizes = ["Bytes", "KB",
+            "MB", "GB"]; const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " +
+            sizes[i]; } %>
             <div
               class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200"
             >
@@ -167,18 +184,6 @@
                 <div class="flex items-start space-x-4">
                   <!-- File Icon -->
                   <div class="flex-shrink-0">
-                    <% let fileIcon = 'fa-file text-gray-500'; let iconBg =
-                    'bg-gray-100'; if (file.contentType) { if
-                    (file.contentType.includes('image')) { fileIcon =
-                    'fa-file-image text-green-600'; iconBg = 'bg-green-100'; }
-                    else if (file.contentType.includes('pdf')) { fileIcon =
-                    'fa-file-pdf text-red-600'; iconBg = 'bg-red-100'; } else if
-                    (file.contentType.includes('word')) { fileIcon =
-                    'fa-file-word text-blue-600'; iconBg = 'bg-blue-100'; } else
-                    if (file.contentType.includes('excel')) { fileIcon =
-                    'fa-file-excel text-green-700'; iconBg = 'bg-green-100'; }
-                    else if (file.contentType.includes('text')) { fileIcon =
-                    'fa-file-alt text-gray-600'; iconBg = 'bg-gray-100'; } } %>
                     <div
                       class="<%= iconBg %> rounded-lg p-3 w-12 h-12 flex items-center justify-center"
                     >
@@ -211,15 +216,7 @@
                         </div>
                         <div class="flex items-center">
                           <i class="fas fa-file-alt mr-2 text-gray-400"></i>
-                          <span>
-                            <% function formatFileSize(bytes) { if (bytes === 0)
-                            return "0 Bytes"; const k = 1024; const sizes =
-                            ["Bytes", "KB", "MB", "GB"]; const i =
-                            Math.floor(Math.log(bytes) / Math.log(k)); return
-                            parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + "
-                            " + sizes[i]; } %> <%=
-                            formatFileSize(file.contentLength) %>
-                          </span>
+                          <span><%= formatFileSize(file.contentLength) %></span>
                         </div>
                       </div>
 
