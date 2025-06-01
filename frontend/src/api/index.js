@@ -174,11 +174,12 @@ const createUniversalFileViewer = async (
         blobName
       )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
 
-      // Try window.open first (works for most browsers)
+      // Try window.open first - this should work for most browsers
       const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
 
-      if (newWindow) {
-        // Track the window for cleanup
+      // Check if window.open succeeded
+      if (newWindow && !newWindow.closed) {
+        // Window opened successfully - track it for cleanup
         if (!window.fileViewerWindows) {
           window.fileViewerWindows = [];
         }
@@ -213,13 +214,26 @@ const createUniversalFileViewer = async (
           message: "File opened successfully",
         });
       } else {
-        // If window.open fails (Safari iOS or popup blocker), use location.href
-        window.location.href = secureUrl;
-        resolve({
-          success: true,
-          method: "location_redirect",
-          message: "File opened successfully",
-        });
+        // Window.open failed (likely popup blocker)
+        // Only use fallback if user explicitly allows it
+        const userWantsToNavigate = confirm(
+          "Popup was blocked. Would you like to open the file in the current tab instead?"
+        );
+
+        if (userWantsToNavigate) {
+          window.location.href = secureUrl;
+          resolve({
+            success: true,
+            method: "location_redirect",
+            message: "File opened in current tab",
+          });
+        } else {
+          reject(
+            new Error(
+              "File opening was cancelled. Please allow popups for this site or try again."
+            )
+          );
+        }
       }
     } catch (error) {
       reject(error);

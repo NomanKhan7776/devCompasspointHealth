@@ -174,9 +174,12 @@ const BlobViewer = () => {
         errorMessage = "Your session has expired. Please log in again.";
       } else if (error.message.includes("permission")) {
         errorMessage = "You don't have permission to view this file";
+      } else if (error.message.includes("cancelled")) {
+        errorMessage =
+          "File opening was cancelled. Please allow popups for this site to view files in new tabs.";
       } else if (error.message.includes("popups")) {
         errorMessage =
-          "File may have opened in a new tab. If not, please check your browser's popup settings.";
+          "Please allow popups for this site to view files in new tabs.";
       } else {
         errorMessage =
           error.message || "Failed to open file. Please try again.";
