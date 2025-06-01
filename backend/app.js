@@ -39,7 +39,18 @@ app.use(
         imgSrc: ["'self'", "data:", "https:"],
         connectSrc: [
           "'self'",
-          // Add your production API domains here
+          // VivoKey API for SmartToken verification
+          "https://auth.vivokey.com",
+          // Your actual Azure backend API
+          "https://cph-prms-api-2.azurewebsites.net",
+          // Development localhost fallbacks
+          ...(process.env.NODE_ENV === "development"
+            ? [
+                "http://localhost:5000",
+                "http://localhost:3000",
+                "http://127.0.0.1:5000",
+              ]
+            : []),
         ],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
@@ -57,7 +68,7 @@ app.use(
   cors({
     origin:
       process.env.NODE_ENV === "production"
-        ? ["https://compasspointpr.ms", "https://www.compasspointpr.ms"] // Replace with your actual domains
+        ? ["https://compasspointpr.ms", "https://www.compasspointpr.ms"]
         : ["http://localhost:3000", "http://localhost:5173"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-auth-token"],
