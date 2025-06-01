@@ -1,4 +1,4 @@
-// controllers/smartTokenController.js - SAFARI iOS COMPATIBLE VERSION
+// controllers/smartTokenController.js - FIXED VERSION with working file access
 const { pool, sql } = require("../config/database");
 const { blobServiceClient } = require("../config/azure-storage");
 const {
@@ -278,10 +278,11 @@ exports.verifySmartToken = async (req, res) => {
           token.folderName
         );
 
-        // Note: Files will use view-only access through the frontend
+        // Files will use view-only access through the emergency endpoint
         const filesForDisplay = patientFiles.map((file) => ({
           ...file,
-          // No SAS URL needed - will use view-only endpoint
+          // Add emergency access info
+          emergencyAccess: true,
         }));
 
         // Log access for audit
@@ -347,8 +348,6 @@ exports.verifySmartToken = async (req, res) => {
   }
 };
 
-// Helper function removed as requested
-
 // Handle offline mode when VivoKey API is unavailable
 const handleOfflineMode = async (req, res, tokenId) => {
   try {
@@ -390,7 +389,7 @@ const handleOfflineMode = async (req, res, tokenId) => {
         // Files will use view-only access
         const filesForDisplay = patientFiles.map((file) => ({
           ...file,
-          // No SAS URL needed - will use view-only endpoint
+          emergencyAccess: true,
         }));
 
         // Log offline access
@@ -451,43 +450,7 @@ const handleOfflineMode = async (req, res, tokenId) => {
   }
 };
 
-// Get file with SAS URL - LEGACY (kept for backward compatibility)
-exports.getPatientFile = async (req, res) => {
-  try {
-    const { containerName, folderName, fileName } = req.params;
-
-    // Get container client
-    const containerClient = blobServiceClient.getContainerClient(containerName);
-    const fullBlobName = `${folderName}/${fileName}`;
-    const blobClient = containerClient.getBlobClient(fullBlobName);
-
-    // Check if blob exists
-    const blobExists = await blobClient.exists();
-    if (!blobExists) {
-      return res.status(404).json({
-        success: false,
-        message: "File not found",
-      });
-    }
-
-    // Generate SAS token for emergency read access with 5-minute expiry
-    const sasToken = generateEmergencySasToken(containerName, fullBlobName);
-    const sasUrl = `${blobClient.url}?${sasToken}`;
-
-    // Redirect to file
-    res.redirect(sasUrl);
-  } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("File access error:", error);
-    }
-    res.status(500).json({
-      success: false,
-      message: "Error accessing file",
-    });
-  }
-};
-
-// NEW: Get file with view-only access (no download) for SmartToken emergency access - Universal browser compatible
+// FIXED: Emergency file access endpoint that works with all browsers
 exports.getPatientFileViewOnly = async (req, res) => {
   try {
     const { containerName, folderName, fileName } = req.params;
@@ -528,17 +491,8 @@ exports.getPatientFileViewOnly = async (req, res) => {
           <div class="error-box">
             <h1>File Not Found</h1>
             <p>The requested medical file could not be found.</p>
+            <button onclick="window.history.back()">Go Back</button>
           </div>
-          <script>
-            setTimeout(() => {
-              if (window.opener) {
-                window.opener.focus();
-                window.close();
-              } else {
-                window.history.back();
-              }
-            }, 3000);
-          </script>
         </body>
         </html>
       `);
@@ -607,177 +561,11 @@ exports.getPatientFileViewOnly = async (req, res) => {
         <div class="error-box">
           <h1>Server Error</h1>
           <p>An error occurred while accessing the medical file.</p>
+          <button onclick="window.history.back()">Go Back</button>
         </div>
-        <script>
-          setTimeout(() => {
-            if (window.opener) {
-              window.opener.focus();
-              window.close();
-            } else {
-              window.history.back();
-            }
-          }, 3000);
-        </script>
       </body>
       </html>
     `);
-  }
-};
-
-// NEW: Get file with authenticated view-only access (for regular users)
-exports.getPatientFileViewOnlyAuth = async (req, res) => {
-  try {
-    const { containerName, folderName, fileName } = req.params;
-
-    // Get token from header or query parameter
-    let token = req.header("x-auth-token") || req.query.token;
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "No authentication token provided",
-      });
-    }
-
-    // Verify token
-    let user;
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      if (!decoded.user) {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid token format",
-        });
-      }
-
-      // Get user from database
-      await pool.connect();
-      const result = await pool
-        .request()
-        .input("userId", decoded.user.id || decoded.user.userId)
-        .query("SELECT * FROM Users WHERE userId = @userId");
-
-      if (result.recordset.length === 0) {
-        return res.status(401).json({
-          success: false,
-          message: "User not found",
-        });
-      }
-
-      user = result.recordset[0];
-    } catch (err) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid or expired token",
-      });
-    }
-
-    // Check if user has access (admin has access to everything)
-    if (user.role !== "admin") {
-      // Check container assignment
-      const containerResult = await pool
-        .request()
-        .input("userId", user.userId)
-        .input("containerName", containerName)
-        .query(
-          "SELECT * FROM ContainerAssignments WHERE userId = @userId AND containerName = @containerName"
-        );
-
-      if (containerResult.recordset.length === 0) {
-        return res.status(403).json({
-          success: false,
-          message: "Access denied",
-        });
-      }
-
-      // Check folder assignment
-      const folderResult = await pool
-        .request()
-        .input("userId", user.userId)
-        .input("containerName", containerName)
-        .input("folderName", folderName)
-        .query(
-          "SELECT * FROM FolderAssignments WHERE userId = @userId AND containerName = @containerName AND folderName = @folderName"
-        );
-
-      if (folderResult.recordset.length === 0) {
-        return res.status(403).json({
-          success: false,
-          message: "Access denied",
-        });
-      }
-    }
-
-    // Get container client
-    const containerClient = blobServiceClient.getContainerClient(containerName);
-    const fullBlobName = `${folderName}/${fileName}`;
-    const blobClient = containerClient.getBlobClient(fullBlobName);
-
-    // Check if blob exists
-    const blobExists = await blobClient.exists();
-    if (!blobExists) {
-      return res.status(404).json({
-        success: false,
-        message: "File not found",
-      });
-    }
-
-    // Get blob properties to determine content type
-    const properties = await blobClient.getProperties();
-    const contentType = properties.contentType || "application/octet-stream";
-
-    // Download blob content
-    const downloadResponse = await blobClient.download();
-
-    // Set headers for viewing only (prevent download) - Universal browser compatible
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", "inline"); // Force inline viewing
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN");
-
-    // For PDF files, explicitly prevent download
-    if (contentType.includes("pdf")) {
-      res.setHeader(
-        "Content-Disposition",
-        'inline; filename="medical_document.pdf"'
-      );
-    }
-
-    // For images, ensure they display inline
-    if (contentType.includes("image")) {
-      res.setHeader("Content-Disposition", "inline");
-    }
-
-    // Log the view for audit
-    try {
-      await pool
-        .request()
-        .input("userId", user.userId)
-        .input("containerName", containerName)
-        .input("folderName", folderName)
-        .input("blobName", fileName)
-        .input("operation", "VIEW").query(`
-          INSERT INTO FileAudit (userId, containerName, folderName, blobName, operation)
-          VALUES (@userId, @containerName, @folderName, @blobName, @operation)
-        `);
-    } catch (auditErr) {
-      console.error("Audit logging error:", auditErr.message);
-      // Don't fail the request for audit logging errors
-    }
-
-    // Stream the file content directly to response
-    downloadResponse.readableStreamBody.pipe(res);
-  } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("File view error:", error);
-    }
-    res.status(500).json({
-      success: false,
-      message: "Error accessing file",
-    });
   }
 };
 
@@ -808,7 +596,9 @@ const logTokenAccess = async (
   }
 };
 
-// NEW: Get all assigned tokens (for remote disconnect management)
+// Rest of the existing functions (getUnclaimedTokens, assignTokenToPatient, etc.)
+// keeping them exactly as they were...
+
 exports.getAllAssignedTokens = async (req, res) => {
   try {
     if (!req.user) {
@@ -866,7 +656,6 @@ exports.getAllAssignedTokens = async (req, res) => {
   }
 };
 
-// NEW: Remote disconnect/revoke token
 exports.revokeSmartToken = async (req, res) => {
   try {
     if (!req.user) {
@@ -961,7 +750,6 @@ exports.revokeSmartToken = async (req, res) => {
   }
 };
 
-// NEW: Reactivate revoked token
 exports.reactivateSmartToken = async (req, res) => {
   try {
     if (!req.user) {
@@ -1050,7 +838,6 @@ exports.reactivateSmartToken = async (req, res) => {
   }
 };
 
-// Admin functions for token management
 exports.getUnclaimedTokens = async (req, res) => {
   try {
     if (!req.user) {

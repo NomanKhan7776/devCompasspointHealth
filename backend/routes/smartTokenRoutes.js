@@ -1,10 +1,9 @@
-// routes/smartTokenRoutes.js - SECURE version with proper route separation
+// routes/smartTokenRoutes.js - FIXED VERSION with working file routes
 
 const express = require("express");
 const router = express.Router();
 const {
   verifySmartToken,
-  getPatientFile,
   getPatientFileViewOnly, // Emergency access (no auth needed)
   getUnclaimedTokens,
   assignTokenToPatient,
@@ -19,14 +18,21 @@ const { checkRole } = require("../middleware/role-check");
 
 // PUBLIC ROUTES (no authentication required)
 // Emergency access for SmartTokens
+
+// Main SmartToken verification route
 router.get("/verify/:id", verifySmartToken);
+
+// FIXED: Emergency file access routes (no authentication required)
 router.get(
   "/file/:containerName/:folderName/:fileName/view",
   getPatientFileViewOnly
 );
 
 // Legacy file route (kept for backward compatibility)
-router.get("/file/:containerName/:folderName/:fileName", getPatientFile);
+router.get(
+  "/file/:containerName/:folderName/:fileName",
+  getPatientFileViewOnly
+);
 
 // AUTHENTICATED ROUTES (auth middleware required)
 // Admin routes

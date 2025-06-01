@@ -333,11 +333,11 @@
             // For Safari iOS, navigate in the same window to avoid popup blocking
             window.location.href = viewUrl;
           } else {
-            // For all other browsers, open in new tab
+            // For all other browsers, try to open in new tab first
             const newWindow = window.open(viewUrl, "_blank");
 
-            if (!newWindow) {
-              // Fallback: navigate in same window
+            if (!newWindow || newWindow.closed) {
+              // If popup blocked, fallback to same window navigation
               window.location.href = viewUrl;
             } else {
               // Show user feedback for successful new tab opening
