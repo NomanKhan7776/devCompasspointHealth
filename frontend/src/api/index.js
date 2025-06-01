@@ -194,41 +194,40 @@ const createUniversalFileViewer = async (
 
     const browserInfo = getBrowserInfo();
 
-    // For Safari on iOS, use a different approach
+    // For Safari on iOS, use window.location.href for reliable opening
     if (browserInfo.isIOS && browserInfo.isSafari) {
-      // Create a temporary link and simulate click for Safari iOS
-      const link = document.createElement("a");
-      link.href = secureUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.style.display = "none";
-
-      // Add to DOM temporarily
-      document.body.appendChild(link);
-
-      // Simulate click
-      link.click();
-
-      // Remove from DOM
-      setTimeout(() => {
-        document.body.removeChild(link);
-      }, 100);
+      // On Safari iOS, we need to navigate directly to open the file
+      window.location.href = secureUrl;
 
       return {
         success: true,
-        method: "safari_ios_link",
+        method: "safari_ios_navigate",
         message: "File opened successfully",
       };
     }
 
-    // For mobile browsers that have popup restrictions
+    // For other mobile browsers
     if (browserInfo.isMobile) {
-      // Use location.assign for better mobile compatibility
-      window.open(secureUrl, "_blank", "noopener,noreferrer");
+      // Try window.open first for mobile
+      const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
+
+      if (
+        !newWindow ||
+        newWindow.closed ||
+        typeof newWindow.closed === "undefined"
+      ) {
+        // If popup blocked on mobile, navigate in current window
+        window.location.href = secureUrl;
+        return {
+          success: true,
+          method: "mobile_navigate",
+          message: "File opened successfully",
+        };
+      }
 
       return {
         success: true,
-        method: "mobile_open",
+        method: "mobile_popup",
         message: "File opened successfully",
       };
     }
@@ -236,7 +235,7 @@ const createUniversalFileViewer = async (
     // For desktop browsers, try window.open
     const newWindow = window.open(secureUrl, "_blank", "noopener,noreferrer");
 
-    if (newWindow) {
+    if (newWindow && !newWindow.closed) {
       // Window opened successfully - track it for cleanup
       if (!window.fileViewerWindows) {
         window.fileViewerWindows = [];
@@ -272,12 +271,12 @@ const createUniversalFileViewer = async (
         message: "File opened in new tab",
       };
     } else {
-      // Fallback: Use location.assign if window.open fails
-      window.location.assign(secureUrl);
+      // Fallback: Use location.href if window.open fails
+      window.location.href = secureUrl;
 
       return {
         success: true,
-        method: "location_assign",
+        method: "location_navigate",
         message: "File opened successfully",
       };
     }
