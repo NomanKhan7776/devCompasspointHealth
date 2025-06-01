@@ -143,12 +143,22 @@ const BlobViewer = () => {
     }
   };
 
-  // SIMPLEST file viewer approach
+  // Detect if we're on Safari iOS
+  const isSafariIOS = () => {
+    const userAgent = navigator.userAgent.toLowerCase();
+    return (
+      /iphone|ipad|ipod/.test(userAgent) &&
+      /safari/.test(userAgent) &&
+      !/chrome|crios|fxios|edgios/.test(userAgent)
+    );
+  };
+
+  // SAFARI iOS COMPATIBLE file viewer
   const handleFileClick = async (blobName) => {
     try {
       setError("");
 
-      // Use the simple direct file opening
+      // Use the Safari-compatible file opening
       const result = await blobsAPI.viewBlob(
         containerName,
         folderName,
@@ -156,7 +166,13 @@ const BlobViewer = () => {
       );
 
       if (result.success) {
-        setSuccessMessage("File opened in new tab");
+        if (result.method === "safari_ios_navigate") {
+          setSuccessMessage(
+            "Opening file... You may need to use the back button to return."
+          );
+        } else {
+          setSuccessMessage("File opened in new tab");
+        }
         setTimeout(() => setSuccessMessage(""), 3000);
       }
     } catch (error) {
@@ -172,8 +188,13 @@ const BlobViewer = () => {
       } else if (error.message.includes("permission")) {
         errorMessage = "You don't have permission to view this file";
       } else if (error.message.includes("Popup blocked")) {
-        errorMessage =
-          "Popup blocked by browser. Please allow popups for this site and try again.";
+        if (isSafariIOS()) {
+          errorMessage =
+            "Unable to open file. This may be due to Safari's security restrictions.";
+        } else {
+          errorMessage =
+            "Popup blocked by browser. Please allow popups for this site and try again.";
+        }
       } else {
         errorMessage =
           error.message || "Failed to open file. Please try again.";
@@ -289,9 +310,41 @@ const BlobViewer = () => {
                 d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
               />
             </svg>
-            <span className="font-medium">Click to Open in New Tab</span>
+            <span className="font-medium">
+              {isSafariIOS() ? "Tap to Open File" : "Click to Open in New Tab"}
+            </span>
           </div>
         </div>
+
+        {/* Safari iOS specific notice */}
+        {isSafariIOS() && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex items-start">
+              <svg
+                className="w-5 h-5 text-yellow-600 mt-0.5 mr-2 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <div>
+                <p className="text-sm font-medium text-yellow-800">
+                  Safari iOS Note
+                </p>
+                <p className="text-sm text-yellow-700">
+                  Files will open in the same tab. Use the back button to return
+                  to this page.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {blobs.length === 0 ? (
           <div className="text-center py-12">
@@ -346,7 +399,11 @@ const BlobViewer = () => {
                       <button
                         onClick={() => handleFileClick(blob.name)}
                         className="text-sm font-medium text-left transition-colors duration-200 flex items-center group w-full text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
-                        title="Click to open file in new tab"
+                        title={
+                          isSafariIOS()
+                            ? "Tap to open file"
+                            : "Click to open file in new tab"
+                        }
                       >
                         <div className="flex items-center w-full">
                           <svg
@@ -365,7 +422,9 @@ const BlobViewer = () => {
                           <div className="flex-1">
                             <div className="font-medium">{blob.name}</div>
                             <div className="text-xs text-gray-500">
-                              Click to open in new tab
+                              {isSafariIOS()
+                                ? "Tap to open file"
+                                : "Click to open in new tab"}
                             </div>
                           </div>
                         </div>

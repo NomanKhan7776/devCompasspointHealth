@@ -136,7 +136,17 @@ if (!window.fileViewerWindows) {
   window.fileViewerWindows = [];
 }
 
-// SIMPLEST APPROACH: Just open the URL directly
+// Detect if we're on Safari iOS
+const isSafariIOS = () => {
+  const userAgent = navigator.userAgent.toLowerCase();
+  return (
+    /iphone|ipad|ipod/.test(userAgent) &&
+    /safari/.test(userAgent) &&
+    !/chrome|crios|fxios|edgios/.test(userAgent)
+  );
+};
+
+// SAFARI iOS COMPATIBLE: Handle different browsers appropriately
 const openFileInNewTab = (containerName, folderName, blobName) => {
   const token = localStorage.getItem("token");
   if (!token) {
@@ -151,24 +161,37 @@ const openFileInNewTab = (containerName, folderName, blobName) => {
     blobName
   )}/view?t=${timestamp}&auth=${encodeURIComponent(token)}`;
 
-  // Just open it directly - this should work
-  const newWindow = window.open(fileUrl, "_blank");
+  // Safari iOS specific handling
+  if (isSafariIOS()) {
+    // For Safari iOS, use location.href instead of window.open
+    // This avoids popup blockers entirely
+    window.location.href = fileUrl;
 
-  if (!newWindow) {
-    throw new Error("Popup blocked. Please allow popups for this site.");
+    return {
+      success: true,
+      method: "safari_ios_navigate",
+      message: "File opened successfully",
+    };
+  } else {
+    // For all other browsers (Chrome, Firefox, desktop Safari, etc.)
+    const newWindow = window.open(fileUrl, "_blank");
+
+    if (!newWindow) {
+      throw new Error("Popup blocked. Please allow popups for this site.");
+    }
+
+    // Track window for non-iOS browsers
+    if (!window.fileViewerWindows) {
+      window.fileViewerWindows = [];
+    }
+    window.fileViewerWindows.push(newWindow);
+
+    return {
+      success: true,
+      method: "desktop_new_tab",
+      message: "File opened in new tab",
+    };
   }
-
-  // Track window
-  if (!window.fileViewerWindows) {
-    window.fileViewerWindows = [];
-  }
-  window.fileViewerWindows.push(newWindow);
-
-  return {
-    success: true,
-    method: "direct",
-    message: "File opened in new tab",
-  };
 };
 
 // Blobs API - SIMPLEST VERSION
