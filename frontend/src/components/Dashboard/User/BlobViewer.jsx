@@ -208,15 +208,17 @@ const BlobViewer = () => {
   if (loading) return <Loader size="large" />;
 
   return (
-    <div>
-      <div className="flex items-center mb-6">
+    <div className="px-2 sm:px-0">
+      <div className="flex items-center mb-4 sm:mb-6">
         <button
           onClick={handleBack}
-          className="text-blue-600 hover:text-blue-800 mr-2"
+          className="text-blue-600 hover:text-blue-800 mr-2 text-sm sm:text-base"
         >
           ← Back
         </button>
-        <h1 className="text-2xl font-bold text-gray-800">{folderName}</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
+          {folderName}
+        </h1>
       </div>
 
       {error && (
@@ -232,7 +234,7 @@ const BlobViewer = () => {
       )}
 
       {canUpload && (
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">
             Upload New File
           </h2>
@@ -246,11 +248,11 @@ const BlobViewer = () => {
                 id="file-upload"
                 type="file"
                 onChange={handleFileChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
               />
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-xs sm:text-sm text-gray-500">
                 Maximum file size: 10MB. Files will be saved with their original
-                names and opened in new tabs for viewing.
+                names.
               </p>
             </div>
 
@@ -259,9 +261,10 @@ const BlobViewer = () => {
                 type="submit"
                 color="blue"
                 disabled={!file || uploadLoading}
+                className="w-full sm:w-auto"
               >
                 {uploadLoading ? (
-                  <span className="flex items-center">
+                  <span className="flex items-center justify-center">
                     <svg
                       className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
                       xmlns="http://www.w3.org/2000/svg"
@@ -293,12 +296,14 @@ const BlobViewer = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Patient Files</h2>
-          <div className="flex items-center text-sm text-gray-600 bg-blue-50 px-3 py-2 rounded-lg">
+      <div className="bg-white rounded-lg shadow-md">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
+            Patient Files
+          </h2>
+          <div className="flex items-center text-xs sm:text-sm text-gray-600 bg-blue-50 px-2 sm:px-3 py-1 sm:py-2 rounded-lg">
             <svg
-              className="w-4 h-4 mr-2 text-blue-600"
+              className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 text-blue-600"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -311,17 +316,46 @@ const BlobViewer = () => {
               />
             </svg>
             <span className="font-medium">
-              {isSafariIOS() ? "Tap to Open File" : "Click to Open in New Tab"}
+              {isSafariIOS() ? "Tap to Open" : "Click to Open"}
             </span>
           </div>
         </div>
 
-        {/* Safari iOS specific notice */}
-        {isSafariIOS() && (
-          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <div className="flex items-start">
+        <div className="p-4 sm:p-6">
+          {/* Safari iOS specific notice */}
+          {isSafariIOS() && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start">
+                <svg
+                  className="w-5 h-5 text-yellow-600 mt-0.5 mr-2 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-yellow-800">
+                    Safari iOS Note
+                  </p>
+                  <p className="text-sm text-yellow-700">
+                    Files will open in the same tab. Use the back button to
+                    return to this page.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {blobs.length === 0 ? (
+            <div className="text-center py-8 sm:py-12">
               <svg
-                className="w-5 h-5 text-yellow-600 mt-0.5 mr-2 flex-shrink-0"
+                className="mx-auto h-8 w-8 sm:h-12 sm:w-12 text-gray-400"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -329,85 +363,41 @@ const BlobViewer = () => {
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  strokeWidth={1}
+                  d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
                 />
               </svg>
-              <div>
-                <p className="text-sm font-medium text-yellow-800">
-                  Safari iOS Note
-                </p>
-                <p className="text-sm text-yellow-700">
-                  Files will open in the same tab. Use the back button to return
-                  to this page.
-                </p>
-              </div>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">
+                No files found
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                No files found in this folder.
+              </p>
             </div>
-          </div>
-        )}
-
-        {blobs.length === 0 ? (
-          <div className="text-center py-12">
-            <svg
-              className="mx-auto h-12 w-12 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1}
-                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-              />
-            </svg>
-            <h3 className="mt-2 text-sm font-medium text-gray-900">
-              No files found
-            </h3>
-            <p className="mt-1 text-sm text-gray-500">
-              No files found in this folder.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    File Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Size
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Last Modified
-                  </th>
-                  {canDelete && (
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {blobs.map((blob) => (
-                  <tr key={blob.name} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+          ) : (
+            /* MOBILE-FRIENDLY FILE CARDS - NO HORIZONTAL SCROLLING */
+            <div className="space-y-3">
+              {blobs.map((blob) => (
+                <div
+                  key={blob.name}
+                  className="border border-gray-200 rounded-lg p-3 sm:p-4 hover:bg-gray-50 transition-colors"
+                >
+                  {/* Mobile Layout - Everything Visible */}
+                  <div className="space-y-3">
+                    {/* File Header - Name and Type */}
+                    <div className="flex items-start justify-between">
                       <button
                         onClick={() => handleFileClick(blob.name)}
-                        className="text-sm font-medium text-left transition-colors duration-200 flex items-center group w-full text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                        className="text-left flex-1 min-w-0 mr-2"
                         title={
                           isSafariIOS()
                             ? "Tap to open file"
                             : "Click to open file in new tab"
                         }
                       >
-                        <div className="flex items-center w-full">
+                        <div className="flex items-center">
                           <svg
-                            className="w-4 h-4 mr-2 text-blue-500 group-hover:text-blue-700"
+                            className="w-4 h-4 mr-2 text-blue-500 flex-shrink-0"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -416,48 +406,111 @@ const BlobViewer = () => {
                               strokeLinecap="round"
                               strokeLinejoin="round"
                               strokeWidth={2}
-                              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                             />
                           </svg>
-                          <div className="flex-1">
-                            <div className="font-medium">{blob.name}</div>
-                            <div className="text-xs text-gray-500">
-                              {isSafariIOS()
-                                ? "Tap to open file"
-                                : "Click to open in new tab"}
-                            </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-blue-600 hover:text-blue-800 truncate">
+                              {blob.name}
+                            </p>
+                            <p className="text-xs text-blue-500">
+                              {isSafariIOS() ? "Tap to open" : "Click to open"}
+                            </p>
                           </div>
                         </div>
                       </button>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+
+                      {/* File Type Badge */}
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 flex-shrink-0">
+                        {blob.contentType
+                          ? blob.contentType.split("/")[0].toUpperCase()
+                          : "FILE"}
+                      </span>
+                    </div>
+
+                    {/* File Details Row */}
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                      <span className="flex items-center">
+                        <svg
+                          className="w-3 h-3 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                          />
+                        </svg>
+                        {new Date(blob.lastModified).toLocaleDateString()}
+                      </span>
+                      <span className="flex items-center">
+                        <svg
+                          className="w-3 h-3 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                          />
+                        </svg>
+                        {formatFileSize(blob.contentLength)}
+                      </span>
+                      <span className="flex items-center">
+                        <svg
+                          className="w-3 h-3 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a1.994 1.994 0 01-1.414.586H7a4 4 0 01-4-4v-9a4 4 0 014-4z"
+                          />
+                        </svg>
                         {blob.contentType || "Unknown"}
                       </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatFileSize(blob.contentLength)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(blob.lastModified).toLocaleString()}
-                    </td>
+                    </div>
+
+                    {/* Action Buttons Row - Only show if user can delete */}
                     {canDelete && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex justify-end pt-2 border-t border-gray-100">
                         <Button
                           color="red"
-                          className="text-xs py-1 px-2"
+                          className="text-xs py-1 px-3"
                           onClick={() => confirmDelete(blob)}
                         >
+                          <svg
+                            className="w-3 h-3 mr-1"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
                           Delete
                         </Button>
-                      </td>
+                      </div>
                     )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Delete Confirmation Modal */}
