@@ -1,11 +1,11 @@
-// routes/blobs.js - SAFARI iOS COMPATIBLE VERSION
+// routes/blobs.js - TXT ONLY VERSION (No RTF conversion routes)
 const express = require("express");
 const router = express.Router();
 
 const {
   getBlobs,
   getBlobSasUrl,
-  viewBlob, // View-only endpoint for new tabs (supports both GET and POST for Safari iOS)
+  viewBlob,
   uploadBlob,
   deleteBlob,
   getAuditLogs,
@@ -14,12 +14,12 @@ const auth = require("../middleware/auth.js");
 const { checkRole } = require("../middleware/role-check.js");
 
 // @route   GET api/blobs/:containerName/:folderName
-// @desc    Get all blobs in a folder
+// @desc    Get all blobs in a folder (TXT files only, no RTF files shown)
 // @access  Private
 router.get("/:containerName/:folderName", auth, getBlobs);
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/view
-// @desc    View file content directly in new tab - Universal browser compatible
+// @desc    View file content directly in new tab
 // @access  Private
 router.get("/:containerName/:folderName/:blobName/view", auth, viewBlob);
 
@@ -29,7 +29,7 @@ router.get("/:containerName/:folderName/:blobName/view", auth, viewBlob);
 router.get("/:containerName/:folderName/:blobName/url", auth, getBlobSasUrl);
 
 // @route   POST api/blobs/:containerName/:folderName
-// @desc    Upload a blob
+// @desc    Upload a blob (RTF files are automatically converted to TXT and only TXT is stored)
 // @access  Private/Admin,Doctor,Nurse
 router.post(
   "/:containerName/:folderName",

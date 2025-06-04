@@ -1,4 +1,4 @@
-// controllers/blobController.js - SAFARI iOS COMPATIBLE VERSION
+// controllers/blobController.js - TXT ONLY VERSION (RTF files converted and not stored)
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -8,17 +8,18 @@ const {
 const { blobServiceClient } = require("../config/azure-storage");
 const { pool, sql } = require("../config/database");
 const multer = require("multer");
+const rtfConversionService = require("../services/rtfConversionService");
 
 // Configure multer
 const memoryStorage = multer.memoryStorage();
 const upload = multer({
   storage: memoryStorage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 50 * 1024 * 1024, // 50MB for RTF files
   },
 });
 
-// Simplified file operation logging
+// File operation logging (existing function - no changes)
 const logFileOperation = async (
   userId,
   containerName,
@@ -44,7 +45,7 @@ const logFileOperation = async (
   }
 };
 
-// Check user access to container/folder
+// Check user access (existing function - no changes)
 const checkUserAccess = async (userId, containerName, folderName) => {
   try {
     await pool.connect();
@@ -60,12 +61,10 @@ const checkUserAccess = async (userId, containerName, folderName) => {
 
     const userRole = userResult.recordset[0].role;
 
-    // Admin has access to everything
     if (userRole === "admin") {
       return true;
     }
 
-    // Check container assignment
     const containerResult = await pool
       .request()
       .input("userId", userId)
@@ -78,7 +77,6 @@ const checkUserAccess = async (userId, containerName, folderName) => {
       return false;
     }
 
-    // Check folder assignment if specified
     if (folderName) {
       const folderResult = await pool
         .request()
@@ -102,13 +100,12 @@ const checkUserAccess = async (userId, containerName, folderName) => {
 };
 
 // @route   GET api/blobs/:containerName/:folderName
-// @desc    Get all blobs in a folder
+// @desc    Get all blobs in a folder (TXT files only, no RTF files shown)
 // @access  Private
 exports.getBlobs = async (req, res) => {
   try {
     const { containerName, folderName } = req.params;
 
-    // User is already authenticated by middleware
     const hasAccess = await checkUserAccess(
       req.user.userId,
       containerName,
@@ -142,6 +139,23 @@ exports.getBlobs = async (req, res) => {
       }
 
       const blobName = blob.name.replace(folderPrefix, "");
+
+      // SKIP RTF files - only show TXT and other files
+      if (blobName.toLowerCase().endsWith(".rtf")) {
+        continue; // Don't include RTF files in the response
+      }
+
+      // Check if this is a TXT file converted from RTF
+      let isConvertedFromRtf = false;
+      let originalRtfFileName = null;
+      if (
+        blobName.toLowerCase().endsWith(".txt") &&
+        blob.metadata?.originalRtfFileName
+      ) {
+        isConvertedFromRtf = true;
+        originalRtfFileName = blob.metadata.originalRtfFileName;
+      }
+
       blobs.push({
         name: blobName,
         fullPath: blob.name,
@@ -149,6 +163,9 @@ exports.getBlobs = async (req, res) => {
         contentLength: blob.properties.contentLength,
         createdOn: blob.properties.createdOn,
         lastModified: blob.properties.lastModified,
+        metadata: blob.metadata,
+        isConvertedFromRtf,
+        originalRtfFileName,
       });
     }
 
@@ -176,7 +193,7 @@ exports.getBlobs = async (req, res) => {
 };
 
 // @route   GET api/blobs/:containerName/:folderName/:blobName/view
-// @desc    View file content directly in new tab - UNIVERSAL BROWSER COMPATIBLE
+// @desc    View file content directly in new tab
 // @access  Private (authenticated by middleware)
 exports.viewBlob = async (req, res) => {
   try {
@@ -302,7 +319,7 @@ exports.viewBlob = async (req, res) => {
     const contentType = properties.contentType || "application/octet-stream";
     const downloadResponse = await blobClient.download();
 
-    // Set secure headers for viewing only - Universal browser compatible
+    // Set secure headers for viewing only
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", "inline");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -320,13 +337,29 @@ exports.viewBlob = async (req, res) => {
       "default-src 'self' 'unsafe-inline'; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
     );
 
-    // Special handling for different file types with Safari iOS compatibility
+    // Special handling for different file types
     if (contentType.includes("pdf")) {
       res.setHeader("Content-Disposition", 'inline; filename="document.pdf"');
     }
 
     if (contentType.includes("image")) {
       res.setHeader("Content-Disposition", "inline");
+    }
+
+    // Add headers for converted TXT files
+    if (
+      contentType.includes("text") &&
+      properties.metadata?.originalRtfFileName
+    ) {
+      res.setHeader("X-Converted-From", "RTF");
+      res.setHeader(
+        "X-Original-RTF-File",
+        properties.metadata.originalRtfFileName
+      );
+      res.setHeader(
+        "X-Conversion-Method",
+        properties.metadata.conversionMethod || "cloudconvert"
+      );
     }
 
     // Add security indicator headers
@@ -438,7 +471,7 @@ exports.getBlobSasUrl = async (req, res) => {
 };
 
 // @route   POST api/blobs/:containerName/:folderName
-// @desc    Upload a blob with original filename
+// @desc    Upload a blob - RTF files are converted to TXT only, other files uploaded normally
 // @access  Private/Admin,Doctor,Nurse (authenticated by middleware + role check)
 exports.uploadBlob = async (req, res) => {
   upload.single("file")(req, res, async (err) => {
@@ -484,46 +517,107 @@ exports.uploadBlob = async (req, res) => {
         });
       }
 
-      const blobName = originalFilename;
-      const fullBlobName = `${folderName}/${blobName}`;
-      const blobClient = containerClient.getBlobClient(fullBlobName);
-      const blockBlobClient = blobClient.getBlockBlobClient();
+      // Check if this is an RTF file
+      if (rtfConversionService.isRTFFile(originalFilename, req.file.buffer)) {
+        try {
+          // Convert RTF to TXT and upload only TXT
+          const conversionResult =
+            await rtfConversionService.processRTFFileToTxtOnly(
+              containerName,
+              folderName,
+              originalFilename,
+              req.file.buffer
+            );
 
-      const uploadOptions = {
-        blobHTTPHeaders: {
-          blobContentType: req.file.mimetype,
-        },
-      };
+          // Log the upload (TXT file only)
+          await logFileOperation(
+            req.user.userId,
+            containerName,
+            folderName,
+            conversionResult.txtFileName,
+            "UPLOAD_RTF_AS_TXT"
+          );
 
-      await blockBlobClient.upload(
-        req.file.buffer,
-        req.file.size,
-        uploadOptions
-      );
+          const response = {
+            success: true,
+            containerName,
+            folderName,
+            blobName: conversionResult.txtFileName,
+            originalFilename: originalFilename,
+            convertedFilename: conversionResult.txtFileName,
+            fullPath: conversionResult.txtBlobName,
+            contentType: "text/plain",
+            size: conversionResult.convertedSize,
+            uploadedBy: {
+              id: req.user.userId,
+              role: req.user.role,
+              name: req.user.name,
+            },
+            rtfConversion: {
+              converted: true,
+              originalRtfFile: originalFilename,
+              txtFileName: conversionResult.txtFileName,
+              originalSize: conversionResult.originalSize,
+              convertedSize: conversionResult.convertedSize,
+              message: `RTF file converted and saved as ${conversionResult.txtFileName}. Original RTF file was not stored.`,
+            },
+          };
 
-      await logFileOperation(
-        req.user.userId,
-        containerName,
-        folderName,
-        blobName,
-        "UPLOAD"
-      );
+          return res.status(201).json(response);
+        } catch (conversionError) {
+          console.error("RTF conversion failed:", conversionError);
+          return res.status(400).json({
+            success: false,
+            message: `RTF conversion failed: ${conversionError.message}`,
+          });
+        }
+      } else {
+        // Upload non-RTF files normally
+        const blobName = originalFilename;
+        const fullBlobName = `${folderName}/${blobName}`;
+        const blobClient = containerClient.getBlobClient(fullBlobName);
+        const blockBlobClient = blobClient.getBlockBlobClient();
 
-      res.status(201).json({
-        success: true,
-        containerName,
-        folderName,
-        blobName,
-        originalFilename,
-        fullPath: fullBlobName,
-        contentType: req.file.mimetype,
-        size: req.file.size,
-        uploadedBy: {
-          id: req.user.userId,
-          role: req.user.role,
-          name: req.user.name,
-        },
-      });
+        const uploadOptions = {
+          blobHTTPHeaders: {
+            blobContentType: req.file.mimetype,
+          },
+        };
+
+        // Upload the file
+        await blockBlobClient.upload(
+          req.file.buffer,
+          req.file.size,
+          uploadOptions
+        );
+
+        // Log the upload
+        await logFileOperation(
+          req.user.userId,
+          containerName,
+          folderName,
+          blobName,
+          "UPLOAD"
+        );
+
+        const response = {
+          success: true,
+          containerName,
+          folderName,
+          blobName,
+          originalFilename,
+          fullPath: fullBlobName,
+          contentType: req.file.mimetype,
+          size: req.file.size,
+          uploadedBy: {
+            id: req.user.userId,
+            role: req.user.role,
+            name: req.user.name,
+          },
+        };
+
+        return res.status(201).json(response);
+      }
     } catch (err) {
       console.error("Upload error:", err.message);
       res.status(500).json({
@@ -540,6 +634,7 @@ exports.uploadBlob = async (req, res) => {
 exports.deleteBlob = async (req, res) => {
   try {
     const { containerName, folderName, blobName } = req.params;
+
     const containerClient = blobServiceClient.getContainerClient(containerName);
     const containerExists = await containerClient.exists();
 
@@ -561,6 +656,7 @@ exports.deleteBlob = async (req, res) => {
       });
     }
 
+    // Delete the file
     await blobClient.delete();
 
     await logFileOperation(
@@ -573,10 +669,10 @@ exports.deleteBlob = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Blob deleted successfully",
+      message: `File deleted successfully`,
       containerName,
       folderName,
-      blobName,
+      deletedFiles: [blobName],
     });
   } catch (err) {
     console.error("Delete blob error:", err.message);
@@ -668,3 +764,17 @@ exports.getAuditLogs = async (req, res) => {
     });
   }
 };
+
+// Helper function to convert stream to buffer
+async function streamToBuffer(readableStream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    readableStream.on("data", (data) => {
+      chunks.push(data instanceof Buffer ? data : Buffer.from(data));
+    });
+    readableStream.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+    readableStream.on("error", reject);
+  });
+}
