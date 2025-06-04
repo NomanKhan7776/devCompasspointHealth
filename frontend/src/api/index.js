@@ -1,4 +1,4 @@
-// api/index.js - SIMPLEST APPROACH THAT WORKS
+// api/index.js - TXT ONLY VERSION (Removed RTF conversion utilities)
 import axios from "axios";
 
 // Create axios instance
@@ -194,12 +194,12 @@ const openFileInNewTab = (containerName, folderName, blobName) => {
   }
 };
 
-// Blobs API - SIMPLEST VERSION
+// Blobs API - SIMPLIFIED VERSION (No RTF conversion functions)
 const blobsAPI = {
   getBlobs: (containerName, folderName) =>
     api.get(`/blobs/${containerName}/${folderName}`),
 
-  // SIMPLEST file viewer - just open the URL
+  // File viewer - just open the URL
   viewBlob: async (containerName, folderName, blobName) => {
     try {
       // Quick token validation (optional)
@@ -228,6 +228,7 @@ const blobsAPI = {
 
   getBlobUrl: (containerName, folderName, blobName) =>
     api.get(`/blobs/${containerName}/${folderName}/${blobName}/url`),
+
   uploadBlob: (containerName, folderName, formData) => {
     return api.post(`/blobs/${containerName}/${folderName}`, formData, {
       headers: {
@@ -236,8 +237,11 @@ const blobsAPI = {
       timeout: 60000,
     });
   },
-  deleteBlob: (containerName, folderName, blobName) =>
-    api.delete(`/blobs/${containerName}/${folderName}/${blobName}`),
+
+  deleteBlob: (containerName, folderName, blobName) => {
+    return api.delete(`/blobs/${containerName}/${folderName}/${blobName}`);
+  },
+
   getAuditLogs: (params) => api.get("/blobs/audit", { params }),
 };
 

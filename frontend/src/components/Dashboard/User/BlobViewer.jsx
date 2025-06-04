@@ -1,3 +1,4 @@
+// BlobViewer.jsx - COMPLETE FIXED VERSION (TXT Only with Original UI Design)
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { blobsAPI } from "../../../api";
@@ -91,7 +92,16 @@ const BlobViewer = () => {
         formData
       );
 
-      setSuccessMessage("File uploaded successfully");
+      let message = "File uploaded successfully";
+
+      // Check if RTF was converted to TXT
+      if (response.data.rtfConversion) {
+        if (response.data.rtfConversion.converted) {
+          message = `RTF file converted and saved as ${response.data.rtfConversion.txtFileName}`;
+        }
+      }
+
+      setSuccessMessage(message);
       setFile(null);
 
       // Reset the file input
@@ -251,8 +261,8 @@ const BlobViewer = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
               />
               <p className="mt-1 text-xs sm:text-sm text-gray-500">
-                Maximum file size: 10MB. Files will be saved with their original
-                names.
+                Maximum file size: 50MB. RTF files will be automatically
+                converted to TXT format.
               </p>
             </div>
 
@@ -375,16 +385,13 @@ const BlobViewer = () => {
               </p>
             </div>
           ) : (
-            /* MOBILE-FRIENDLY FILE CARDS - NO HORIZONTAL SCROLLING */
             <div className="space-y-3">
               {blobs.map((blob) => (
                 <div
                   key={blob.name}
                   className="border border-gray-200 rounded-lg p-3 sm:p-4 hover:bg-gray-50 transition-colors"
                 >
-                  {/* Mobile Layout - Everything Visible */}
                   <div className="space-y-3">
-                    {/* File Header - Name and Type */}
                     <div className="flex items-start justify-between">
                       <button
                         onClick={() => handleFileClick(blob.name)}
@@ -413,6 +420,15 @@ const BlobViewer = () => {
                             <p className="text-sm font-medium text-blue-600 hover:text-blue-800 truncate">
                               {blob.name}
                             </p>
+
+                            {blob.isConvertedFromRtf &&
+                              blob.originalRtfFileName && (
+                                <p className="text-xs text-green-600 mt-1">
+                                  ✓ Converted from RTF:{" "}
+                                  {blob.originalRtfFileName}
+                                </p>
+                              )}
+
                             <p className="text-xs text-blue-500">
                               {isSafariIOS() ? "Tap to open" : "Click to open"}
                             </p>
@@ -420,15 +436,16 @@ const BlobViewer = () => {
                         </div>
                       </button>
 
-                      {/* File Type Badge */}
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 flex-shrink-0">
-                        {blob.contentType
-                          ? blob.contentType.split("/")[0].toUpperCase()
+                        {blob.name.toLowerCase().endsWith(".txt")
+                          ? "TXT"
+                          : blob.contentType
+                          ? blob.contentType.split("/")[1]?.toUpperCase() ||
+                            "FILE"
                           : "FILE"}
                       </span>
                     </div>
 
-                    {/* File Details Row */}
                     <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
                       <span className="flex items-center">
                         <svg
@@ -480,7 +497,6 @@ const BlobViewer = () => {
                       </span>
                     </div>
 
-                    {/* Action Buttons Row - Only show if user can delete */}
                     {canDelete && (
                       <div className="flex justify-end pt-2 border-t border-gray-100">
                         <Button
