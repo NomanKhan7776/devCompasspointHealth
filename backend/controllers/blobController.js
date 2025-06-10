@@ -1,4 +1,4 @@
-// controllers/blobController.js - TXT ONLY VERSION (RTF files converted and not stored)
+// controllers/blobController.js - ENHANCED VERSION WITH PROFILE IMAGE SUPPORT
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -9,15 +9,66 @@ const { blobServiceClient } = require("../config/azure-storage");
 const { pool, sql } = require("../config/database");
 const multer = require("multer");
 const rtfConversionService = require("../services/rtfConversionService");
+const sharp = require("sharp"); // Add this dependency for image processing
 
 // Configure multer
 const memoryStorage = multer.memoryStorage();
 const upload = multer({
   storage: memoryStorage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB for RTF files
+    fileSize: 50 * 1024 * 1024, // 50MB for RTF files and images
   },
 });
+
+// Standard profile image dimensions
+const PROFILE_IMAGE_CONFIG = {
+  width: 150,
+  height: 150,
+  quality: 85,
+  format: "jpeg",
+  standardName: "patient-profile.jpg",
+};
+
+// Helper function to check if file is an image
+const isImageFile = (filename, mimetype) => {
+  const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"];
+  const imageMimeTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/bmp",
+    "image/webp",
+  ];
+
+  const ext = filename.toLowerCase().substring(filename.lastIndexOf("."));
+  return imageExtensions.includes(ext) || imageMimeTypes.includes(mimetype);
+};
+
+// Helper function to process profile image
+const processProfileImage = async (buffer, originalName) => {
+  try {
+    // Process image to standard dimensions
+    const processedBuffer = await sharp(buffer)
+      .resize(PROFILE_IMAGE_CONFIG.width, PROFILE_IMAGE_CONFIG.height, {
+        fit: "cover",
+        position: "center",
+      })
+      .jpeg({
+        quality: PROFILE_IMAGE_CONFIG.quality,
+        progressive: true,
+      })
+      .toBuffer();
+
+    return {
+      buffer: processedBuffer,
+      filename: PROFILE_IMAGE_CONFIG.standardName,
+      contentType: "image/jpeg",
+      originalName: originalName,
+    };
+  } catch (error) {
+    throw new Error(`Failed to process profile image: ${error.message}`);
+  }
+};
 
 // File operation logging (existing function - no changes)
 const logFileOperation = async (
@@ -100,7 +151,7 @@ const checkUserAccess = async (userId, containerName, folderName) => {
 };
 
 // @route   GET api/blobs/:containerName/:folderName
-// @desc    Get all blobs in a folder (TXT files only, no RTF files shown)
+// @desc    Get all blobs in a folder (TXT files only, no RTF files shown) + Profile Image Check
 // @access  Private
 exports.getBlobs = async (req, res) => {
   try {
@@ -128,6 +179,7 @@ exports.getBlobs = async (req, res) => {
     }
 
     const blobs = [];
+    let hasProfileImage = false;
     const folderPrefix = `${folderName}/`;
     const blobIterator = containerClient.listBlobsFlat({
       prefix: folderPrefix,
@@ -139,6 +191,23 @@ exports.getBlobs = async (req, res) => {
       }
 
       const blobName = blob.name.replace(folderPrefix, "");
+
+      // Check for profile image
+      if (blobName === PROFILE_IMAGE_CONFIG.standardName) {
+        hasProfileImage = true;
+        // Include profile image in the list for admin viewing
+        blobs.push({
+          name: blobName,
+          fullPath: blob.name,
+          contentType: blob.properties.contentType,
+          contentLength: blob.properties.contentLength,
+          createdOn: blob.properties.createdOn,
+          lastModified: blob.properties.lastModified,
+          metadata: blob.metadata,
+          isProfileImage: true,
+        });
+        continue;
+      }
 
       // SKIP RTF files - only show TXT and other files
       if (blobName.toLowerCase().endsWith(".rtf")) {
@@ -166,6 +235,7 @@ exports.getBlobs = async (req, res) => {
         metadata: blob.metadata,
         isConvertedFromRtf,
         originalRtfFileName,
+        isProfileImage: false,
       });
     }
 
@@ -182,9 +252,68 @@ exports.getBlobs = async (req, res) => {
       containerName,
       folderName,
       blobs,
+      hasProfileImage, // Add this flag for UI
     });
   } catch (err) {
     console.error("getBlobs error:", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// @route   GET api/blobs/:containerName/:folderName/profile-image
+// @desc    Get patient profile image (for emergency access)
+// @access  Public (no auth required for emergency access)
+exports.getProfileImage = async (req, res) => {
+  try {
+    const { containerName, folderName } = req.params;
+
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+    const containerExists = await containerClient.exists();
+
+    if (!containerExists) {
+      return res.status(404).json({
+        success: false,
+        message: "Container not found",
+      });
+    }
+
+    const profileImagePath = `${folderName}/${PROFILE_IMAGE_CONFIG.standardName}`;
+    const blobClient = containerClient.getBlobClient(profileImagePath);
+    const blobExists = await blobClient.exists();
+
+    if (!blobExists) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile image not found",
+      });
+    }
+
+    // Get blob properties and content
+    const properties = await blobClient.getProperties();
+    const downloadResponse = await blobClient.download();
+
+    // Set headers for image display
+    res.setHeader("Content-Type", properties.contentType || "image/jpeg");
+    res.setHeader("Content-Disposition", "inline");
+    res.setHeader("Cache-Control", "public, max-age=300"); // 5 minutes cache
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    // Log the profile image access
+    await logFileOperation(
+      0, // System access for emergency
+      containerName,
+      folderName,
+      PROFILE_IMAGE_CONFIG.standardName,
+      "PROFILE_VIEW_EMERGENCY"
+    );
+
+    // Stream the image content
+    downloadResponse.readableStreamBody.pipe(res);
+  } catch (err) {
+    console.error("getProfileImage error:", err.message);
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -362,6 +491,15 @@ exports.viewBlob = async (req, res) => {
       );
     }
 
+    // Add headers for profile images
+    if (blobName === PROFILE_IMAGE_CONFIG.standardName) {
+      res.setHeader("X-File-Type", "profile-image");
+      res.setHeader(
+        "X-Image-Dimensions",
+        `${PROFILE_IMAGE_CONFIG.width}x${PROFILE_IMAGE_CONFIG.height}`
+      );
+    }
+
     // Add security indicator headers
     if (req.isFileAccess) {
       res.setHeader("X-Access-Type", "temporary");
@@ -376,7 +514,7 @@ exports.viewBlob = async (req, res) => {
       containerName,
       folderName,
       blobName,
-      "VIEW"
+      blobName === PROFILE_IMAGE_CONFIG.standardName ? "PROFILE_VIEW" : "VIEW"
     );
 
     // Stream the file content
@@ -459,6 +597,7 @@ exports.getBlobSasUrl = async (req, res) => {
       viewOnly: true,
       canModify: req.user.role === "admin",
       canUpload: ["admin", "doctor", "nurse"].includes(req.user.role),
+      isProfileImage: blobName === PROFILE_IMAGE_CONFIG.standardName,
       message: "Use viewUrl for secure new tab viewing",
     });
   } catch (err) {
@@ -471,7 +610,7 @@ exports.getBlobSasUrl = async (req, res) => {
 };
 
 // @route   POST api/blobs/:containerName/:folderName
-// @desc    Upload a blob - RTF files are converted to TXT only, other files uploaded normally
+// @desc    Upload a blob - RTF files are converted to TXT only, Images processed for profile
 // @access  Private/Admin,Doctor,Nurse (authenticated by middleware + role check)
 exports.uploadBlob = async (req, res) => {
   upload.single("file")(req, res, async (err) => {
@@ -492,7 +631,7 @@ exports.uploadBlob = async (req, res) => {
 
     try {
       const { containerName, folderName } = req.params;
-      const { filename } = req.body;
+      const { filename, isProfileImage } = req.body;
       const originalFilename = filename || req.file.originalname;
 
       const hasAccess = await checkUserAccess(
@@ -515,6 +654,81 @@ exports.uploadBlob = async (req, res) => {
           success: false,
           message: "Container not found",
         });
+      }
+
+      // Check if this should be processed as a profile image
+      if (
+        isProfileImage === "true" &&
+        isImageFile(originalFilename, req.file.mimetype)
+      ) {
+        try {
+          // Process as profile image
+          const profileResult = await processProfileImage(
+            req.file.buffer,
+            originalFilename
+          );
+
+          // Upload processed profile image
+          const profileBlobName = `${folderName}/${profileResult.filename}`;
+          const profileBlobClient =
+            containerClient.getBlobClient(profileBlobName);
+          const profileBlockBlobClient = profileBlobClient.getBlockBlobClient();
+
+          await profileBlockBlobClient.upload(
+            profileResult.buffer,
+            profileResult.buffer.length,
+            {
+              blobHTTPHeaders: {
+                blobContentType: profileResult.contentType,
+              },
+              metadata: {
+                originalFileName: originalFilename,
+                processedAt: new Date().toISOString(),
+                isProfileImage: "true",
+                dimensions: `${PROFILE_IMAGE_CONFIG.width}x${PROFILE_IMAGE_CONFIG.height}`,
+                uploadedBy: req.user.name,
+              },
+            }
+          );
+
+          // Log the upload
+          await logFileOperation(
+            req.user.userId,
+            containerName,
+            folderName,
+            profileResult.filename,
+            "UPLOAD_PROFILE_IMAGE"
+          );
+
+          return res.status(201).json({
+            success: true,
+            containerName,
+            folderName,
+            blobName: profileResult.filename,
+            originalFilename: originalFilename,
+            fullPath: profileBlobName,
+            contentType: profileResult.contentType,
+            size: profileResult.buffer.length,
+            uploadedBy: {
+              id: req.user.userId,
+              role: req.user.role,
+              name: req.user.name,
+            },
+            profileImageProcessing: {
+              processed: true,
+              standardName: profileResult.filename,
+              dimensions: `${PROFILE_IMAGE_CONFIG.width}x${PROFILE_IMAGE_CONFIG.height}`,
+              format: PROFILE_IMAGE_CONFIG.format,
+              message: `Image processed and saved as patient profile image`,
+            },
+          });
+        } catch (profileError) {
+          console.error("Profile image processing failed:", profileError);
+          return res.status(400).json({
+            success: false,
+            message: `Profile image processing failed: ${profileError.message}`,
+          });
+        }
       }
 
       // Check if this is an RTF file
@@ -659,12 +873,16 @@ exports.deleteBlob = async (req, res) => {
     // Delete the file
     await blobClient.delete();
 
+    const operation =
+      blobName === PROFILE_IMAGE_CONFIG.standardName
+        ? "DELETE_PROFILE_IMAGE"
+        : "DELETE";
     await logFileOperation(
       req.user.userId,
       containerName,
       folderName,
       blobName,
-      "DELETE"
+      operation
     );
 
     res.json({
@@ -673,6 +891,7 @@ exports.deleteBlob = async (req, res) => {
       containerName,
       folderName,
       deletedFiles: [blobName],
+      wasProfileImage: blobName === PROFILE_IMAGE_CONFIG.standardName,
     });
   } catch (err) {
     console.error("Delete blob error:", err.message);
@@ -702,7 +921,7 @@ exports.getAuditLogs = async (req, res) => {
     await pool.connect();
 
     let query =
-      "SELECT fa.*, u.name, u.username, u.role FROM FileAudit fa JOIN Users u ON fa.userId = u.userId WHERE 1=1";
+      "SELECT fa.*, u.name, u.username, u.role FROM FileAudit fa LEFT JOIN Users u ON fa.userId = u.userId WHERE 1=1";
     const queryParams = [];
 
     if (userId) {

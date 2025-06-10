@@ -1,4 +1,4 @@
-<!-- views/patientData.ejs - COMPLETELY FIXED VERSION -->
+<!-- views/patientData.ejs - ENHANCED VERSION WITH PROFILE IMAGE -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -13,6 +13,43 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     />
+    <style>
+      .profile-image {
+        width: 150px;
+        height: 150px;
+        border-radius: 12px;
+        object-fit: cover;
+        border: 3px solid #e5e7eb;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      .profile-placeholder {
+        width: 150px;
+        height: 150px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 3px solid #e5e7eb;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      .profile-initials {
+        font-size: 3rem;
+        font-weight: bold;
+        color: white;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
+      @media (max-width: 640px) {
+        .profile-image,
+        .profile-placeholder {
+          width: 120px;
+          height: 120px;
+        }
+        .profile-initials {
+          font-size: 2.5rem;
+        }
+      }
+    </style>
   </head>
   <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-6 max-w-4xl">
@@ -54,17 +91,28 @@
       </div>
       <% } %>
 
-      <!-- Patient Header Card -->
+      <!-- Patient Header Card with Profile Image -->
       <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <div class="flex items-center mb-4">
-          <div class="bg-blue-100 rounded-full p-3 mr-4">
-            <i class="fas fa-user-injured text-blue-600 text-2xl"></i>
+        <div class="flex flex-col sm:flex-row items-start sm:items-center mb-4">
+          <!-- Profile Image Section -->
+          <div class="mb-4 sm:mb-0 sm:mr-6 flex-shrink-0">
+            <div id="profile-image-container">
+              <!-- Profile image will be loaded here via JavaScript -->
+              <div class="profile-placeholder">
+                <span class="profile-initials" id="patient-initials">
+                  <%= patientName.split(' ').map(n =>
+                  n.charAt(0)).join('').substring(0, 2) %>
+                </span>
+              </div>
+            </div>
           </div>
-          <div class="flex-1">
+
+          <!-- Patient Information -->
+          <div class="flex-1 min-w-0">
             <h1 class="text-3xl font-bold text-gray-800 mb-2">
               <%= patientName %>
             </h1>
-            <div class="flex flex-wrap gap-2">
+            <div class="flex flex-wrap gap-2 mb-3">
               <span
                 class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium"
               >
@@ -78,20 +126,20 @@
                 <%= folderName %>
               </span>
             </div>
-          </div>
-        </div>
 
-        <!-- Important Notice -->
-        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-          <div class="flex items-start">
-            <i class="fas fa-eye text-yellow-600 text-lg mr-2 mt-0.5"></i>
-            <div>
-              <p class="text-sm font-medium text-yellow-800">
-                View Only Access
-              </p>
-              <p class="text-sm text-yellow-700">
-                Files cannot be downloaded for security reasons
-              </p>
+            <!-- Important Notice -->
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <div class="flex items-start">
+                <i class="fas fa-eye text-yellow-600 text-lg mr-2 mt-0.5"></i>
+                <div>
+                  <p class="text-sm font-medium text-yellow-800">
+                    View Only Access
+                  </p>
+                  <p class="text-sm text-yellow-700">
+                    Files cannot be downloaded for security reasons
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -303,6 +351,59 @@
     </div>
 
     <script>
+      // Global variables
+      const CONTAINER_NAME = "<%= containerName %>";
+      const FOLDER_NAME = "<%= folderName %>";
+      const PATIENT_NAME = "<%= patientName %>";
+
+      // Function to get patient initials
+      function getPatientInitials(name) {
+        return name
+          .split(" ")
+          .map((n) => n.charAt(0))
+          .join("")
+          .substring(0, 2)
+          .toUpperCase();
+      }
+
+      // Function to load profile image
+      function loadProfileImage() {
+        const profileImageContainer = document.getElementById(
+          "profile-image-container"
+        );
+        const profileImageUrl = `/api/blobs/${CONTAINER_NAME}/${FOLDER_NAME}/profile-image`;
+
+        // Create image element
+        const img = document.createElement("img");
+        img.className = "profile-image";
+        img.alt = `${PATIENT_NAME} - Profile Photo`;
+
+        // Handle successful image load
+        img.onload = function () {
+          // Replace placeholder with actual image
+          profileImageContainer.innerHTML = "";
+          profileImageContainer.appendChild(img);
+
+          // Add loading success indicator
+          console.log("Profile image loaded successfully");
+        };
+
+        // Handle image load error (use placeholder)
+        img.onerror = function () {
+          // Keep the placeholder with initials
+          console.log("Profile image not found, using initials placeholder");
+
+          // Update initials in case they weren't set correctly
+          const initialsElement = document.getElementById("patient-initials");
+          if (initialsElement) {
+            initialsElement.textContent = getPatientInitials(PATIENT_NAME);
+          }
+        };
+
+        // Set image source (this will trigger onload or onerror)
+        img.src = profileImageUrl;
+      }
+
       // Detect Safari iOS
       function isSafariIOS() {
         const userAgent = navigator.userAgent.toLowerCase();
@@ -378,6 +479,9 @@
       }
 
       document.addEventListener("DOMContentLoaded", function () {
+        // Load profile image
+        loadProfileImage();
+
         // Update UI for Safari iOS
         if (isSafariIOS()) {
           const notice = document.getElementById("safari-ios-notice");
