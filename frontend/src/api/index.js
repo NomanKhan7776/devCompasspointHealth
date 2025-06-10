@@ -1,4 +1,4 @@
-// api/index.js - TXT ONLY VERSION (Removed RTF conversion utilities)
+// api/index.js - ENHANCED VERSION WITH PROFILE IMAGE SUPPORT
 import axios from "axios";
 
 // Create axios instance
@@ -194,10 +194,21 @@ const openFileInNewTab = (containerName, folderName, blobName) => {
   }
 };
 
-// Blobs API - SIMPLIFIED VERSION (No RTF conversion functions)
+// Blobs API - ENHANCED VERSION WITH PROFILE IMAGE SUPPORT
 const blobsAPI = {
   getBlobs: (containerName, folderName) =>
     api.get(`/blobs/${containerName}/${folderName}`),
+
+  // Get profile image for emergency access (no auth required)
+  getProfileImage: (containerName, folderName) =>
+    axios.get(
+      `${
+        import.meta.env.VITE_REACT_API_URL
+      }/api/blobs/${containerName}/${folderName}/profile-image`,
+      {
+        responseType: "blob",
+      }
+    ),
 
   // File viewer - just open the URL
   viewBlob: async (containerName, folderName, blobName) => {
@@ -238,8 +249,30 @@ const blobsAPI = {
     });
   },
 
+  // Enhanced upload method specifically for profile images
+  uploadProfileImage: (containerName, folderName, imageFile) => {
+    const formData = new FormData();
+    formData.append("file", imageFile);
+    formData.append("filename", imageFile.name);
+    formData.append("isProfileImage", "true"); // Flag for profile image processing
+
+    return api.post(`/blobs/${containerName}/${folderName}`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+      timeout: 60000,
+    });
+  },
+
   deleteBlob: (containerName, folderName, blobName) => {
     return api.delete(`/blobs/${containerName}/${folderName}/${blobName}`);
+  },
+
+  // Delete profile image specifically
+  deleteProfileImage: (containerName, folderName) => {
+    return api.delete(
+      `/blobs/${containerName}/${folderName}/patient-profile.jpg`
+    );
   },
 
   getAuditLogs: (params) => api.get("/blobs/audit", { params }),
@@ -330,6 +363,77 @@ const smartTokenUtils = {
   },
 };
 
+// Profile Image Utilities
+const profileImageUtils = {
+  // Standard profile image configuration
+  PROFILE_CONFIG: {
+    standardName: "patient-profile.jpg",
+    dimensions: { width: 150, height: 150 },
+    maxFileSize: 10 * 1024 * 1024, // 10MB
+    allowedFormats: [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/bmp",
+      "image/webp",
+    ],
+  },
+
+  // Validate profile image file
+  validateProfileImage: (file) => {
+    const config = profileImageUtils.PROFILE_CONFIG;
+
+    if (!file) {
+      return { valid: false, error: "No file selected" };
+    }
+
+    if (!config.allowedFormats.includes(file.type)) {
+      return {
+        valid: false,
+        error:
+          "Invalid file format. Please select JPEG, PNG, GIF, BMP, or WebP image.",
+      };
+    }
+
+    if (file.size > config.maxFileSize) {
+      return {
+        valid: false,
+        error: "File too large. Please select an image smaller than 10MB.",
+      };
+    }
+
+    return { valid: true };
+  },
+
+  // Get profile image URL for emergency access
+  getEmergencyProfileImageUrl: (containerName, folderName) => {
+    return `${
+      import.meta.env.VITE_REACT_API_URL
+    }/api/blobs/${containerName}/${folderName}/profile-image`;
+  },
+
+  // Generate patient initials for fallback display
+  generateInitials: (patientName) => {
+    if (!patientName) return "??";
+    return patientName
+      .split(" ")
+      .map((name) => name.charAt(0))
+      .join("")
+      .substring(0, 2)
+      .toUpperCase();
+  },
+
+  // Create profile image preview
+  createImagePreview: (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  },
+};
+
 // Enhanced logout function
 const enhancedLogout = async () => {
   try {
@@ -376,5 +480,6 @@ export {
   blobsAPI,
   smartTokenAPI,
   smartTokenUtils,
+  profileImageUtils,
   enhancedLogout,
 };

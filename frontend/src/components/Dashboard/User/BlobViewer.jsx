@@ -1,4 +1,4 @@
-// BlobViewer.jsx - COMPLETE FIXED VERSION (TXT Only with Original UI Design)
+// BlobViewer.jsx - ENHANCED VERSION WITH PROFILE IMAGE UPLOAD SUPPORT
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { blobsAPI } from "../../../api";
@@ -14,6 +14,7 @@ const BlobViewer = () => {
   const navigate = useNavigate();
 
   const [blobs, setBlobs] = useState([]);
+  const [hasProfileImage, setHasProfileImage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,6 +24,12 @@ const BlobViewer = () => {
   // Modal states
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [blobToDelete, setBlobToDelete] = useState(null);
+  const [profileUploadModalOpen, setProfileUploadModalOpen] = useState(false);
+
+  // Profile image upload states
+  const [profileFile, setProfileFile] = useState(null);
+  const [profilePreview, setProfilePreview] = useState(null);
+  const [profileUploading, setProfileUploading] = useState(false);
 
   // Determine user permissions
   const isAdmin = currentUser?.role === "admin";
@@ -39,12 +46,26 @@ const BlobViewer = () => {
     }
   };
 
+  // Check if file is an image
+  const isImageFile = (file) => {
+    const imageTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/bmp",
+      "image/webp",
+    ];
+    return imageTypes.includes(file.type);
+  };
+
   // Fetch blobs from the specified container and folder
   const fetchBlobs = async () => {
     try {
       setLoading(true);
       const res = await blobsAPI.getBlobs(containerName, folderName);
       setBlobs(res.data.blobs);
+      setHasProfileImage(res.data.hasProfileImage || false);
     } catch (err) {
       setError("Failed to load patient data");
       console.error("Error fetching blobs:", err);
@@ -57,7 +78,7 @@ const BlobViewer = () => {
     fetchBlobs();
   }, [containerName, folderName]);
 
-  // Handle file selection
+  // Handle file selection for regular uploads
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     setFile(selectedFile);
@@ -68,7 +89,40 @@ const BlobViewer = () => {
     }
   };
 
-  // Upload file to the current folder with original filename
+  // Handle profile image selection
+  const handleProfileFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+
+    if (!selectedFile) {
+      setProfileFile(null);
+      setProfilePreview(null);
+      return;
+    }
+
+    // Validate file type
+    if (!isImageFile(selectedFile)) {
+      setError("Please select a valid image file (JPEG, PNG, GIF, BMP, WebP)");
+      return;
+    }
+
+    // Validate file size (max 10MB for profile images)
+    if (selectedFile.size > 10 * 1024 * 1024) {
+      setError("Profile image must be less than 10MB");
+      return;
+    }
+
+    setProfileFile(selectedFile);
+    setError("");
+
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setProfilePreview(e.target.result);
+    };
+    reader.readAsDataURL(selectedFile);
+  };
+
+  // Upload regular file
   const handleUpload = async (e) => {
     e.preventDefault();
 
@@ -79,7 +133,6 @@ const BlobViewer = () => {
 
     const formData = new FormData();
     formData.append("file", file);
-    // Add the original filename to preserve it
     formData.append("filename", file.name);
 
     try {
@@ -116,20 +169,60 @@ const BlobViewer = () => {
       let errorMessage = "Failed to upload file. Please try again.";
 
       if (err.response) {
-        // The server responded with an error
         errorMessage =
           err.response.data?.message || "Server rejected the file upload";
       } else if (err.request) {
-        // The request was made but no response received
         errorMessage = "No response from server. Please check your connection.";
       } else {
-        // Something else caused an error
         errorMessage = err.message || "Unknown upload error";
       }
 
       setError(errorMessage);
     } finally {
       setUploadLoading(false);
+    }
+  };
+
+  // Upload profile image
+  const handleProfileUpload = async () => {
+    if (!profileFile) {
+      setError("Please select a profile image");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", profileFile);
+    formData.append("filename", profileFile.name);
+    formData.append("isProfileImage", "true"); // Flag for profile image processing
+
+    try {
+      setProfileUploading(true);
+      setError("");
+
+      const response = await blobsAPI.uploadBlob(
+        containerName,
+        folderName,
+        formData
+      );
+
+      let message = "Profile image uploaded successfully";
+
+      if (response.data.profileImageProcessing) {
+        message = `Profile image processed and saved as ${response.data.profileImageProcessing.standardName}`;
+      }
+
+      setSuccessMessage(message);
+      setProfileFile(null);
+      setProfilePreview(null);
+      setProfileUploadModalOpen(false);
+
+      // Refresh the blob list
+      fetchBlobs();
+    } catch (err) {
+      console.error("Profile upload error:", err);
+      setError(err.response?.data?.message || "Failed to upload profile image");
+    } finally {
+      setProfileUploading(false);
     }
   };
 
@@ -143,7 +236,14 @@ const BlobViewer = () => {
   const handleDelete = async () => {
     try {
       await blobsAPI.deleteBlob(containerName, folderName, blobToDelete.name);
-      setSuccessMessage("File deleted successfully");
+
+      if (blobToDelete.isProfileImage) {
+        setSuccessMessage("Profile image deleted successfully");
+        setHasProfileImage(false);
+      } else {
+        setSuccessMessage("File deleted successfully");
+      }
+
       setDeleteModalOpen(false);
       setBlobToDelete(null);
       fetchBlobs();
@@ -243,10 +343,74 @@ const BlobViewer = () => {
         />
       )}
 
+      {/* Profile Image Management Section */}
+      {canUpload && (
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-800 mb-2 sm:mb-0">
+              Patient Profile Management
+            </h2>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button
+                color="green"
+                onClick={() => setProfileUploadModalOpen(true)}
+                className="w-full sm:w-auto text-sm"
+              >
+                <svg
+                  className="w-4 h-4 mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
+                </svg>
+                {hasProfileImage ? "Update Profile Image" : "Add Profile Image"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-start">
+              <svg
+                className="w-5 h-5 text-blue-600 mt-0.5 mr-2 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-blue-800 mb-1">
+                  Profile Image Information
+                </p>
+                <p className="text-sm text-blue-700">
+                  Profile images are automatically resized to 150x150 pixels and
+                  displayed during emergency access.
+                  {hasProfileImage
+                    ? " This patient currently has a profile image."
+                    : " No profile image has been uploaded for this patient."}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Regular File Upload Section */}
       {canUpload && (
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">
-            Upload New File
+            Upload Medical Files
           </h2>
 
           <form onSubmit={handleUpload} className="space-y-4">
@@ -306,6 +470,7 @@ const BlobViewer = () => {
         </div>
       )}
 
+      {/* Patient Files Section */}
       <div className="bg-white rounded-lg shadow-md">
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
@@ -403,22 +568,44 @@ const BlobViewer = () => {
                         }
                       >
                         <div className="flex items-center">
-                          <svg
-                            className="w-4 h-4 mr-2 text-blue-500 flex-shrink-0"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                            />
-                          </svg>
+                          {/* File Icon */}
+                          <div className="w-4 h-4 mr-2 text-blue-500 flex-shrink-0">
+                            {blob.isProfileImage ? (
+                              <svg
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
+                              </svg>
+                            )}
+                          </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-blue-600 hover:text-blue-800 truncate">
                               {blob.name}
+                              {blob.isProfileImage && (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                  Profile Image
+                                </span>
+                              )}
                             </p>
 
                             {blob.isConvertedFromRtf &&
@@ -437,7 +624,9 @@ const BlobViewer = () => {
                       </button>
 
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 flex-shrink-0">
-                        {blob.name.toLowerCase().endsWith(".txt")
+                        {blob.isProfileImage
+                          ? "IMAGE"
+                          : blob.name.toLowerCase().endsWith(".txt")
                           ? "TXT"
                           : blob.contentType
                           ? blob.contentType.split("/")[1]?.toUpperCase() ||
@@ -529,11 +718,137 @@ const BlobViewer = () => {
         </div>
       </div>
 
+      {/* Profile Image Upload Modal */}
+      <Modal
+        isOpen={profileUploadModalOpen}
+        onClose={() => !profileUploading && setProfileUploadModalOpen(false)}
+        title={
+          hasProfileImage
+            ? "Update Patient Profile Image"
+            : "Add Patient Profile Image"
+        }
+        footer={
+          <>
+            <Button
+              color="green"
+              onClick={handleProfileUpload}
+              disabled={!profileFile || profileUploading}
+              className="w-full sm:w-auto sm:ml-3"
+            >
+              {profileUploading
+                ? "Processing..."
+                : hasProfileImage
+                ? "Update Profile Image"
+                : "Upload Profile Image"}
+            </Button>
+            <Button
+              color="gray"
+              onClick={() => setProfileUploadModalOpen(false)}
+              disabled={profileUploading}
+              className="mt-3 w-full sm:mt-0 sm:w-auto"
+            >
+              Cancel
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <svg
+                className="w-5 h-5 text-blue-600 mt-0.5 mr-2 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <div>
+                <p className="text-sm font-medium text-blue-800 mb-1">
+                  Profile Image Guidelines
+                </p>
+                <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
+                  <li>
+                    Images will be automatically resized to 150×150 pixels
+                  </li>
+                  <li>Supported formats: JPEG, PNG, GIF, BMP, WebP</li>
+                  <li>Maximum file size: 10MB</li>
+                  <li>Profile images are displayed during emergency access</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Profile Image
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleProfileFileChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          {profilePreview && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Preview (will be resized to 150×150px)
+              </label>
+              <div className="flex justify-center">
+                <img
+                  src={profilePreview}
+                  alt="Profile preview"
+                  className="w-32 h-32 object-cover rounded-lg border-2 border-gray-300"
+                />
+              </div>
+            </div>
+          )}
+
+          {hasProfileImage && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start">
+                <svg
+                  className="w-5 h-5 text-yellow-600 mt-0.5 mr-2 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                  />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-yellow-800 mb-1">
+                    Replace Existing Image
+                  </p>
+                  <p className="text-sm text-yellow-700">
+                    This patient already has a profile image. Uploading a new
+                    image will replace the existing one.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
       {/* Delete Confirmation Modal */}
       <Modal
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
-        title="Confirm File Deletion"
+        title={`Confirm ${
+          blobToDelete?.isProfileImage ? "Profile Image" : "File"
+        } Deletion`}
         footer={
           <>
             <Button
@@ -555,16 +870,27 @@ const BlobViewer = () => {
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-500">
-            Are you sure you want to delete the file{" "}
+            Are you sure you want to delete{" "}
+            {blobToDelete?.isProfileImage ? "the profile image" : "the file"}{" "}
             <span className="font-bold">{blobToDelete?.name}</span>? This action
             cannot be undone and the file will be permanently removed from
             storage.
           </p>
 
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div
+            className={`border rounded-lg p-4 ${
+              blobToDelete?.isProfileImage
+                ? "border-yellow-200 bg-yellow-50"
+                : "border-red-200 bg-red-50"
+            }`}
+          >
             <div className="flex">
               <svg
-                className="h-5 w-5 text-red-400 mr-3 mt-0.5"
+                className={`h-5 w-5 mr-3 mt-0.5 ${
+                  blobToDelete?.isProfileImage
+                    ? "text-yellow-400"
+                    : "text-red-400"
+                }`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -577,12 +903,27 @@ const BlobViewer = () => {
                 />
               </svg>
               <div>
-                <h4 className="text-sm font-medium text-red-800">
-                  Warning: Permanent Deletion
+                <h4
+                  className={`text-sm font-medium ${
+                    blobToDelete?.isProfileImage
+                      ? "text-yellow-800"
+                      : "text-red-800"
+                  }`}
+                >
+                  {blobToDelete?.isProfileImage
+                    ? "Profile Image Deletion"
+                    : "Warning: Permanent Deletion"}
                 </h4>
-                <p className="text-sm text-red-700 mt-1">
-                  This file will be permanently deleted from secure storage and
-                  cannot be recovered.
+                <p
+                  className={`text-sm mt-1 ${
+                    blobToDelete?.isProfileImage
+                      ? "text-yellow-700"
+                      : "text-red-700"
+                  }`}
+                >
+                  {blobToDelete?.isProfileImage
+                    ? "Deleting the profile image will remove it from emergency access displays. You can upload a new profile image at any time."
+                    : "This file will be permanently deleted from secure storage and cannot be recovered."}
                 </p>
               </div>
             </div>
