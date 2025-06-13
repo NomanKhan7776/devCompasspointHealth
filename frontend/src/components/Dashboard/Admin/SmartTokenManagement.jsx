@@ -1,4 +1,4 @@
-// SmartTokenManagement.jsx - Enhanced with Remote Disconnect
+// SmartTokenManagement.jsx - Enhanced with Remote Disconnect and Date of Birth
 import React, { useState, useEffect, useRef } from "react";
 import { smartTokenAPI, assignmentsAPI } from "../../../api";
 import Button from "../../common/Button";
@@ -20,6 +20,7 @@ const SmartTokenManagement = () => {
   const [selectedContainer, setSelectedContainer] = useState("");
   const [selectedFolder, setSelectedFolder] = useState("");
   const [patientName, setPatientName] = useState("");
+  const [patientDateOfBirth, setPatientDateOfBirth] = useState("");
   const [assigning, setAssigning] = useState(false);
 
   // Revoke modal state
@@ -181,6 +182,7 @@ const SmartTokenManagement = () => {
     setSelectedContainer("");
     setSelectedFolder("");
     setPatientName("");
+    setPatientDateOfBirth("");
     setError("");
     setContainerSearch("");
     setFolderSearch("");
@@ -204,6 +206,7 @@ const SmartTokenManagement = () => {
         containerName: selectedContainer,
         folderName: selectedFolder,
         patientName: patientName.trim(),
+        patientDateOfBirth: patientDateOfBirth.trim(),
       });
 
       setSuccess(`Token assigned to ${patientName} successfully`);
@@ -756,6 +759,19 @@ const SmartTokenManagement = () => {
                 onChange={(e) => setPatientName(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Enter patient name"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Patient Date of Birth
+              </label>
+              <input
+                type="date"
+                value={patientDateOfBirth}
+                onChange={(e) => setPatientDateOfBirth(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Select date of birth"
               />
             </div>
 
