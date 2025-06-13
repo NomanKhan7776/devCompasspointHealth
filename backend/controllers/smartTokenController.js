@@ -1,4 +1,4 @@
-// controllers/smartTokenController.js - FIXED VERSION with working file access
+// controllers/smartTokenController.js - FIXED VERSION with working file access and Date of Birth
 const { pool, sql } = require("../config/database");
 const { blobServiceClient } = require("../config/azure-storage");
 const {
@@ -134,6 +134,22 @@ const formatFileSize = (bytes) => {
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
+// Helper function to format date of birth
+const formatDateOfBirth = (dateString) => {
+  if (!dateString) return null;
+  try {
+    const date = new Date(dateString);
+    // Format as MM/DD/YYYY
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const year = date.getFullYear();
+    return `${month}/${day}/${year}`;
+  } catch (error) {
+    console.error("Error formatting date of birth:", error);
+    return null;
+  }
 };
 
 // Main verification endpoint - UPDATED with remote disconnect check
@@ -288,10 +304,14 @@ exports.verifySmartToken = async (req, res) => {
         // Log access for audit
         await logTokenAccess(id, token.containerName, token.folderName, req.ip);
 
+        // Format patient date of birth
+        const formattedDOB = formatDateOfBirth(token.patientDateOfBirth);
+
         // Render patient data page with view-only access - Universal browser compatible
         return res.render("patientData", {
           title: `Patient Data - ${token.patientName || token.folderName}`,
           patientName: token.patientName || token.folderName,
+          patientDateOfBirth: formattedDOB, // Add formatted DOB
           containerName: token.containerName,
           folderName: token.folderName,
           files: filesForDisplay,
@@ -401,11 +421,15 @@ const handleOfflineMode = async (req, res, tokenId) => {
           "offline"
         );
 
+        // Format patient date of birth
+        const formattedDOB = formatDateOfBirth(token.patientDateOfBirth);
+
         return res.render("patientData", {
           title: `Patient Data - ${
             token.patientName || token.folderName
           } (Limited Access)`,
           patientName: token.patientName || token.folderName,
+          patientDateOfBirth: formattedDOB, // Add formatted DOB
           containerName: token.containerName,
           folderName: token.folderName,
           files: filesForDisplay,
@@ -623,6 +647,7 @@ exports.getAllAssignedTokens = async (req, res) => {
         secureChipId, 
         productCode, 
         patientName,
+        patientDateOfBirth,
         containerName,
         folderName,
         status,
@@ -883,7 +908,13 @@ exports.getUnclaimedTokens = async (req, res) => {
 
 exports.assignTokenToPatient = async (req, res) => {
   try {
-    const { tokenId, containerName, folderName, patientName } = req.body;
+    const {
+      tokenId,
+      containerName,
+      folderName,
+      patientName,
+      patientDateOfBirth,
+    } = req.body;
 
     if (!tokenId || !containerName || !folderName) {
       return res.status(400).json({
@@ -898,11 +929,13 @@ exports.assignTokenToPatient = async (req, res) => {
       .input("smartTokenId", tokenId)
       .input("containerName", containerName)
       .input("folderName", folderName)
-      .input("patientName", patientName).query(`
+      .input("patientName", patientName)
+      .input("patientDateOfBirth", patientDateOfBirth || null).query(`
         UPDATE SmartTokens 
         SET containerName = @containerName, 
             folderName = @folderName,
             patientName = @patientName,
+            patientDateOfBirth = @patientDateOfBirth,
             status = 'assigned', 
             assignedAt = GETDATE()
         WHERE smartTokenId = @smartTokenId
