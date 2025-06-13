@@ -10,6 +10,7 @@ const { pool, sql } = require("../config/database");
 const multer = require("multer");
 const rtfConversionService = require("../services/rtfConversionService");
 const sharp = require("sharp"); // Add this dependency for image processing
+const pdfOcrService = require("../services/pdfOcrService");
 
 // Configure multer
 const memoryStorage = multer.memoryStorage();
@@ -731,6 +732,62 @@ exports.uploadBlob = async (req, res) => {
         }
       }
 
+      // Check if this is a scanned PDF file
+      if (pdfOcrService.isScannedPDF(originalFilename, req.file.buffer)) {
+        try {
+          // Convert PDF to TXT using OCR and upload only TXT
+          const ocrResult = await pdfOcrService.processPDFToTxtOnly(
+            containerName,
+            folderName,
+            originalFilename,
+            req.file.buffer
+          );
+
+          // Log the upload (TXT file only)
+          await logFileOperation(
+            req.user.userId,
+            containerName,
+            folderName,
+            ocrResult.txtFileName,
+            "UPLOAD_PDF_AS_TXT"
+          );
+
+          const response = {
+            success: true,
+            containerName,
+            folderName,
+            blobName: ocrResult.txtFileName,
+            originalFilename: originalFilename,
+            convertedFilename: ocrResult.txtFileName,
+            fullPath: ocrResult.txtBlobName,
+            contentType: "text/plain",
+            size: ocrResult.textSize,
+            uploadedBy: {
+              id: req.user.userId,
+              role: req.user.role,
+              name: req.user.name,
+            },
+            pdfOcr: {
+              converted: true,
+              originalPdfFile: originalFilename,
+              txtFileName: ocrResult.txtFileName,
+              originalSize: ocrResult.originalSize,
+              textSize: ocrResult.textSize,
+              pageCount: ocrResult.pageCount,
+              message: `PDF file converted to text using OCR and saved as ${ocrResult.txtFileName}. Original PDF file was not stored.`,
+            },
+          };
+
+          return res.status(201).json(response);
+        } catch (ocrError) {
+          console.error("PDF OCR conversion failed:", ocrError);
+          return res.status(400).json({
+            success: false,
+            message: `PDF OCR conversion failed: ${ocrError.message}`,
+          });
+        }
+      }
+
       // Check if this is an RTF file
       if (rtfConversionService.isRTFFile(originalFilename, req.file.buffer)) {
         try {
@@ -786,7 +843,7 @@ exports.uploadBlob = async (req, res) => {
           });
         }
       } else {
-        // Upload non-RTF files normally
+        // Upload non-RTF/PDF files normally
         const blobName = originalFilename;
         const fullBlobName = `${folderName}/${blobName}`;
         const blobClient = containerClient.getBlobClient(fullBlobName);
