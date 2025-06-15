@@ -1,4 +1,4 @@
-// SmartTokenManagement.jsx - Enhanced with Remote Disconnect and Date of Birth
+// SmartTokenManagement.jsx - Enhanced with Original UI Design Preserved
 import React, { useState, useEffect, useRef } from "react";
 import { smartTokenAPI, assignmentsAPI } from "../../../api";
 import Button from "../../common/Button";
@@ -29,6 +29,13 @@ const SmartTokenManagement = () => {
   const [revokeReason, setRevokeReason] = useState("");
   const [revoking, setRevoking] = useState(false);
 
+  // Delete modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [tokenToDelete, setTokenToDelete] = useState(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
   // Container state
   const [containers, setContainers] = useState([]);
   const [filteredContainers, setFilteredContainers] = useState([]);
@@ -39,6 +46,10 @@ const SmartTokenManagement = () => {
   const [filteredFolders, setFilteredFolders] = useState([]);
   const [folderSearch, setFolderSearch] = useState("");
   const [folderLoading, setFolderLoading] = useState(false);
+
+  // NEW: Assigned folders tracking
+  const [assignedFolders, setAssignedFolders] = useState({});
+  const [folderWarning, setFolderWarning] = useState("");
 
   // Custom dropdown state
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -112,19 +123,27 @@ const SmartTokenManagement = () => {
     }
   };
 
-  // Load folders
+  // Load folders and assigned folders
   const fetchFolders = async (containerName) => {
     try {
       setFolderLoading(true);
       setFolders([]);
       setFilteredFolders([]);
       setFolderSearch("");
+      setAssignedFolders({});
 
-      const res = await assignmentsAPI.getFolders(containerName);
-      const allFolders = res.data.folders.sort(naturalSort);
+      // Load both folders and assigned folders
+      const [foldersResponse, assignedResponse] = await Promise.all([
+        assignmentsAPI.getFolders(containerName),
+        smartTokenAPI.getAssignedFolders(containerName),
+      ]);
+
+      const allFolders = foldersResponse.data.folders.sort(naturalSort);
+      const assignedFoldersData = assignedResponse.data.assignedFolders || {};
 
       setFolders(allFolders);
       setFilteredFolders(allFolders);
+      setAssignedFolders(assignedFoldersData);
     } catch (err) {
       setError(`Failed to load folders for ${containerName}`);
       console.error(err);
@@ -167,13 +186,35 @@ const SmartTokenManagement = () => {
     setSelectedContainer(containerName);
     setDropdownOpen(false);
     setSelectedFolder("");
+    setFolderWarning("");
 
     if (containerName) {
       fetchFolders(containerName);
     } else {
       setFolders([]);
       setFilteredFolders([]);
+      setAssignedFolders({});
     }
+  };
+
+  // Handle folder selection with assignment check
+  const handleFolderSelection = (folderName) => {
+    const isAssigned = assignedFolders[folderName];
+
+    if (isAssigned) {
+      setFolderWarning(
+        `This patient folder is already assigned to token ${truncateId(
+          isAssigned.tokenId
+        )} (Patient: ${
+          isAssigned.patientName
+        }). If you want to assign this patient folder to a different token, the existing assignment will be automatically removed and transferred to the new token.`
+      );
+    } else {
+      setFolderWarning("");
+    }
+
+    setSelectedFolder(folderName);
+    setFolderDropdownOpen(false);
   };
 
   // Open assign modal
@@ -184,13 +225,14 @@ const SmartTokenManagement = () => {
     setPatientName("");
     setPatientDateOfBirth("");
     setError("");
+    setFolderWarning("");
     setContainerSearch("");
     setFolderSearch("");
     setAssignModalOpen(true);
     await fetchContainers();
   };
 
-  // Handle assign token
+  // Enhanced handleAssignToken function with better reassignment handling
   const handleAssignToken = async () => {
     if (!selectedContainer || !selectedFolder || !patientName.trim()) {
       setError("Please fill in all required fields");
@@ -201,7 +243,7 @@ const SmartTokenManagement = () => {
       setAssigning(true);
       setError("");
 
-      await smartTokenAPI.assignTokenToPatient({
+      const response = await smartTokenAPI.assignTokenToPatient({
         tokenId: selectedToken.smartTokenId,
         containerName: selectedContainer,
         folderName: selectedFolder,
@@ -209,12 +251,38 @@ const SmartTokenManagement = () => {
         patientDateOfBirth: patientDateOfBirth.trim(),
       });
 
-      setSuccess(`Token assigned to ${patientName} successfully`);
+      // Handle different types of assignment responses
+      if (response.data.reassignment) {
+        // Show reassignment success message with details
+        setSuccess(
+          `Patient folder successfully reassigned to ${patientName}. ${response.data.message}`
+        );
+      } else {
+        // Show standard assignment success message
+        setSuccess(`Token assigned to ${patientName} successfully`);
+      }
+
       setAssignModalOpen(false);
       loadTokens();
     } catch (err) {
       console.error("Assignment Error:", err);
-      setError(err.response?.data?.message || "Failed to assign token");
+
+      // Enhanced error handling
+      const errorMessage =
+        err.response?.data?.message || "Failed to assign token";
+
+      // Check for specific error types
+      if (errorMessage.includes("revoked token")) {
+        setError(
+          "Cannot assign a revoked token. Please reactivate the token first."
+        );
+      } else if (errorMessage.includes("already assigned")) {
+        setError(
+          "This patient folder is already assigned to another token. The system will automatically handle the reassignment."
+        );
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setAssigning(false);
     }
@@ -275,6 +343,48 @@ const SmartTokenManagement = () => {
     } catch (err) {
       console.error("Reactivate Error:", err);
       setError(err.response?.data?.message || "Failed to reactivate token");
+    }
+  };
+
+  // NEW: Open delete modal
+  const openDeleteModal = (token) => {
+    setTokenToDelete(token);
+    setDeleteReason("");
+    setDeleteConfirmation("");
+    setError("");
+    setDeleteModalOpen(true);
+  };
+
+  // NEW: Handle delete token
+  const handleDeleteToken = async () => {
+    if (!deleteReason.trim()) {
+      setError("Please provide a reason for deletion");
+      return;
+    }
+
+    if (deleteConfirmation !== "DELETE") {
+      setError("Please type 'DELETE' to confirm permanent deletion");
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      setError("");
+
+      await smartTokenAPI.deleteToken(tokenToDelete.smartTokenId);
+
+      setSuccess(
+        `SmartToken for ${
+          tokenToDelete.patientName || tokenToDelete.smartTokenId
+        } has been permanently deleted`
+      );
+      setDeleteModalOpen(false);
+      loadTokens();
+    } catch (err) {
+      console.error("Delete Error:", err);
+      setError(err.response?.data?.message || "Failed to delete token");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -360,28 +470,21 @@ const SmartTokenManagement = () => {
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            Assigned Tokens (
-            {assignedTokens.filter((t) => t.status === "assigned").length})
+            Assigned Tokens ({assignedTokens.length})
           </button>
         </div>
 
         <div className="p-6">
           {activeTab === "unclaimed" && (
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Unclaimed SmartTokens
-                </h2>
-                <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
-                  {unclaimedTokens.length} tokens pending assignment
-                </span>
-              </div>
-
+              <h2 className="text-lg font-semibold text-gray-800 mb-4">
+                Unclaimed SmartTokens
+              </h2>
               {unclaimedTokens.length === 0 ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-400 text-6xl mb-4">
+                  <div className="text-gray-400 mb-4">
                     <svg
-                      className="mx-auto h-16 w-16"
+                      className="mx-auto h-12 w-12"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -390,15 +493,13 @@ const SmartTokenManagement = () => {
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         strokeWidth={1}
-                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        d="M15 7a2 2 0 012 2m0 0a2 2 0 012 2v2a2 2 0 01-2 2m-2-2a2 2 0 00-2-2m2 2v2a2 2 0 01-2 2m0 0H9m6 0a2 2 0 01-2-2v-2a2 2 0 00-2-2m2 2H9a2 2 0 00-2-2v2a2 2 0 002 2m0 0h6v2a2 2 0 002 2H9a2 2 0 01-2-2v-2z"
                       />
                     </svg>
                   </div>
-                  <p className="text-gray-600 text-lg">
-                    No unclaimed tokens found
-                  </p>
-                  <p className="text-gray-500 text-sm mt-1">
-                    New tokens will appear here when scanned for the first time
+                  <p className="text-gray-600">No unclaimed tokens available</p>
+                  <p className="text-gray-500 text-sm">
+                    New tokens will appear here once registered
                   </p>
                 </div>
               ) : (
@@ -407,13 +508,13 @@ const SmartTokenManagement = () => {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Token ID
+                          Device
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Secure Chip ID
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Registered On
+                          Registered
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
@@ -422,16 +523,13 @@ const SmartTokenManagement = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {unclaimedTokens.map((token) => (
-                        <tr
-                          key={token.smartTokenId}
-                          className="hover:bg-gray-50"
-                        >
+                        <tr key={token.smartTokenId}>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <div className="flex-shrink-0 h-10 w-10">
-                                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                <div className="h-10 w-10 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center">
                                   <svg
-                                    className="h-6 w-6 text-blue-600"
+                                    className="h-6 w-6 text-white"
                                     fill="none"
                                     stroke="currentColor"
                                     viewBox="0 0 24 24"
@@ -484,18 +582,18 @@ const SmartTokenManagement = () => {
           {activeTab === "assigned" && (
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">
+                <h2 className="text-lg font-semibold text-gray-800">
                   Assigned SmartTokens
                 </h2>
                 <div className="flex space-x-2">
-                  <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                     {
                       assignedTokens.filter((t) => t.status === "assigned")
                         .length
                     }{" "}
                     active
                   </span>
-                  <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                     {
                       assignedTokens.filter((t) => t.status === "revoked")
                         .length
@@ -507,9 +605,9 @@ const SmartTokenManagement = () => {
 
               {assignedTokens.length === 0 ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-400 text-6xl mb-4">
+                  <div className="text-gray-400 mb-4">
                     <svg
-                      className="mx-auto h-16 w-16"
+                      className="mx-auto h-12 w-12"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -518,14 +616,12 @@ const SmartTokenManagement = () => {
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         strokeWidth={1}
-                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                       />
                     </svg>
                   </div>
-                  <p className="text-gray-600 text-lg">
-                    No assigned tokens found
-                  </p>
-                  <p className="text-gray-500 text-sm mt-1">
+                  <p className="text-gray-600">No assigned tokens found</p>
+                  <p className="text-gray-500 text-sm">
                     Tokens will appear here once assigned to patients
                   </p>
                 </div>
@@ -538,7 +634,7 @@ const SmartTokenManagement = () => {
                           Patient
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Token ID
+                          Device
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Location
@@ -547,7 +643,7 @@ const SmartTokenManagement = () => {
                           Status
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Assigned Date
+                          Assigned
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
@@ -556,64 +652,44 @@ const SmartTokenManagement = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {assignedTokens.map((token) => (
-                        <tr
-                          key={token.smartTokenId}
-                          className="hover:bg-gray-50"
-                        >
+                        <tr key={token.smartTokenId}>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <div className="flex-shrink-0 h-10 w-10">
-                                <div
-                                  className={`h-10 w-10 rounded-full flex items-center justify-center ${
-                                    token.status === "assigned"
-                                      ? "bg-green-100"
-                                      : "bg-red-100"
-                                  }`}
-                                >
-                                  {token.status === "assigned" ? (
-                                    <svg
-                                      className="h-6 w-6 text-green-600"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                                      />
-                                    </svg>
-                                  ) : (
-                                    <svg
-                                      className="h-6 w-6 text-red-600"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728"
-                                      />
-                                    </svg>
-                                  )}
+                                <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                                  <svg
+                                    className="h-6 w-6 text-gray-600"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                                    />
+                                  </svg>
                                 </div>
                               </div>
                               <div className="ml-4">
                                 <div className="text-sm font-medium text-gray-900">
                                   {token.patientName || "Unknown Patient"}
                                 </div>
-                                <div className="text-sm text-gray-500">
-                                  Patient Record
-                                </div>
+                                {token.patientDateOfBirth && (
+                                  <div className="text-sm text-gray-500">
+                                    DOB: {token.patientDateOfBirth}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900 font-mono">
                               {truncateId(token.smartTokenId)}
+                            </div>
+                            <div className="text-sm text-gray-500 font-mono">
+                              {truncateId(token.secureChipId)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -628,12 +704,12 @@ const SmartTokenManagement = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {token.status === "assigned" ? (
-                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                 Active
                               </span>
                             ) : (
                               <div>
-                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 mb-1">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mb-1">
                                   Revoked
                                 </span>
                                 {token.revokeReason && (
@@ -692,6 +768,28 @@ const SmartTokenManagement = () => {
                                   Reactivate
                                 </Button>
                               )}
+
+                              {/* NEW: Delete Button */}
+                              <Button
+                                color="gray"
+                                className="text-xs py-1 px-3"
+                                onClick={() => openDeleteModal(token)}
+                              >
+                                <svg
+                                  className="w-3 h-3 mr-1"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                                Delete
+                              </Button>
                             </div>
                           </td>
                         </tr>
@@ -745,6 +843,9 @@ const SmartTokenManagement = () => {
                 ID: {truncateId(selectedToken.smartTokenId)}
               </p>
               <p className="text-sm text-gray-700">
+                Secure Chip: {truncateId(selectedToken.secureChipId)}
+              </p>
+              <p className="text-sm text-gray-700">
                 Registered: {formatDate(selectedToken.createdAt)}
               </p>
             </div>
@@ -771,11 +872,9 @@ const SmartTokenManagement = () => {
                 value={patientDateOfBirth}
                 onChange={(e) => setPatientDateOfBirth(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Select date of birth"
               />
             </div>
 
-            {/* Container selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Search Containers
@@ -789,7 +888,7 @@ const SmartTokenManagement = () => {
               />
 
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Select Container
+                Select Container *
               </label>
               <div className="relative" ref={dropdownRef}>
                 <div
@@ -852,7 +951,7 @@ const SmartTokenManagement = () => {
                 />
 
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Patient Folder
+                  Select Patient Folder *
                 </label>
 
                 {folderLoading ? (
@@ -887,30 +986,48 @@ const SmartTokenManagement = () => {
                       <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
                         <div
                           className="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-200"
-                          onClick={() => {
-                            setSelectedFolder("");
-                            setFolderDropdownOpen(false);
-                          }}
+                          onClick={() => handleFolderSelection("")}
                         >
                           -- Select a Patient Folder --
                         </div>
                         {filteredFolders.length > 0 ? (
-                          filteredFolders.map((folder) => (
-                            <div
-                              key={folder}
-                              className={`px-3 py-2 hover:bg-gray-100 cursor-pointer ${
-                                selectedFolder === folder
-                                  ? "bg-blue-50 text-blue-700"
-                                  : ""
-                              }`}
-                              onClick={() => {
-                                setSelectedFolder(folder);
-                                setFolderDropdownOpen(false);
-                              }}
-                            >
-                              {folder}
-                            </div>
-                          ))
+                          filteredFolders.map((folder) => {
+                            const isAssigned = assignedFolders[folder];
+                            return (
+                              <div
+                                key={folder}
+                                className={`px-3 py-2 cursor-pointer ${
+                                  selectedFolder === folder
+                                    ? "bg-blue-50 text-blue-700"
+                                    : isAssigned
+                                    ? "bg-yellow-50 hover:bg-yellow-100"
+                                    : "hover:bg-gray-100"
+                                }`}
+                                onClick={() => handleFolderSelection(folder)}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span
+                                    className={
+                                      isAssigned ? "text-yellow-800" : ""
+                                    }
+                                  >
+                                    {folder}
+                                  </span>
+                                  {isAssigned && (
+                                    <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">
+                                      Assigned
+                                    </span>
+                                  )}
+                                </div>
+                                {isAssigned && (
+                                  <div className="text-xs text-yellow-700 mt-1">
+                                    Token: {truncateId(isAssigned.tokenId)} |
+                                    Patient: {isAssigned.patientName}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
                         ) : (
                           <div className="px-3 py-2 text-gray-500 text-sm italic">
                             {folders.length === 0
@@ -922,32 +1039,30 @@ const SmartTokenManagement = () => {
                     )}
                   </div>
                 )}
+
+                {/* NEW: Folder Warning Message */}
+                {folderWarning && (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div className="flex">
+                      <svg
+                        className="h-5 w-5 text-yellow-500 mr-2 mt-0.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                        />
+                      </svg>
+                      <p className="text-sm text-yellow-800">{folderWarning}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-
-            <div className="bg-blue-50 rounded-lg p-4">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg
-                    className="h-5 w-5 text-blue-400"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm text-blue-800">
-                    Once assigned, this SmartToken will provide emergency access
-                    to the selected patient's medical files.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </Modal>
@@ -1053,9 +1168,7 @@ const SmartTokenManagement = () => {
                 <option value="Administrative revocation">
                   Administrative revocation
                 </option>
-                <option value="Other security concern">
-                  Other security concern
-                </option>
+                <option value="Other">Other</option>
               </select>
             </div>
 
@@ -1081,6 +1194,178 @@ const SmartTokenManagement = () => {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* NEW: Delete Modal */}
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="Permanently Delete SmartToken"
+        footer={
+          <>
+            <Button
+              color="red"
+              onClick={handleDeleteToken}
+              disabled={
+                deleting ||
+                !deleteReason.trim() ||
+                deleteConfirmation !== "DELETE"
+              }
+              className="ml-3"
+            >
+              {deleting ? "Deleting..." : "Delete Permanently"}
+            </Button>
+            <Button
+              color="gray"
+              onClick={() => setDeleteModalOpen(false)}
+              className="ml-3"
+            >
+              Cancel
+            </Button>
+          </>
+        }
+      >
+        {tokenToDelete && (
+          <div className="space-y-6">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start">
+                <svg
+                  className="h-5 w-5 text-red-500 mt-1 mr-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                  />
+                </svg>
+                <div>
+                  <h4 className="text-sm font-medium text-red-800 mb-2">
+                    Warning: Permanent Deletion
+                  </h4>
+                  <p className="text-sm text-red-700">
+                    This action will permanently delete this SmartToken from the
+                    system. This action cannot be undone. The token will be
+                    completely removed and can never be recovered.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start">
+                <svg
+                  className="h-5 w-5 text-yellow-500 mt-1 mr-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div>
+                  <h4 className="text-sm font-medium text-yellow-800 mb-2">
+                    When to Use Delete
+                  </h4>
+                  <p className="text-sm text-yellow-700">
+                    Use deletion only when the physical token is permanently
+                    lost, stolen, or destroyed and you need to assign the
+                    patient folder to a new token. For temporary issues, use
+                    "Disconnect" instead.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">
+                Token Information
+              </h4>
+              <p className="text-sm text-gray-700">
+                <strong>Patient:</strong>{" "}
+                {tokenToDelete.patientName || "Unknown"}
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Token ID:</strong>{" "}
+                {truncateId(tokenToDelete.smartTokenId)}
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Secure Chip:</strong>{" "}
+                {truncateId(tokenToDelete.secureChipId)}
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Location:</strong> {tokenToDelete.containerName}/
+                {tokenToDelete.folderName}
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Status:</strong>{" "}
+                <span
+                  className={`px-2 py-1 rounded-full text-xs ${
+                    tokenToDelete.status === "assigned"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {tokenToDelete.status === "assigned" ? "Active" : "Revoked"}
+                </span>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason for Deletion *
+              </label>
+              <select
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">-- Select a reason --</option>
+                <option value="Physical token permanently lost">
+                  Physical token permanently lost
+                </option>
+                <option value="Token stolen and cannot be recovered">
+                  Token stolen and cannot be recovered
+                </option>
+                <option value="Token physically damaged beyond repair">
+                  Token physically damaged beyond repair
+                </option>
+                <option value="Need to assign patient folder to new token">
+                  Need to assign patient folder to new token
+                </option>
+                <option value="Patient deceased - cleanup required">
+                  Patient deceased - cleanup required
+                </option>
+                <option value="Administrative cleanup">
+                  Administrative cleanup
+                </option>
+                <option value="Other permanent removal">
+                  Other permanent removal
+                </option>
+              </select>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-800 font-medium">
+                Type "DELETE" below to confirm permanent deletion:
+              </p>
+              <input
+                type="text"
+                value={deleteConfirmation}
+                placeholder="Type DELETE to confirm"
+                className="mt-2 w-full px-3 py-2 border border-red-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500"
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+              />
             </div>
           </div>
         )}

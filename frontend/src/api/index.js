@@ -282,25 +282,44 @@ const blobsAPI = {
 const smartTokenAPI = {
   getUnclaimedTokens: () => smartTokenAxios.get("/patients/admin/unclaimed"),
   getAllAssignedTokens: () => smartTokenAxios.get("/patients/admin/assigned"),
+
+  // NEW: Get assigned folders for a specific container
+  getAssignedFolders: (containerName) =>
+    smartTokenAxios.get(`/patients/admin/assigned-folders/${containerName}`),
+
   assignTokenToPatient: (tokenData) => {
-    const { tokenId, containerName, folderName, patientName } = tokenData;
+    const {
+      tokenId,
+      containerName,
+      folderName,
+      patientName,
+      patientDateOfBirth,
+    } = tokenData;
     return smartTokenAxios.post("/patients/admin/assign", {
       tokenId,
       containerName,
       folderName,
       patientName: patientName || "Unknown Patient",
+      patientDateOfBirth,
     });
   },
+
   revokeToken: (tokenId, reason) => {
     return smartTokenAxios.post("/patients/admin/revoke", {
       tokenId: tokenId,
       reason: reason,
     });
   },
+
   reactivateToken: (tokenId) => {
     return smartTokenAxios.post("/patients/admin/reactivate", {
       tokenId: tokenId,
     });
+  },
+
+  // NEW: Delete token permanently (for lost tokens)
+  deleteToken: (tokenId) => {
+    return smartTokenAxios.delete(`/patients/admin/delete/${tokenId}`);
   },
 };
 
