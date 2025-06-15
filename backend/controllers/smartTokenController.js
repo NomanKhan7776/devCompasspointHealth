@@ -924,27 +924,142 @@ exports.assignTokenToPatient = async (req, res) => {
     }
 
     await pool.connect();
-    await pool
-      .request()
-      .input("smartTokenId", tokenId)
-      .input("containerName", containerName)
-      .input("folderName", folderName)
-      .input("patientName", patientName)
-      .input("patientDateOfBirth", patientDateOfBirth || null).query(`
-        UPDATE SmartTokens 
-        SET containerName = @containerName, 
-            folderName = @folderName,
-            patientName = @patientName,
-            patientDateOfBirth = @patientDateOfBirth,
-            status = 'assigned', 
-            assignedAt = GETDATE()
-        WHERE smartTokenId = @smartTokenId
-      `);
 
-    res.json({
-      success: true,
-      message: "Token assigned to patient successfully",
-    });
+    // Start a transaction to ensure data consistency
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    try {
+      // Check if the patient folder is already assigned to another token
+      const existingAssignment = await transaction
+        .request()
+        .input("containerName", containerName)
+        .input("folderName", folderName)
+        .input("currentTokenId", tokenId).query(`
+          SELECT smartTokenId, patientName, assignedAt, status
+          FROM SmartTokens 
+          WHERE containerName = @containerName 
+            AND folderName = @folderName 
+            AND smartTokenId != @currentTokenId
+            AND status = 'assigned'
+        `);
+
+      let previousTokenInfo = null;
+
+      // If patient folder is already assigned to another token, revoke the old assignment
+      if (existingAssignment.recordset.length > 0) {
+        const existingToken = existingAssignment.recordset[0];
+        previousTokenInfo = {
+          tokenId: existingToken.smartTokenId,
+          patientName: existingToken.patientName,
+          assignedAt: existingToken.assignedAt,
+        };
+
+        // Revoke the existing token assignment
+        await transaction
+          .request()
+          .input("existingTokenId", existingToken.smartTokenId)
+          .input("revokeReason", "Patient folder reassigned to new token")
+          .input("revokedBy", req.user.name || "System").query(`
+            UPDATE SmartTokens 
+            SET status = 'revoked',
+                revokedAt = GETDATE(),
+                revokedBy = @revokedBy,
+                revokeReason = @revokeReason
+            WHERE smartTokenId = @existingTokenId
+          `);
+      }
+
+      // Check if the current token exists and its status
+      const currentTokenCheck = await transaction
+        .request()
+        .input("tokenId", tokenId).query(`
+          SELECT containerName, folderName, patientName, status
+          FROM SmartTokens 
+          WHERE smartTokenId = @tokenId
+        `);
+
+      if (currentTokenCheck.recordset.length === 0) {
+        await transaction.rollback();
+        return res.status(404).json({
+          success: false,
+          message: "Token not found",
+        });
+      }
+
+      const currentToken = currentTokenCheck.recordset[0];
+
+      // Check if token is already revoked
+      if (currentToken.status === "revoked") {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message:
+            "Cannot assign a revoked token. Please reactivate the token first.",
+        });
+      }
+
+      // Assign the token to the new patient folder
+      await transaction
+        .request()
+        .input("smartTokenId", tokenId)
+        .input("containerName", containerName)
+        .input("folderName", folderName)
+        .input("patientName", patientName)
+        .input("patientDateOfBirth", patientDateOfBirth || null).query(`
+          UPDATE SmartTokens 
+          SET containerName = @containerName, 
+              folderName = @folderName,
+              patientName = @patientName,
+              patientDateOfBirth = @patientDateOfBirth,
+              status = 'assigned', 
+              assignedAt = GETDATE()
+          WHERE smartTokenId = @smartTokenId
+        `);
+
+      // Commit the transaction
+      await transaction.commit();
+
+      // Prepare response message
+      let message = "Token assigned to patient successfully";
+      let additionalInfo = {};
+
+      if (previousTokenInfo) {
+        message = "Patient folder reassigned successfully";
+        additionalInfo = {
+          reassignment: true,
+          previousToken: {
+            tokenId:
+              previousTokenInfo.tokenId.substring(0, 8) +
+              "..." +
+              previousTokenInfo.tokenId.substring(
+                previousTokenInfo.tokenId.length - 8
+              ),
+            patientName: previousTokenInfo.patientName,
+            assignedAt: previousTokenInfo.assignedAt,
+          },
+          message: `Previous token (${previousTokenInfo.tokenId.substring(
+            0,
+            8
+          )}...) has been automatically revoked and this patient folder is now assigned to the new token.`,
+        };
+      }
+
+      res.json({
+        success: true,
+        message: message,
+        tokenId: tokenId,
+        patientFolder: `${containerName}/${folderName}`,
+        patientName: patientName,
+        assignedAt: new Date().toISOString(),
+        assignedBy: req.user.name,
+        ...additionalInfo,
+      });
+    } catch (transactionError) {
+      // Rollback transaction on error
+      await transaction.rollback();
+      throw transactionError;
+    }
   } catch (error) {
     if (process.env.NODE_ENV === "development") {
       console.error("Error assigning token:", error);
@@ -952,6 +1067,173 @@ exports.assignTokenToPatient = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to assign token",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : "Server error",
+    });
+  }
+};
+
+exports.getAssignedFolders = async (req, res) => {
+  try {
+    const { containerName } = req.params;
+
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required",
+      });
+    }
+
+    await pool.connect();
+
+    const result = await pool.request().input("containerName", containerName)
+      .query(`
+        SELECT 
+          folderName, 
+          smartTokenId, 
+          patientName, 
+          assignedAt,
+          status
+        FROM SmartTokens 
+        WHERE containerName = @containerName 
+          AND status = 'assigned'
+          AND folderName IS NOT NULL
+      `);
+
+    // Create a map of assigned folders
+    const assignedFolders = {};
+    result.recordset.forEach((record) => {
+      assignedFolders[record.folderName] = {
+        tokenId: record.smartTokenId,
+        patientName: record.patientName,
+        assignedAt: record.assignedAt,
+        status: record.status,
+      };
+    });
+
+    res.json({
+      success: true,
+      assignedFolders: assignedFolders,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("Error in getAssignedFolders:", error);
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch assigned folders",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : "Server error",
+    });
+  }
+};
+
+exports.deleteSmartToken = async (req, res) => {
+  try {
+    const { tokenId } = req.params;
+
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required",
+      });
+    }
+
+    if (!tokenId) {
+      return res.status(400).json({
+        success: false,
+        message: "Token ID is required",
+      });
+    }
+
+    await pool.connect();
+
+    // Start a transaction to ensure data consistency
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    try {
+      // Check if token exists
+      const tokenCheck = await transaction
+        .request()
+        .input("smartTokenId", tokenId)
+        .query("SELECT * FROM SmartTokens WHERE smartTokenId = @smartTokenId");
+
+      if (tokenCheck.recordset.length === 0) {
+        await transaction.rollback();
+        return res.status(404).json({
+          success: false,
+          message: "Token not found",
+        });
+      }
+
+      const token = tokenCheck.recordset[0];
+
+      // Store token info for response
+      const tokenInfo = {
+        tokenId: token.smartTokenId,
+        patientName: token.patientName,
+        containerName: token.containerName,
+        folderName: token.folderName,
+        status: token.status,
+        assignedAt: token.assignedAt,
+      };
+
+      // Delete the token completely from database
+      await transaction
+        .request()
+        .input("smartTokenId", tokenId)
+        .query("DELETE FROM SmartTokens WHERE smartTokenId = @smartTokenId");
+
+      // Commit the transaction
+      await transaction.commit();
+
+      res.json({
+        success: true,
+        message: "SmartToken deleted permanently",
+        deletedToken: {
+          tokenId:
+            tokenInfo.tokenId.substring(0, 8) +
+            "..." +
+            tokenInfo.tokenId.substring(tokenInfo.tokenId.length - 8),
+          patientName: tokenInfo.patientName,
+          patientFolder:
+            tokenInfo.containerName && tokenInfo.folderName
+              ? `${tokenInfo.containerName}/${tokenInfo.folderName}`
+              : "Not assigned",
+          status: tokenInfo.status,
+        },
+        deletedAt: new Date().toISOString(),
+        deletedBy: req.user.name,
+      });
+    } catch (transactionError) {
+      await transaction.rollback();
+      throw transactionError;
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("Error deleting token:", error);
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete token",
+      error:
+        process.env.NODE_ENV === "development" ? error.message : "Server error",
     });
   }
 };
