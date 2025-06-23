@@ -11,7 +11,7 @@ const userRoutes = require("./routes/users");
 const assignmentRoutes = require("./routes/assignments");
 const blobRoutes = require("./routes/blobs");
 const smartTokenRoutes = require("./routes/smartTokenRoutes");
-const patientRequests = require("./routes/patientRequests");
+const patientRequests = require("./routes/patientRequests.js");
 // Create Express app
 const app = express();
 
@@ -411,3 +411,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
