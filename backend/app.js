@@ -184,6 +184,11 @@ app.use(
   })
 );
 
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.originalUrl}`);
+  next();
+});
+
 // Routes
 app.use("/patients", smartTokenRoutes);
 app.use("/api/auth", authRoutes);
