@@ -11,7 +11,7 @@ const userRoutes = require("./routes/users");
 const assignmentRoutes = require("./routes/assignments");
 const blobRoutes = require("./routes/blobs");
 const smartTokenRoutes = require("./routes/smartTokenRoutes");
-const patientRequests = require("./routes/patientRequests");
+const patientRequests = require("./routes/patientRequests.js");
 // Create Express app
 const app = express();
 
@@ -183,11 +183,6 @@ app.use(
     },
   })
 );
-
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.originalUrl}`);
-  next();
-});
 
 // Routes
 app.use("/patients", smartTokenRoutes);
