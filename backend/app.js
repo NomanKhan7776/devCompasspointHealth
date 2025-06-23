@@ -11,38 +11,7 @@ const userRoutes = require("./routes/users");
 const assignmentRoutes = require("./routes/assignments");
 const blobRoutes = require("./routes/blobs");
 const smartTokenRoutes = require("./routes/smartTokenRoutes");
-// const patientRequests = require("./routes/patientRequests");
-console.log("🔍 [DEBUG] Starting patient requests import...");
-let patientRequests;
-try {
-  patientRequests = require("./routes/patientRequests");
-  console.log("✅ [DEBUG] Patient requests routes imported successfully");
-  console.log("📋 [DEBUG] Router type:", typeof patientRequests);
-} catch (error) {
-  console.error("❌ [DEBUG] FAILED to import patient requests:", error.message);
-  console.error("📍 [DEBUG] Error stack:", error.stack);
-  
-  // Create emergency fallback router
-  const express = require("express");
-  patientRequests = express.Router();
-  patientRequests.get("/", (req, res) => {
-    res.status(500).json({ 
-      error: "Patient requests failed to load",
-      message: error.message,
-      timestamp: new Date().toISOString()
-    });
-  });
-}
-
-console.log("🧪 [DEBUG] Testing controller import separately...");
-try {
-  const testController = require("./controllers/patientRequestController");
-  console.log("✅ [DEBUG] Controller imported successfully");
-  console.log("🔧 [DEBUG] Controller exports:", Object.keys(testController));
-} catch (controllerError) {
-  console.error("❌ [DEBUG] Controller import FAILED:", controllerError.message);
-  console.error("📍 [DEBUG] Controller error stack:", controllerError.stack);
-}
+const patientRequests = require("./routes/patientRequests");
 // Create Express app
 const app = express();
 
@@ -204,23 +173,6 @@ if (process.env.NODE_ENV === "production") {
   app.use("/api/", generalLimiter);
 }
 
-console.log("🧪 [DEBUG] Adding test routes...");
-app.get("/api/debug/test", (req, res) => {
-  res.json({
-    message: "Debug test route working",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
-  });
-});
-
-app.get("/api/patient-requests-simple", (req, res) => {
-  res.json({
-    message: "Simple patient requests endpoint working",
-    timestamp: new Date().toISOString(),
-    working: true
-  });
-});
-
 // Serve static files with security headers
 app.use(
   "/static",
@@ -238,24 +190,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/assignments", assignmentRoutes);
 app.use("/api/blobs", blobRoutes);
-// app.use("/api/patient-requests", patientRequests);
-
-console.log("🔗 [DEBUG] Registering patient requests routes...");
-try {
-  // Add logging middleware for patient requests
-  app.use("/api/patient-requests", (req, res, next) => {
-    console.log(`📨 [DEBUG] Patient request received: ${req.method} ${req.originalUrl}`);
-    console.log(`🔑 [DEBUG] Auth header present:`, !!req.headers['x-auth-token']);
-    next();
-  });
-  
-  app.use("/api/patient-requests", patientRequests);
-  console.log("✅ [DEBUG] Patient requests routes registered successfully");
-} catch (registrationError) {
-  console.error("❌ [DEBUG] Route registration FAILED:", registrationError.message);
-}
-
-
+app.use("/api/patient-requests", patientRequests);
 // Health check endpoint with session info (for monitoring)
 app.get("/", (req, res) => {
   const auth = require("./middleware/auth");
@@ -476,3 +411,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
