@@ -473,6 +473,23 @@ const enhancedLogout = async () => {
   }
 };
 
+const patientRequestsAPI = {
+  createRequest: (patientData) => api.post("/patient-requests", patientData),
+  getRequests: () => api.get("/patient-requests"),
+  getRequest: (requestId) => api.get(`/patient-requests/${requestId}`),
+  approveRequest: (requestId, notes) =>
+    api.put(`/patient-requests/${requestId}/approve`, {
+      rejectionReason: notes,
+    }),
+  rejectRequest: (requestId, notes) =>
+    api.put(`/patient-requests/${requestId}/reject`, {
+      rejectionReason: notes,
+    }),
+  // ✅ NEW: Check folder availability
+  getAvailableFolders: (containerName) =>
+    api.get(`/patient-requests/available-folders/${containerName}`),
+};
+
 // Listen for logout events from other tabs
 window.addEventListener("storage", (e) => {
   if (e.key === "token" && e.newValue === null) {
@@ -500,5 +517,6 @@ export {
   smartTokenAPI,
   smartTokenUtils,
   profileImageUtils,
+  patientRequestsAPI,
   enhancedLogout,
 };

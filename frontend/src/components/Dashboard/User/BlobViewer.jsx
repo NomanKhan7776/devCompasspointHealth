@@ -33,8 +33,19 @@ const BlobViewer = () => {
 
   // Determine user permissions
   const isAdmin = currentUser?.role === "admin";
+  const isPatient = currentUser?.role === "patient";
+
+  // Patients can upload medical files
   const canUpload =
+    isAdmin ||
+    currentUser?.role === "doctor" ||
+    currentUser?.role === "nurse" ||
+    currentUser?.role === "patient";
+
+  // Only medical staff can manage patient profiles
+  const canManageProfile =
     isAdmin || currentUser?.role === "doctor" || currentUser?.role === "nurse";
+
   const canDelete = isAdmin;
 
   // Handle back navigation based on user role
@@ -344,7 +355,7 @@ const BlobViewer = () => {
       )}
 
       {/* Profile Image Management Section */}
-      {canUpload && (
+      {canManageProfile && (
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-800 mb-2 sm:mb-0">
@@ -410,7 +421,7 @@ const BlobViewer = () => {
       {canUpload && (
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">
-            Upload Medical Files
+            {isPatient ? "Upload Your Medical Files" : "Upload Medical Files"}
           </h2>
 
           <form onSubmit={handleUpload} className="space-y-4">

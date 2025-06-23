@@ -1,4 +1,5 @@
-// src/components/Layout/Layout.jsx - Updated with collapsible sidebar state
+// Enhanced Layout.jsx with better mobile support - Replace your existing Layout component:
+
 import React, { useState, useEffect } from "react";
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
@@ -34,10 +35,10 @@ const Layout = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100">
+    <div className="min-h-screen flex flex-col bg-gray-50">
       <Navbar onMenuClick={handleMobileMenuClick} />
 
-      <div className="flex flex-1">
+      <div className="flex flex-1 relative">
         {/* Mobile sidebar backdrop */}
         {sidebarOpen && (
           <div
@@ -49,10 +50,11 @@ const Layout = ({ children }) => {
         {/* Sidebar */}
         <div
           className={`
-          fixed inset-y-0 left-0 z-30 transform bg-white shadow-md transition-transform duration-300 ease-in-out
+          fixed inset-y-0 left-0 z-30 transform bg-white shadow-lg transition-transform duration-300 ease-in-out
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
           lg:relative lg:translate-x-0 lg:z-0
           ${sidebarCollapsed ? "lg:w-16" : "lg:w-64"}
+          w-64
         `}
         >
           <Sidebar
@@ -62,18 +64,20 @@ const Layout = ({ children }) => {
           />
         </div>
 
-        {/* Main content */}
+        {/* Main content area */}
         <main
           className={`
-          flex-1 p-4 w-full lg:p-6 overflow-x-hidden transition-all duration-300
+          flex-1 overflow-x-hidden transition-all duration-300
           ${sidebarCollapsed ? "lg:ml-0" : "lg:ml-0"}
+          min-w-0
         `}
         >
-          <div className="max-w-full mx-auto">{children}</div>
+          {/* Content wrapper with proper padding */}
+          <div className="min-h-full">{children}</div>
         </main>
       </div>
 
-      {/* Footer positioned at the bottom */}
+      {/* Footer */}
       <Footer />
     </div>
   );

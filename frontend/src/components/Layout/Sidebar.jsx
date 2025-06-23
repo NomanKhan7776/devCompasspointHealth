@@ -1,17 +1,25 @@
-// src/components/Layout/Sidebar.jsx - Updated with collapsible functionality
+// src/components/Layout/Sidebar.jsx - Updated with patient request feature
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
+import { usePatientRequests } from "../../hooks/usePatientRequests";
 
 const Sidebar = ({ closeSidebar, isCollapsed, toggleSidebar }) => {
   const { currentUser } = useAuth();
   const location = useLocation();
+  const patientRequestsContext = usePatientRequests();
+
+  const pendingRequestCount = patientRequestsContext?.getPendingCount?.() || 0;
 
   const isAdmin = currentUser?.role === "admin";
+  const isDoctor = currentUser?.role === "doctor";
 
-  const NavItem = ({ to, children, icon, title }) => {
+  const NavItem = ({ to, children, icon, title, badge }) => {
+    // ✅ FIXED: More precise active state matching
     const isActive =
-      location.pathname === to || location.pathname.startsWith(`${to}/`);
+      location.pathname === to ||
+      (location.pathname.startsWith(`${to}/`) &&
+        !location.pathname.includes("/create"));
     return (
       <Link
         to={to}
@@ -29,13 +37,22 @@ const Sidebar = ({ closeSidebar, isCollapsed, toggleSidebar }) => {
           </span>
         )}
         {!isCollapsed && (
-          <span className="whitespace-nowrap overflow-hidden">{children}</span>
+          <div className="flex justify-between items-center w-full">
+            <span className="whitespace-nowrap overflow-hidden">
+              {children}
+            </span>
+            {badge && (
+              <span className="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-yellow-500 text-white">
+                {badge}
+              </span>
+            )}
+          </div>
         )}
-        
+
         {/* Tooltip for collapsed state */}
         {isCollapsed && (
           <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-sm rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 whitespace-nowrap">
-            {title}
+            {title} {badge && `(${badge})`}
           </div>
         )}
       </Link>
@@ -58,17 +75,23 @@ const Sidebar = ({ closeSidebar, isCollapsed, toggleSidebar }) => {
   };
 
   return (
-    <div className={`h-full flex flex-col overflow-y-auto pt-5 pb-4 px-3 bg-white transition-all duration-300 ${
-      isCollapsed ? "w-16" : "w-64"
-    }`}>
+    <div
+      className={`h-full flex flex-col overflow-y-auto pt-5 pb-4 px-3 bg-white transition-all duration-300 ${
+        isCollapsed ? "w-16" : "w-64"
+      }`}
+    >
       {/* Header with toggle button */}
-      <div className={`flex items-center justify-between mb-6 px-1 ${
-        isCollapsed ? "justify-center" : ""
-      }`}>
+      <div
+        className={`flex items-center justify-between mb-6 px-1 ${
+          isCollapsed ? "justify-center" : ""
+        }`}
+      >
         {!isCollapsed && (
           <>
             {/* Mobile close button */}
-            <h2 className="text-xl font-bold text-gray-800 lg:hidden">Dashboard</h2>
+            <h2 className="text-xl font-bold text-gray-800 lg:hidden">
+              Dashboard
+            </h2>
             <button
               onClick={closeSidebar}
               className="p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 lg:hidden"
@@ -89,15 +112,17 @@ const Sidebar = ({ closeSidebar, isCollapsed, toggleSidebar }) => {
             </button>
           </>
         )}
-        
+
         {/* Desktop header and toggle */}
-        <div className={`hidden lg:flex items-center ${
-          isCollapsed ? "justify-center w-full" : "justify-between w-full"
-        }`}>
+        <div
+          className={`hidden lg:flex items-center ${
+            isCollapsed ? "justify-center w-full" : "justify-between w-full"
+          }`}
+        >
           {!isCollapsed && (
             <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
           )}
-          
+
           {/* Toggle button */}
           <button
             onClick={toggleSidebar}
@@ -215,6 +240,35 @@ const Sidebar = ({ closeSidebar, isCollapsed, toggleSidebar }) => {
               </NavItem>
             </li>
 
+            {/* Patient Requests section for Admin */}
+            <li className="pt-4">
+              <SectionHeader>Patient Management</SectionHeader>
+            </li>
+            <li>
+              <NavItem
+                to="/patient-requests"
+                title="Patient Requests"
+                badge={pendingRequestCount > 0 ? pendingRequestCount : null}
+                icon={
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                    />
+                  </svg>
+                }
+              >
+                Patient Requests
+              </NavItem>
+            </li>
+
             <li className="pt-4">
               <SectionHeader>System Management</SectionHeader>
             </li>
@@ -322,17 +376,77 @@ const Sidebar = ({ closeSidebar, isCollapsed, toggleSidebar }) => {
                 My Assignments
               </NavItem>
             </li>
+
+            {/* Patient Requests for Doctors */}
+            {isDoctor && (
+              <>
+                <li>
+                  <NavItem
+                    to="/patient-requests"
+                    title="Patient Requests"
+                    icon={
+                      <svg
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                        />
+                      </svg>
+                    }
+                  >
+                    Patient Requests
+                  </NavItem>
+                </li>
+                <li>
+                  <NavItem
+                    to="/patient-requests/create"
+                    title="New Patient Request"
+                    icon={
+                      <svg
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                    }
+                  >
+                    New Patient Request
+                  </NavItem>
+                </li>
+              </>
+            )}
           </>
         )}
       </ul>
 
       {/* User Info at Bottom */}
-      <div className={`mt-auto pt-4 border-t border-gray-200 ${
-        isCollapsed ? "px-1" : "px-4"
-      }`}>
-        <div className={`flex items-center ${isCollapsed ? "justify-center" : ""}`}>
+      <div
+        className={`mt-auto pt-4 border-t border-gray-200 ${
+          isCollapsed ? "px-1" : "px-4"
+        }`}
+      >
+        <div
+          className={`flex items-center ${isCollapsed ? "justify-center" : ""}`}
+        >
           <div className="flex-shrink-0">
-            <div className={`${isCollapsed ? "h-10 w-10" : "h-8 w-8"} rounded-full bg-blue-500 flex items-center justify-center`}>
+            <div
+              className={`${
+                isCollapsed ? "h-10 w-10" : "h-8 w-8"
+              } rounded-full bg-blue-500 flex items-center justify-center`}
+            >
               <span className="text-white text-sm font-medium">
                 {currentUser?.name.charAt(0).toUpperCase()}
               </span>

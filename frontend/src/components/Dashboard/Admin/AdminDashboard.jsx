@@ -1,3 +1,5 @@
+// Complete AdminDashboard.jsx with Patients support
+
 import React, { useEffect } from "react";
 import { useDashboard } from "../../../hooks/useDashboard";
 import Loader from "../../common/Loader";
@@ -28,7 +30,8 @@ const AdminDashboard = () => {
   if (error) return <Alert message={error} type="error" />;
 
   const { users } = dashboardData;
-  const { totalUsers, doctors, nurses, assistants } = dashboardData.stats;
+  const { totalUsers, doctors, nurses, assistants, patients } =
+    dashboardData.stats;
 
   return (
     <div>
@@ -65,7 +68,8 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {/* UPDATED: 5-column grid for all user types */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-2">
             Total Users
@@ -88,6 +92,12 @@ const AdminDashboard = () => {
             Assistants
           </h2>
           <p className="text-3xl font-bold text-orange-600">{assistants}</p>
+        </div>
+
+        {/* NEW: Patients card */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-2">Patients</h2>
+          <p className="text-3xl font-bold text-indigo-600">{patients}</p>
         </div>
       </div>
 
@@ -132,7 +142,11 @@ const AdminDashboard = () => {
                             ? "bg-green-100 text-green-800"
                             : user.role === "nurse"
                             ? "bg-purple-100 text-purple-800"
-                            : "bg-orange-100 text-orange-800"
+                            : user.role === "assistant"
+                            ? "bg-orange-100 text-orange-800"
+                            : user.role === "patient"
+                            ? "bg-indigo-100 text-indigo-800"
+                            : "bg-gray-100 text-gray-800"
                         }`}
                       >
                         {user.role}

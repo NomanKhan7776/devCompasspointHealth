@@ -215,7 +215,11 @@ export const AuthProvider = ({ children }) => {
   const isAssistant = () => {
     return currentUser?.role === "assistant";
   };
-
+  const isPatient = () => {
+    return (
+      currentUser?.role === "patient" && currentUser?.userType === "patient"
+    );
+  };
   const value = {
     currentUser,
     loading,
@@ -227,6 +231,7 @@ export const AuthProvider = ({ children }) => {
     isDoctor,
     isNurse,
     isAssistant,
+    isPatient,
   };
 
   return (

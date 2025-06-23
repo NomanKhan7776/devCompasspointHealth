@@ -10,6 +10,7 @@ export const DashboardProvider = ({ children }) => {
       doctors: 0,
       nurses: 0,
       assistants: 0,
+      patients: 0, // FIXED: Added patients to initial state
     },
   });
   const [loading, setLoading] = useState(false);
@@ -59,10 +60,11 @@ export const DashboardProvider = ({ children }) => {
           setNoUsersConfirmed(false);
         }
 
-        // Calculate stats
+        // FIXED: Calculate stats including patients
         const doctors = users.filter((user) => user.role === "doctor");
         const nurses = users.filter((user) => user.role === "nurse");
         const assistants = users.filter((user) => user.role === "assistant");
+        const patients = users.filter((user) => user.role === "patient");
 
         const newData = {
           users,
@@ -71,6 +73,7 @@ export const DashboardProvider = ({ children }) => {
             doctors: doctors.length,
             nurses: nurses.length,
             assistants: assistants.length,
+            patients: patients.length, // FIXED: Added patients count
           },
         };
 

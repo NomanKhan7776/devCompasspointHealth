@@ -1,10 +1,12 @@
+// Fixed AdminContext.jsx - Added missing deleteUser function
+
 import React, { useState, useCallback } from "react";
 import { usersAPI, assignmentsAPI, blobsAPI } from "../api";
 import { AdminContext } from "../hooks/useAdmin.js";
+
 export const AdminProvider = ({ children }) => {
   // User management data
   const [users, setUsers] = useState([]);
-  //   const [userAssignments, setUserAssignments] = useState({});
 
   // Container management data
   const [containers, setContainers] = useState([]);
@@ -69,6 +71,38 @@ export const AdminProvider = ({ children }) => {
     [users, lastFetched.users]
   );
 
+  // ADD: Missing deleteUser function
+  const deleteUser = useCallback(
+    async (userId) => {
+      try {
+        setLoading((prev) => ({ ...prev, users: true }));
+        setError((prev) => ({ ...prev, users: "" }));
+
+        // Call API to delete user
+        await usersAPI.deleteUser(userId);
+
+        // Remove user from local state
+        setUsers((prevUsers) =>
+          prevUsers.filter((user) => user.userId !== userId)
+        );
+
+        // Optionally refresh the users list to ensure consistency
+        await fetchUsers(true);
+
+        return { success: true };
+      } catch (err) {
+        const errorMessage =
+          err.response?.data?.message || "Failed to delete user";
+        setError((prev) => ({ ...prev, users: errorMessage }));
+        console.error("Delete user error:", err);
+        throw err;
+      } finally {
+        setLoading((prev) => ({ ...prev, users: false }));
+      }
+    },
+    [fetchUsers]
+  );
+
   // Fetch containers
   const fetchContainers = useCallback(
     async (forceRefresh = false) => {
@@ -86,18 +120,11 @@ export const AdminProvider = ({ children }) => {
         const res = await assignmentsAPI.getAllContainers();
         const containerData = res.data.containers || [];
 
-        // Sort containers in numeric sequence
-        const sortedContainers = [...containerData].sort((a, b) => {
-          const numA = parseInt(a.replace(/\D/g, ""));
-          const numB = parseInt(b.replace(/\D/g, ""));
-          return numA - numB;
-        });
-
-        setContainers(sortedContainers);
+        setContainers(containerData);
         setLastFetched((prev) => ({ ...prev, containers: new Date() }));
         setLoading((prev) => ({ ...prev, containers: false }));
 
-        return sortedContainers;
+        return containerData;
       } catch (err) {
         setError((prev) => ({
           ...prev,
@@ -117,7 +144,6 @@ export const AdminProvider = ({ children }) => {
       const dataAge = lastFetched.folders[containerName]
         ? (new Date() - lastFetched.folders[containerName]) / 1000 / 60
         : 999;
-
       if (containerFolders[containerName] && dataAge < 5 && !forceRefresh) {
         return containerFolders[containerName];
       }
@@ -129,34 +155,19 @@ export const AdminProvider = ({ children }) => {
         const res = await assignmentsAPI.getFolders(containerName);
         const folderData = res.data.folders || [];
 
-        // Sort folders in numeric sequence
-        const sortedFolders = [...folderData].sort((a, b) => {
-          const numA = parseInt(a.replace(/\D/g, ""));
-          const numB = parseInt(b.replace(/\D/g, ""));
-          return numA - numB;
-        });
-
         setContainerFolders((prev) => ({
           ...prev,
-          [containerName]: sortedFolders,
+          [containerName]: folderData,
         }));
-
         setLastFetched((prev) => ({
           ...prev,
-          folders: {
-            ...prev.folders,
-            [containerName]: new Date(),
-          },
+          folders: { ...prev.folders, [containerName]: new Date() },
         }));
-
         setLoading((prev) => ({ ...prev, folders: false }));
 
-        return sortedFolders;
+        return folderData;
       } catch (err) {
-        setError((prev) => ({
-          ...prev,
-          folders: `Failed to load folders for ${containerName}`,
-        }));
+        setError((prev) => ({ ...prev, folders: "Failed to load folders" }));
         console.error(err);
         setLoading((prev) => ({ ...prev, folders: false }));
         return [];
@@ -251,6 +262,7 @@ export const AdminProvider = ({ children }) => {
 
     // Actions
     fetchUsers,
+    deleteUser, // ADD: Include deleteUser in the context value
     fetchContainers,
     fetchFolders,
     fetchAuditLogs,
