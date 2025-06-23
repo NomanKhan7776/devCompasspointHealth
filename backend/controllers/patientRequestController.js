@@ -195,17 +195,33 @@ exports.getPatientRequests = async (req, res) => {
     await pool.connect();
 
     let query = `
-      SELECT pr.*, 
-             u.name as doctorName,
-             au.name as approvedByName,
-             pu.name as patientName,
-             pu.username as patientUsername
-      FROM PatientRequests pr
-      INNER JOIN Users u ON pr.doctorId = u.userId
-      LEFT JOIN Users au ON pr.approvedBy = au.userId
-      LEFT JOIN Users pu ON pr.createdPatientId = pu.userId
-      WHERE 1=1
-    `;
+  SELECT pr.requestId,
+         pr.doctorId,
+         pr.patientEmail,
+         pr.patientPhone,
+         pr.containerName,
+         pr.folderName,
+         pr.requestStatus,
+         pr.requestDate,
+         pr.approvedDate,
+         pr.rejectionReason,
+         pr.createdPatientId,
+         pr.approvedBy,
+         -- Use original patient name for pending, created user name for approved
+         CASE 
+           WHEN pr.requestStatus = 'pending' OR pu.name IS NULL 
+           THEN pr.patientName 
+           ELSE pu.name 
+         END as patientName,
+         u.name as doctorName,
+         au.name as approvedByName,
+         pu.username as patientUsername
+  FROM PatientRequests pr
+  INNER JOIN Users u ON pr.doctorId = u.userId
+  LEFT JOIN Users au ON pr.approvedBy = au.userId
+  LEFT JOIN Users pu ON pr.createdPatientId = pu.userId
+  WHERE 1=1
+`;
 
     // FIXED: Only show requests where patient still exists OR request is pending
     query += ` AND (
@@ -252,11 +268,27 @@ exports.getPatientRequest = async (req, res) => {
       .request()
       .input("requestId", req.params.requestId)
       .input("userId", req.user.userId).query(`
-        SELECT pr.*, 
-               u.name as doctorName,
-               au.name as approvedByName,
-               pu.name as patientName,
-               pu.username as patientUsername
+        SELECT pr.requestId,
+       pr.doctorId,
+       pr.patientEmail,
+       pr.patientPhone,
+       pr.containerName,
+       pr.folderName,
+       pr.requestStatus,
+       pr.requestDate,
+       pr.approvedDate,
+       pr.rejectionReason,
+       pr.createdPatientId,
+       pr.approvedBy,
+       -- Use original patient name for pending, created user name for approved
+       CASE 
+         WHEN pr.requestStatus = 'pending' OR pu.name IS NULL 
+         THEN pr.patientName 
+         ELSE pu.name 
+       END as patientName,
+       u.name as doctorName,
+       au.name as approvedByName,
+       pu.username as patientUsername
         FROM PatientRequests pr
         INNER JOIN Users u ON pr.doctorId = u.userId
         LEFT JOIN Users au ON pr.approvedBy = au.userId
