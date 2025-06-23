@@ -37,11 +37,11 @@ router.get("/:containerName/:folderName/:blobName/url", auth, getBlobSasUrl);
 // @route   POST api/blobs/:containerName/:folderName
 // @desc    Upload a blob (RTF files are automatically converted to TXT and only TXT is stored)
 //          Images can be processed as profile images with standardized dimensions
-// @access  Private/Admin,Doctor,Nurse
+// @access  Private/Admin,Doctor,Nurse,Patient
 router.post(
   "/:containerName/:folderName",
   auth,
-  checkRole(["admin", "doctor", "nurse"]),
+  checkRole(["admin", "doctor", "nurse","patient"]),
   uploadBlob
 );
 

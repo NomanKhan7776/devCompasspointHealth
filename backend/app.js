@@ -11,14 +11,14 @@ const userRoutes = require("./routes/users");
 const assignmentRoutes = require("./routes/assignments");
 const blobRoutes = require("./routes/blobs");
 const smartTokenRoutes = require("./routes/smartTokenRoutes");
-
+const patientRequests = require("./routes/patientRequests");
 // Create Express app
 const app = express();
 
 // Set view engine for EJS templates
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
-
+app.use(express.json());
 // Enhanced Helmet configuration for security with Safari iOS compatibility and SmartToken support
 app.use(
   helmet({
@@ -190,7 +190,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/assignments", assignmentRoutes);
 app.use("/api/blobs", blobRoutes);
-
+app.use("/api/patient-requests", patientRequests);
 // Health check endpoint with session info (for monitoring)
 app.get("/", (req, res) => {
   const auth = require("./middleware/auth");

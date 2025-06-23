@@ -274,7 +274,29 @@ exports.deleteUser = async (req, res) => {
         });
       }
 
-      // First, handle FileAudit records - either delete them or set userId to NULL
+      const userToDelete = userCheck.recordset[0];
+
+      // FIXED: Handle PatientRequests foreign key constraints properly
+      // Set foreign key references to NULL (preserves history)
+      await new sql.Request(transaction).input("userId", req.params.id).query(`
+          UPDATE PatientRequests 
+          SET createdPatientId = NULL 
+          WHERE createdPatientId = @userId
+        `);
+
+      await new sql.Request(transaction).input("userId", req.params.id).query(`
+          UPDATE PatientRequests 
+          SET doctorId = NULL 
+          WHERE doctorId = @userId
+        `);
+
+      await new sql.Request(transaction).input("userId", req.params.id).query(`
+          UPDATE PatientRequests 
+          SET approvedBy = NULL 
+          WHERE approvedBy = @userId
+        `);
+
+      // Handle FileAudit records - delete them
       await new sql.Request(transaction)
         .input("userId", req.params.id)
         .query("DELETE FROM FileAudit WHERE userId = @userId");
@@ -298,7 +320,13 @@ exports.deleteUser = async (req, res) => {
 
       res.json({
         success: true,
-        message: "User deleted successfully",
+        message: `User ${userToDelete.name} (${userToDelete.username}) deleted successfully`,
+        deletedUser: {
+          userId: userToDelete.userId,
+          name: userToDelete.name,
+          username: userToDelete.username,
+          role: userToDelete.role,
+        },
       });
     } catch (err) {
       // Roll back the transaction if any operation fails
@@ -306,7 +334,7 @@ exports.deleteUser = async (req, res) => {
       throw err;
     }
   } catch (err) {
-    console.error(err.message);
+    console.error("Delete user error:", err.message);
     res.status(500).json({
       success: false,
       message: "Server error",

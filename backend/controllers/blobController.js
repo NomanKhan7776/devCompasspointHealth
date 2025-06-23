@@ -597,7 +597,9 @@ exports.getBlobSasUrl = async (req, res) => {
       viewUrl,
       viewOnly: true,
       canModify: req.user.role === "admin",
-      canUpload: ["admin", "doctor", "nurse"].includes(req.user.role),
+      canUpload: ["admin", "doctor", "nurse", "patient"].includes(
+        req.user.role
+      ),
       isProfileImage: blobName === PROFILE_IMAGE_CONFIG.standardName,
       message: "Use viewUrl for secure new tab viewing",
     });
@@ -612,7 +614,7 @@ exports.getBlobSasUrl = async (req, res) => {
 
 // @route   POST api/blobs/:containerName/:folderName
 // @desc    Upload a blob - RTF files are converted to TXT only, Images processed for profile
-// @access  Private/Admin,Doctor,Nurse (authenticated by middleware + role check)
+// @access  Private/Admin,Doctor,Nurse,Patient (authenticated by middleware + role check)
 exports.uploadBlob = async (req, res) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
