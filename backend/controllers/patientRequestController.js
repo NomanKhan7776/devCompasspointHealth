@@ -389,7 +389,7 @@ exports.approvePatientRequest = async (req, res) => {
 
       // Send email to patient with credentials
       const mailOptions = {
-        from: config.emailUser,
+        from: `CompassPoint Health Support <${config.emailUser}>`,
         to: request.patientEmail,
         subject: "Your Patient Portal Account Has Been Created",
         html: `
