@@ -15,6 +15,27 @@ const patientRequests = require("./routes/patientRequests.js");
 // Create Express app
 const app = express();
 
+if (process.env.NODE_ENV === "production") {
+  // In production, trust first proxy (common for most deployments)
+  app.set("trust proxy", 1);
+} else {
+  // In development, trust all proxies for testing
+  app.set("trust proxy", true);
+}
+
+if (process.env.NODE_ENV === "development") {
+  app.use("/patients", (req, res, next) => {
+    console.log(`🔍 IP Detection Debug:
+    req.ip: ${req.ip}
+    x-forwarded-for: ${req.headers["x-forwarded-for"]}
+    x-real-ip: ${req.headers["x-real-ip"]}
+    cf-connecting-ip: ${req.headers["cf-connecting-ip"]}
+    connection.remoteAddress: ${req.connection?.remoteAddress}
+    `);
+    next();
+  });
+}
+
 // Set view engine for EJS templates
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -411,4 +432,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-

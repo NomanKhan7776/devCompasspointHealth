@@ -12,6 +12,7 @@ const {
   reactivateSmartToken,
   deleteSmartToken, // NEW: Delete token function
   getAssignedFolders, // NEW: Get assigned folders function
+  getSmartTokenLogs,
 } = require("../controllers/smartTokenController");
 
 // Middleware
@@ -41,7 +42,7 @@ router.get(
 router.get("/admin/unclaimed", auth, checkRole(["admin"]), getUnclaimedTokens);
 router.get("/admin/assigned", auth, checkRole(["admin"]), getAllAssignedTokens);
 router.post("/admin/assign", auth, checkRole(["admin"]), assignTokenToPatient);
-
+router.get("/admin/logs", auth, checkRole(["admin"]), getSmartTokenLogs);
 // NEW: Get assigned folders for a container (to show in UI)
 router.get(
   "/admin/assigned-folders/:containerName",

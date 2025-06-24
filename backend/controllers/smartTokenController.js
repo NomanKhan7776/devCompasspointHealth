@@ -1,4 +1,4 @@
-// controllers/smartTokenController.js - FIXED VERSION with working file access and Date of Birth
+// controllers/smartTokenController.js - UPDATED VERSION with Real User IP Detection
 const { pool, sql } = require("../config/database");
 const { blobServiceClient } = require("../config/azure-storage");
 const {
@@ -8,6 +8,105 @@ const {
 } = require("@azure/storage-blob");
 const axios = require("axios");
 const jwt = require("jsonwebtoken");
+
+/**
+ * Get the real user IP address from request headers
+ * Handles proxies, load balancers, CDNs, and direct connections
+ * @param {Object} req - Express request object
+ * @returns {string} - Real user IP address
+ */
+const getRealUserIP = (req) => {
+  // Check various headers that proxies/load balancers use to forward real IP
+  const forwardedFor = req.headers["x-forwarded-for"];
+  const realIP = req.headers["x-real-ip"];
+  const cfConnectingIP = req.headers["cf-connecting-ip"]; // Cloudflare
+  const xClientIP = req.headers["x-client-ip"];
+  const xForwardedForAlt = req.headers["x-forwarded"];
+  const forwardedForAlt = req.headers["forwarded-for"];
+  const forwarded = req.headers["forwarded"];
+
+  // x-forwarded-for can contain multiple IPs (client, proxy1, proxy2, ...)
+  // The first IP is the original client
+  if (forwardedFor) {
+    const ips = forwardedFor.split(",").map((ip) => ip.trim());
+    // Return the first non-private IP or the first IP if all are private
+    for (const ip of ips) {
+      if (isValidPublicIP(ip)) {
+        return ip;
+      }
+    }
+    return ips[0]; // Fallback to first IP even if private
+  }
+
+  // Check other headers in order of preference
+  if (realIP && isValidIP(realIP)) return realIP;
+  if (cfConnectingIP && isValidIP(cfConnectingIP)) return cfConnectingIP;
+  if (xClientIP && isValidIP(xClientIP)) return xClientIP;
+  if (xForwardedForAlt && isValidIP(xForwardedForAlt)) return xForwardedForAlt;
+  if (forwardedForAlt && isValidIP(forwardedForAlt)) return forwardedForAlt;
+
+  // Parse the forwarded header (more complex format)
+  if (forwarded) {
+    const forMatch = forwarded.match(/for=([^;,\s]+)/);
+    if (forMatch && forMatch[1]) {
+      const ip = forMatch[1].replace(/"/g, "").replace(/\[|\]/g, "");
+      if (isValidIP(ip)) return ip;
+    }
+  }
+
+  // Fallback to connection-level IPs
+  return (
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
+    req.req?.connection?.remoteAddress ||
+    req.ip ||
+    "unknown"
+  );
+};
+
+/**
+ * Validate if a string is a valid IP address
+ * @param {string} ip - IP address to validate
+ * @returns {boolean} - True if valid IP
+ */
+const isValidIP = (ip) => {
+  if (!ip || typeof ip !== "string") return false;
+
+  // Remove IPv6 brackets if present
+  ip = ip.replace(/\[|\]/g, "");
+
+  // IPv4 regex
+  const ipv4Regex =
+    /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
+  // IPv6 regex (simplified)
+  const ipv6Regex = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::1$|^::$/;
+
+  return ipv4Regex.test(ip) || ipv6Regex.test(ip);
+};
+
+/**
+ * Check if IP is a public IP (not private/local)
+ * @param {string} ip - IP address to check
+ * @returns {boolean} - True if public IP
+ */
+const isValidPublicIP = (ip) => {
+  if (!isValidIP(ip)) return false;
+
+  // Private IP ranges to exclude
+  const privateRanges = [
+    /^10\./, // 10.0.0.0/8
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
+    /^192\.168\./, // 192.168.0.0/16
+    /^127\./, // 127.0.0.0/8 (localhost)
+    /^169\.254\./, // 169.254.0.0/16 (link-local)
+    /^::1$/, // IPv6 localhost
+    /^fc00:/, // IPv6 private
+    /^fe80:/, // IPv6 link-local
+  ];
+
+  return !privateRanges.some((range) => range.test(ip));
+};
 
 // Helper function to generate SAS token for emergency access with 5-minute expiry
 const generateEmergencySasToken = (containerName, blobName) => {
@@ -149,6 +248,43 @@ const formatDateOfBirth = (dateString) => {
   } catch (error) {
     console.error("Error formatting date of birth:", error);
     return null;
+  }
+};
+
+// Updated log token access with real IP detection
+const logTokenAccess = async (
+  tokenId,
+  containerName,
+  folderName,
+  ipAddress,
+  mode = "online"
+) => {
+  try {
+    await pool.connect();
+    await pool
+      .request()
+      .input("tokenId", tokenId)
+      .input("containerName", containerName)
+      .input("folderName", folderName)
+      .input("ipAddress", ipAddress)
+      .input("accessMode", mode).query(`
+        INSERT INTO TokenAccessLog (tokenId, containerName, folderName, ipAddress, accessMode, accessTime)
+        VALUES (@tokenId, @containerName, @folderName, @ipAddress, @accessMode, GETDATE())
+      `);
+
+    // Optional: Log to console in development for debugging
+    if (process.env.NODE_ENV === "development") {
+      console.log(
+        `📍 SmartToken Access Logged: ${tokenId.substring(
+          0,
+          8
+        )}... from IP ${ipAddress} (${mode} mode)`
+      );
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("Error logging token access:", error);
+    }
   }
 };
 
@@ -301,8 +437,14 @@ exports.verifySmartToken = async (req, res) => {
           emergencyAccess: true,
         }));
 
-        // Log access for audit
-        await logTokenAccess(id, token.containerName, token.folderName, req.ip);
+        // Log access for audit with real user IP
+        await logTokenAccess(
+          id,
+          token.containerName,
+          token.folderName,
+          getRealUserIP(req),
+          "online"
+        );
 
         // Format patient date of birth
         const formattedDOB = formatDateOfBirth(token.patientDateOfBirth);
@@ -412,12 +554,12 @@ const handleOfflineMode = async (req, res, tokenId) => {
           emergencyAccess: true,
         }));
 
-        // Log offline access
+        // Log offline access with real user IP
         await logTokenAccess(
           tokenId,
           token.containerName,
           token.folderName,
-          req.ip,
+          getRealUserIP(req),
           "offline"
         );
 
@@ -593,36 +735,7 @@ exports.getPatientFileViewOnly = async (req, res) => {
   }
 };
 
-// Log token access for audit
-const logTokenAccess = async (
-  tokenId,
-  containerName,
-  folderName,
-  ipAddress,
-  mode = "online"
-) => {
-  try {
-    await pool.connect();
-    await pool
-      .request()
-      .input("tokenId", tokenId)
-      .input("containerName", containerName)
-      .input("folderName", folderName)
-      .input("ipAddress", ipAddress)
-      .input("accessMode", mode).query(`
-        INSERT INTO TokenAccessLog (tokenId, containerName, folderName, ipAddress, accessMode, accessTime)
-        VALUES (@tokenId, @containerName, @folderName, @ipAddress, @accessMode, GETDATE())
-      `);
-  } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("Error logging token access:", error);
-    }
-  }
-};
-
-// Rest of the existing functions (getUnclaimedTokens, assignTokenToPatient, etc.)
-// keeping them exactly as they were...
-
+// Rest of the existing functions (keeping them exactly as they were)
 exports.getAllAssignedTokens = async (req, res) => {
   try {
     if (!req.user) {
@@ -1234,6 +1347,175 @@ exports.deleteSmartToken = async (req, res) => {
       message: "Failed to delete token",
       error:
         process.env.NODE_ENV === "development" ? error.message : "Server error",
+    });
+  }
+};
+
+exports.getSmartTokenLogs = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required",
+      });
+    }
+
+    const {
+      tokenId,
+      containerName,
+      folderName,
+      ipAddress,
+      accessMode,
+      startDate,
+      endDate,
+      limit = 50,
+      offset = 0,
+    } = req.query;
+
+    await pool.connect();
+
+    // First, get the total count for pagination
+    let countQuery = `
+      SELECT COUNT(*) as total
+      FROM TokenAccessLog tal 
+      LEFT JOIN SmartTokens st ON tal.tokenId = st.smartTokenId 
+      WHERE 1=1`;
+
+    const countParams = [];
+
+    if (tokenId) {
+      countQuery += " AND tal.tokenId = @tokenId";
+      countParams.push({ name: "tokenId", value: tokenId });
+    }
+
+    if (containerName) {
+      countQuery += " AND tal.containerName = @containerName";
+      countParams.push({ name: "containerName", value: containerName });
+    }
+
+    if (folderName) {
+      countQuery += " AND tal.folderName = @folderName";
+      countParams.push({ name: "folderName", value: folderName });
+    }
+
+    if (ipAddress) {
+      countQuery += " AND tal.ipAddress = @ipAddress";
+      countParams.push({ name: "ipAddress", value: ipAddress });
+    }
+
+    if (accessMode) {
+      countQuery += " AND tal.accessMode = @accessMode";
+      countParams.push({ name: "accessMode", value: accessMode });
+    }
+
+    if (startDate) {
+      countQuery += " AND tal.accessTime >= @startDate";
+      countParams.push({ name: "startDate", value: new Date(startDate) });
+    }
+
+    if (endDate) {
+      countQuery += " AND tal.accessTime <= @endDate";
+      countParams.push({ name: "endDate", value: new Date(endDate) });
+    }
+
+    // Get total count
+    const countRequest = pool.request();
+    countParams.forEach((param) => {
+      countRequest.input(param.name, param.value);
+    });
+    const countResult = await countRequest.query(countQuery);
+    const totalCount = countResult.recordset[0].total;
+
+    // Query TokenAccessLog with SmartTokens data
+    let query = `
+      SELECT 
+        tal.tokenId,
+        tal.containerName,
+        tal.folderName,
+        tal.ipAddress,
+        tal.accessMode,
+        tal.accessTime,
+        st.patientName,
+        st.status as tokenStatus,
+        st.assignedAt
+      FROM TokenAccessLog tal 
+      LEFT JOIN SmartTokens st ON tal.tokenId = st.smartTokenId 
+      WHERE 1=1`;
+
+    const queryParams = [];
+
+    if (tokenId) {
+      query += " AND tal.tokenId = @tokenId";
+      queryParams.push({ name: "tokenId", value: tokenId });
+    }
+
+    if (containerName) {
+      query += " AND tal.containerName = @containerName";
+      queryParams.push({ name: "containerName", value: containerName });
+    }
+
+    if (folderName) {
+      query += " AND tal.folderName = @folderName";
+      queryParams.push({ name: "folderName", value: folderName });
+    }
+
+    if (ipAddress) {
+      query += " AND tal.ipAddress = @ipAddress";
+      queryParams.push({ name: "ipAddress", value: ipAddress });
+    }
+
+    if (accessMode) {
+      query += " AND tal.accessMode = @accessMode";
+      queryParams.push({ name: "accessMode", value: accessMode });
+    }
+
+    if (startDate) {
+      query += " AND tal.accessTime >= @startDate";
+      queryParams.push({ name: "startDate", value: new Date(startDate) });
+    }
+
+    if (endDate) {
+      query += " AND tal.accessTime <= @endDate";
+      queryParams.push({ name: "endDate", value: new Date(endDate) });
+    }
+
+    query +=
+      " ORDER BY tal.accessTime DESC OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY";
+    queryParams.push({ name: "offset", value: parseInt(offset) });
+    queryParams.push({ name: "limit", value: parseInt(limit) });
+
+    const request = pool.request();
+    queryParams.forEach((param) => {
+      request.input(param.name, param.value);
+    });
+
+    const result = await request.query(query);
+
+    res.json({
+      success: true,
+      logs: result.recordset,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        total: totalCount,
+        currentPage: Math.floor(parseInt(offset) / parseInt(limit)) + 1,
+        totalPages: Math.ceil(totalCount / parseInt(limit)),
+      },
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("Error fetching SmartToken logs:", error);
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch SmartToken logs",
     });
   }
 };
