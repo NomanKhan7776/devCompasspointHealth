@@ -27,6 +27,7 @@ import AuditLogs from "./components/Dashboard/Admin/AuditLogs";
 import AdminContainers from "./components/Dashboard/Admin/AdminContainers";
 import AdminFolders from "./components/Dashboard/Admin/AdminFolders";
 import SmartTokenManagement from "./components/Dashboard/Admin/SmartTokenManagement";
+import SmartTokenLogs from "./components/Dashboard/Admin/SmartTokenLogs";
 
 // User Components
 import UserDashboard from "./components/Dashboard/User/UserDashboard";
@@ -126,6 +127,10 @@ const App = () => {
                           <AuditLogs />
                         </RoleCheck>
                       }
+                    />
+                    <Route
+                      path="/smarttoken-logs"
+                      element={<SmartTokenLogs />}
                     />
 
                     {/* Admin Container Management Routes */}

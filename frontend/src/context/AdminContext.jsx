@@ -1,7 +1,7 @@
-// Fixed AdminContext.jsx - Added missing deleteUser function
+// Fixed AdminContext.jsx - Added missing deleteUser function and SmartToken Logs
 
 import React, { useState, useCallback } from "react";
-import { usersAPI, assignmentsAPI, blobsAPI } from "../api";
+import { usersAPI, assignmentsAPI, blobsAPI, smartTokenAPI } from "../api";
 import { AdminContext } from "../hooks/useAdmin.js";
 
 export const AdminProvider = ({ children }) => {
@@ -15,24 +15,36 @@ export const AdminProvider = ({ children }) => {
   // Audit logs
   const [auditLogs, setAuditLogs] = useState([]);
 
+  // SmartToken logs
+  const [smartTokenLogs, setSmartTokenLogs] = useState([]);
+  const [smartTokenLogsPagination, setSmartTokenLogsPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalCount: 0,
+    limit: 50,
+  });
+
   // Loading and error states
   const [loading, setLoading] = useState({
     users: false,
     containers: false,
     folders: false,
     auditLogs: false,
+    smartTokenLogs: false,
   });
   const [lastFetched, setLastFetched] = useState({
     users: null,
     containers: null,
     folders: {},
     auditLogs: null,
+    smartTokenLogs: null,
   });
   const [error, setError] = useState({
     users: "",
     containers: "",
     folders: "",
     auditLogs: "",
+    smartTokenLogs: "",
   });
 
   // Fetch users with assignments
@@ -212,6 +224,60 @@ export const AdminProvider = ({ children }) => {
     [auditLogs, lastFetched.auditLogs]
   );
 
+  // Fetch SmartToken logs
+  const fetchSmartTokenLogs = useCallback(
+    async (page = 1, limit = 50, forceRefresh = false) => {
+      if (!localStorage.getItem("token")) {
+        return [];
+      }
+
+      // Don't cache if different page/limit requested
+      const isSamePage = page === smartTokenLogsPagination.currentPage && limit === smartTokenLogsPagination.limit;
+      const dataAge = lastFetched.smartTokenLogs
+        ? (new Date() - lastFetched.smartTokenLogs) / 1000 / 60
+        : 999;
+      
+      if (smartTokenLogs.length > 0 && dataAge < 2 && !forceRefresh && isSamePage) {
+        return smartTokenLogs;
+      }
+
+      try {
+        setLoading((prev) => ({ ...prev, smartTokenLogs: true }));
+        setError((prev) => ({ ...prev, smartTokenLogs: "" }));
+
+        const offset = (page - 1) * limit;
+        const res = await smartTokenAPI.getSmartTokenLogs({
+          limit,
+          offset,
+        });
+        
+        const logs = res.data.logs || [];
+        const pagination = res.data.pagination || {};
+
+        setSmartTokenLogs(logs);
+        setSmartTokenLogsPagination({
+          currentPage: page,
+          totalPages: Math.ceil(pagination.total / limit) || 1,
+          totalCount: pagination.total || 0,
+          limit,
+        });
+        setLastFetched((prev) => ({ ...prev, smartTokenLogs: new Date() }));
+        setLoading((prev) => ({ ...prev, smartTokenLogs: false }));
+
+        return logs;
+      } catch (err) {
+        setError((prev) => ({
+          ...prev,
+          smartTokenLogs: "Failed to load SmartToken logs",
+        }));
+        console.error(err);
+        setLoading((prev) => ({ ...prev, smartTokenLogs: false }));
+        return [];
+      }
+    },
+    [smartTokenLogs, lastFetched.smartTokenLogs, smartTokenLogsPagination]
+  );
+
   // Clear specific cache entry
   const clearCache = useCallback((type) => {
     switch (type) {
@@ -231,16 +297,34 @@ export const AdminProvider = ({ children }) => {
         setAuditLogs([]);
         setLastFetched((prev) => ({ ...prev, auditLogs: null }));
         break;
+      case "smartTokenLogs":
+        setSmartTokenLogs([]);
+        setSmartTokenLogsPagination({
+          currentPage: 1,
+          totalPages: 1,
+          totalCount: 0,
+          limit: 50,
+        });
+        setLastFetched((prev) => ({ ...prev, smartTokenLogs: null }));
+        break;
       case "all":
         setUsers([]);
         setContainers([]);
         setContainerFolders({});
         setAuditLogs([]);
+        setSmartTokenLogs([]);
+        setSmartTokenLogsPagination({
+          currentPage: 1,
+          totalPages: 1,
+          totalCount: 0,
+          limit: 50,
+        });
         setLastFetched({
           users: null,
           containers: null,
           folders: {},
           auditLogs: null,
+          smartTokenLogs: null,
         });
         break;
       default:
@@ -254,6 +338,8 @@ export const AdminProvider = ({ children }) => {
     containers,
     containerFolders,
     auditLogs,
+    smartTokenLogs,
+    smartTokenLogsPagination,
 
     // Loading states
     loading,
@@ -266,6 +352,7 @@ export const AdminProvider = ({ children }) => {
     fetchContainers,
     fetchFolders,
     fetchAuditLogs,
+    fetchSmartTokenLogs,
     clearCache,
   };
 

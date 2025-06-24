@@ -321,6 +321,8 @@ const smartTokenAPI = {
   deleteToken: (tokenId) => {
     return smartTokenAxios.delete(`/patients/admin/delete/${tokenId}`);
   },
+  getSmartTokenLogs: (params) =>
+    smartTokenAxios.get("/patients/admin/logs", { params }),
 };
 
 // Utility functions for SmartToken API
