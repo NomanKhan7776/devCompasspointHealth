@@ -519,7 +519,107 @@ exports.viewBlob = async (req, res) => {
     );
 
     // Stream the file content
-    downloadResponse.readableStreamBody.pipe(res);
+    if (
+      contentType.includes("text") ||
+      blobName.toLowerCase().endsWith(".txt")
+    ) {
+      try {
+        // Read the text content
+        const chunks = [];
+        for await (const chunk of downloadResponse.readableStreamBody) {
+          chunks.push(chunk);
+        }
+        const textContent = Buffer.concat(chunks).toString("utf8");
+
+        // Set content type to HTML for better display
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+
+        // Create enhanced HTML wrapper with improved typography
+        const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Document - ${blobName}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            font-size: 18px;
+            line-height: 1.8;
+            color: #2d3748;
+            background-color: #ffffff;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 25px;
+            box-sizing: border-box;
+        }
+        .document-header {
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 12px;
+            margin-bottom: 25px;
+            font-size: 14px;
+            color: #718096;
+        }
+        .document-content {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            font-size: 18px;
+            line-height: 1.8;
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 20px;
+                font-size: 17px;
+            }
+            .document-content {
+                font-size: 17px;
+            }
+        }
+        @media print {
+            body {
+                font-size: 14px;
+                line-height: 1.6;
+                max-width: none;
+                margin: 0;
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="document-header">
+        <strong>Medical Document:</strong> ${blobName}
+        ${
+          properties.metadata?.originalPdfFileName
+            ? `<br><em>Converted from PDF: ${properties.metadata.originalPdfFileName}</em>`
+            : ""
+        }
+        ${
+          properties.metadata?.originalRtfFileName
+            ? `<br><em>Converted from RTF: ${properties.metadata.originalRtfFileName}</em>`
+            : ""
+        }
+    </div>
+    <div class="document-content">${textContent
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")}</div>
+</body>
+</html>`;
+
+        // Send the enhanced HTML content
+        return res.send(htmlContent);
+      } catch (error) {
+        console.error("Text file processing error:", error);
+        // Fallback to original streaming if there's an error
+        res.setHeader("Content-Type", contentType);
+        downloadResponse.readableStreamBody.pipe(res);
+        return;
+      }
+    } else {
+      // For non-text files, use original streaming
+      downloadResponse.readableStreamBody.pipe(res);
+    }
   } catch (err) {
     console.error("viewBlob error:", err.message);
     res.status(500).send(`
