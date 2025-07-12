@@ -1,6 +1,6 @@
 // api/index.js - ENHANCED VERSION WITH PROFILE IMAGE SUPPORT
 import axios from "axios";
-
+//TESTUNG DEV
 // Create axios instance
 const api = axios.create({
   baseURL: `${import.meta.env.VITE_REACT_API_URL}/api`,
