@@ -1,0 +1,55 @@
+<!-- views/tokenExpired.ejs -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100 min-h-screen flex items-center justify-center">
+    <div class="max-w-md w-full mx-4">
+      <div class="bg-white rounded-lg shadow-lg p-8 text-center">
+        <div
+          class="w-16 h-16 mx-auto mb-4 bg-orange-100 rounded-full flex items-center justify-center"
+        >
+          <i class="fas fa-clock text-orange-600 text-2xl"></i>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">Token Expired</h1>
+        <p class="text-gray-600 mb-6"><%= message %></p>
+
+        <div class="bg-blue-50 rounded-lg p-4 mb-6">
+          <p class="text-sm text-blue-800">
+            <i class="fas fa-redo mr-2"></i>
+            <% if (typeof instructions !== 'undefined' && instructions) { %> <%=
+            instructions %> <% } else { %> Please scan the SmartToken again to
+            generate a new link. <% } %>
+          </p>
+        </div>
+
+        <div
+          class="flex items-center justify-center space-x-2 text-sm text-gray-500"
+        >
+          <i class="fas fa-mobile-alt"></i>
+          <span
+            >Place your phone near the SmartToken device and tap to scan
+            again</span
+          >
+        </div>
+
+        <div class="text-xs text-gray-500 mt-6">
+          <p>Token ID: <%= tokenId %></p>
+          <p>CompassPoint Health PRMS</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

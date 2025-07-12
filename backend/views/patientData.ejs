@@ -1,0 +1,621 @@
+<!-- views/patientData.ejs - ENHANCED VERSION WITH PROFILE IMAGE AND DATE OF BIRTH -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+    <style>
+      .profile-image {
+        width: 150px;
+        height: 150px;
+        border-radius: 12px;
+        object-fit: cover;
+        border: 3px solid #e5e7eb;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      .profile-placeholder {
+        width: 150px;
+        height: 150px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 3px solid #e5e7eb;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      .profile-initials {
+        font-size: 3rem;
+        font-weight: bold;
+        color: white;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
+      @media (max-width: 640px) {
+        .profile-image,
+        .profile-placeholder {
+          width: 120px;
+          height: 120px;
+        }
+        .profile-initials {
+          font-size: 2.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-6 max-w-4xl">
+      <!-- Emergency Access Banner -->
+      <% if (typeof isEmergencyAccess !== 'undefined' && isEmergencyAccess) { %>
+      <div class="bg-red-500 text-white p-4 mb-6 rounded-lg shadow-lg">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center">
+            <i class="fas fa-shield-alt text-white text-2xl mr-3"></i>
+            <div>
+              <h2 class="text-xl font-bold">🚨 EMERGENCY ACCESS</h2>
+              <p class="text-sm opacity-90">
+                Secure medical data access •
+                <span id="access-time-display"></span>
+              </p>
+            </div>
+          </div>
+          <!-- Session Timer -->
+          <div class="text-right">
+            <p class="text-sm font-medium">Session expires in:</p>
+            <p id="session-timer" class="text-2xl font-bold">5:00</p>
+          </div>
+        </div>
+      </div>
+      <% } %>
+
+      <!-- Offline Mode Warning -->
+      <% if (typeof isOfflineMode !== 'undefined' && isOfflineMode) { %>
+      <div
+        class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 rounded-r-lg shadow-sm"
+      >
+        <div class="flex items-center">
+          <i class="fas fa-wifi text-yellow-500 text-xl mr-3"></i>
+          <div>
+            <p class="font-semibold">Limited Access Mode</p>
+            <p class="text-sm"><%= warning %></p>
+          </div>
+        </div>
+      </div>
+      <% } %>
+
+      <!-- Patient Header Card with Profile Image -->
+      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center mb-4">
+          <!-- Profile Image Section -->
+          <div class="mb-4 sm:mb-0 sm:mr-6 flex-shrink-0">
+            <div id="profile-image-container">
+              <!-- Profile image will be loaded here via JavaScript -->
+              <div class="profile-placeholder">
+                <span class="profile-initials" id="patient-initials">
+                  <%= patientName.split(' ').map(n =>
+                  n.charAt(0)).join('').substring(0, 2) %>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Patient Information -->
+          <div class="flex-1 min-w-0">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">
+              <%= patientName %>
+            </h1>
+
+            <!-- Patient Date of Birth - NEW SECTION -->
+            <% if (typeof patientDateOfBirth !== 'undefined' &&
+            patientDateOfBirth) { %>
+            <div class="mb-3">
+              <p class="text-lg text-gray-600">
+                <i class="fas fa-calendar-day mr-2 text-blue-500"></i>
+                <span class="font-medium">DOB:</span>
+                <span class="font-semibold text-gray-800"
+                  ><%= patientDateOfBirth %></span
+                >
+              </p>
+            </div>
+            <% } %>
+
+            <div class="flex flex-wrap gap-2 mb-3">
+              <span
+                class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium"
+              >
+                <i class="fas fa-database mr-1"></i>
+                <%= containerName %>
+              </span>
+              <span
+                class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium"
+              >
+                <i class="fas fa-folder-medical mr-1"></i>
+                <%= folderName %>
+              </span>
+            </div>
+
+            <!-- Important Notice -->
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <div class="flex items-start">
+                <i class="fas fa-eye text-yellow-600 text-lg mr-2 mt-0.5"></i>
+                <div>
+                  <p class="text-sm font-medium text-yellow-800">
+                    View Only Access
+                  </p>
+                  <p class="text-sm text-yellow-700">
+                    Files cannot be downloaded for security reasons
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Patient Medical Files Section -->
+      <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-green-500 to-blue-600 px-6 py-4">
+          <div class="flex items-center justify-between text-white">
+            <div class="flex items-center">
+              <i class="fas fa-file-medical-alt text-2xl mr-3"></i>
+              <div>
+                <h2 class="text-xl font-bold">Patient Medical Files</h2>
+                <% if (files && files.length > 0) { %>
+                <p class="text-sm opacity-90">
+                  <%= files.length %> file(s) available
+                </p>
+                <% } else { %>
+                <p class="text-sm opacity-90">No files found</p>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-6">
+          <!-- Safari iOS Notice -->
+          <div
+            id="safari-ios-notice"
+            class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg"
+            style="display: none"
+          >
+            <div class="flex items-start">
+              <i class="fas fa-mobile-alt text-blue-600 mt-0.5 mr-2"></i>
+              <div>
+                <p class="text-sm font-medium text-blue-800">
+                  iPhone/iPad Notice
+                </p>
+                <p class="text-sm text-blue-700">
+                  Files will open in the same tab. Use the back button to
+                  return.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <% if (!files || files.length === 0) { %>
+          <!-- No Files Message -->
+          <div class="text-center py-12">
+            <i class="fas fa-folder-open text-gray-300 text-6xl mb-4"></i>
+            <h3 class="text-xl font-semibold text-gray-600 mb-2">
+              No Medical Files Found
+            </h3>
+            <p class="text-gray-500">
+              No files are available for this patient at this time.
+            </p>
+          </div>
+          <% } else { %>
+          <!-- Files List -->
+          <div class="space-y-3">
+            <% files.forEach(function(file, index) { %>
+            <div
+              class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200"
+            >
+              <!-- File Card Content -->
+              <button
+                class="file-link w-full text-left"
+                data-container="<%= containerName %>"
+                data-folder="<%= folderName %>"
+                data-filename="<%= encodeURIComponent(file.name) %>"
+                title="Tap to open file"
+              >
+                <div class="flex items-start space-x-4">
+                  <!-- File Icon -->
+                  <div class="flex-shrink-0">
+                    <% var fileIcon = 'fa-file text-gray-500'; var iconBg =
+                    'bg-gray-100'; if (file.contentType) { if
+                    (file.contentType.indexOf('image') !== -1) { fileIcon =
+                    'fa-file-image text-green-600'; iconBg = 'bg-green-100'; }
+                    else if (file.contentType.indexOf('pdf') !== -1) { fileIcon
+                    = 'fa-file-pdf text-red-600'; iconBg = 'bg-red-100'; } else
+                    if (file.contentType.indexOf('word') !== -1) { fileIcon =
+                    'fa-file-word text-blue-600'; iconBg = 'bg-blue-100'; } else
+                    if (file.contentType.indexOf('excel') !== -1) { fileIcon =
+                    'fa-file-excel text-green-700'; iconBg = 'bg-green-100'; }
+                    else if (file.contentType.indexOf('text') !== -1) { fileIcon
+                    = 'fa-file-alt text-gray-600'; iconBg = 'bg-gray-100'; } }
+                    %>
+                    <div
+                      class="<%= iconBg %> rounded-lg p-3 w-12 h-12 flex items-center justify-center"
+                    >
+                      <i class="fas <%= fileIcon %> text-lg"></i>
+                    </div>
+                  </div>
+
+                  <!-- File Details -->
+                  <div class="flex-1 min-w-0">
+                    <!-- File Name -->
+                    <h3
+                      class="text-lg font-semibold text-blue-600 hover:text-blue-800 mb-2 break-words"
+                    >
+                      <%= file.name %>
+                    </h3>
+
+                    <!-- File Metadata -->
+                    <div class="space-y-2">
+                      <!-- Date and Size Row -->
+                      <div
+                        class="flex flex-wrap items-center gap-4 text-sm text-gray-600"
+                      >
+                        <div class="flex items-center">
+                          <i class="fas fa-calendar-alt mr-2 text-gray-400"></i>
+                          <span
+                            ><%= new
+                            Date(file.lastModified).toLocaleDateString()
+                            %></span
+                          >
+                        </div>
+                        <div class="flex items-center">
+                          <i class="fas fa-file-alt mr-2 text-gray-400"></i>
+                          <span><%= formatFileSize(file.contentLength) %></span>
+                        </div>
+                      </div>
+
+                      <!-- File Type and Action Row -->
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                          <span
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                          >
+                            <i class="fas fa-tag mr-1"></i>
+                            <% if (file.contentType &&
+                            file.contentType.indexOf('/') !== -1) { %> <%=
+                            file.contentType.split('/')[1].toUpperCase() %> <% }
+                            else { %> UNKNOWN <% } %>
+                          </span>
+                        </div>
+                        <div
+                          class="flex items-center text-blue-500 text-sm font-medium"
+                        >
+                          <i class="fas fa-hand-pointer mr-1"></i>
+                          <span>Tap to open</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            </div>
+            <% }); %>
+          </div>
+          <% } %>
+        </div>
+      </div>
+
+      <!-- Security Notice -->
+      <div class="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4">
+        <div class="flex items-center justify-center text-gray-600">
+          <i class="fas fa-shield-alt mr-2"></i>
+          <p class="text-sm font-medium">
+            Secure Emergency Access • CompassPoint Health PRMS
+          </p>
+        </div>
+        <p class="text-center text-xs text-gray-500 mt-1">
+          For assistance, contact emergency medical services or facility
+          administrator
+        </p>
+      </div>
+
+      <!-- Session Expired Modal -->
+      <div
+        id="expired-modal"
+        class="fixed inset-0 z-50 hidden overflow-y-auto bg-black bg-opacity-75"
+      >
+        <div
+          class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center"
+        >
+          <div
+            class="bg-white rounded-xl shadow-2xl transform transition-all max-w-md w-full p-8"
+          >
+            <div
+              class="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center"
+            >
+              <i class="fas fa-clock text-red-600 text-2xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+              Session Expired
+            </h2>
+            <p class="text-gray-600 mb-6">
+              Your emergency access session has expired for security reasons.
+              Please scan the SmartToken again to access patient data.
+            </p>
+            <div class="bg-red-50 rounded-lg p-4 mb-6">
+              <p class="text-sm text-red-800">
+                <i class="fas fa-shield-alt mr-2"></i>
+                Emergency access sessions are limited to 5 minutes for patient
+                privacy and security.
+              </p>
+            </div>
+            <button
+              onclick="closeExpiredModal()"
+              class="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+            >
+              Close Window
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Global variables
+      const CONTAINER_NAME = "<%= containerName %>";
+      const FOLDER_NAME = "<%= folderName %>";
+      const PATIENT_NAME = "<%= patientName %>";
+
+      // Function to get patient initials
+      function getPatientInitials(name) {
+        return name
+          .split(" ")
+          .map((n) => n.charAt(0))
+          .join("")
+          .substring(0, 2)
+          .toUpperCase();
+      }
+
+      // Function to load profile image
+      function loadProfileImage() {
+        const profileImageContainer = document.getElementById(
+          "profile-image-container"
+        );
+        const profileImageUrl = `/api/blobs/${CONTAINER_NAME}/${FOLDER_NAME}/profile-image`;
+
+        // Create image element
+        const img = document.createElement("img");
+        img.className = "profile-image";
+        img.alt = `${PATIENT_NAME} - Profile Photo`;
+
+        // Handle successful image load
+        img.onload = function () {
+          // Replace placeholder with actual image
+          profileImageContainer.innerHTML = "";
+          profileImageContainer.appendChild(img);
+
+          // Add loading success indicator
+          console.log("Profile image loaded successfully");
+        };
+
+        // Handle image load error (use placeholder)
+        img.onerror = function () {
+          // Keep the placeholder with initials
+          console.log("Profile image not found, using initials placeholder");
+
+          // Update initials in case they weren't set correctly
+          const initialsElement = document.getElementById("patient-initials");
+          if (initialsElement) {
+            initialsElement.textContent = getPatientInitials(PATIENT_NAME);
+          }
+        };
+
+        // Set image source (this will trigger onload or onerror)
+        img.src = profileImageUrl;
+      }
+
+      // Detect Safari iOS
+      function isSafariIOS() {
+        const userAgent = navigator.userAgent.toLowerCase();
+        return (
+          /iphone|ipad|ipod/.test(userAgent) &&
+          /safari/.test(userAgent) &&
+          !/chrome|crios|fxios|edgios/.test(userAgent)
+        );
+      }
+
+      // Close expired modal function
+      function closeExpiredModal() {
+        try {
+          window.close();
+        } catch (e) {
+          window.history.back();
+        }
+      }
+
+      // Universal file viewer function
+      function viewFile(containerName, folderName, fileName) {
+        if (window.isExpired) {
+          alert("Session has expired. Please scan the SmartToken again.");
+          return;
+        }
+
+        try {
+          const viewUrl = `/patients/file/${containerName}/${folderName}/${fileName}/view`;
+
+          if (isSafariIOS()) {
+            window.location.href = viewUrl;
+          } else {
+            const newWindow = window.open(viewUrl, "_blank");
+            if (!newWindow || newWindow.closed) {
+              window.location.href = viewUrl;
+            } else {
+              showFileOpenFeedback(fileName, "new tab");
+            }
+          }
+        } catch (error) {
+          console.error("Error opening file:", error);
+          alert("Error opening file. Please try again.");
+        }
+      }
+
+      // Show user feedback
+      function showFileOpenFeedback(fileName, method) {
+        const notification = document.createElement("div");
+        notification.className =
+          "fixed top-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300";
+
+        const shortName =
+          fileName.length > 25 ? fileName.substring(0, 25) + "..." : fileName;
+        const message =
+          method === "new tab"
+            ? `Opening ${shortName} in new tab`
+            : `Opening ${shortName}`;
+
+        notification.innerHTML = `
+          <div class="flex items-center">
+            <i class="fas fa-check-circle mr-2"></i>
+            <span>${message}</span>
+          </div>
+        `;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 3000);
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        // Load profile image
+        loadProfileImage();
+
+        // Update UI for Safari iOS
+        if (isSafariIOS()) {
+          const notice = document.getElementById("safari-ios-notice");
+          if (notice) {
+            notice.style.display = "block";
+          }
+        }
+
+        // Display access time in user's local timezone
+        function displayLocalAccessTime() {
+          const accessTimeElement = document.getElementById(
+            "access-time-display"
+          );
+          if (accessTimeElement) {
+            const accessTime = new Date("<%= accessTime %>");
+            const localTimeString = accessTime.toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            });
+            accessTimeElement.textContent = `Access granted at ${localTimeString}`;
+          }
+        }
+
+        // Session timer setup
+        const SESSION_DURATION = 5 * 60; // 5 minutes
+        let timeRemaining = SESSION_DURATION;
+        let sessionTimer = null;
+        window.isExpired = false;
+
+        const timerElement = document.getElementById("session-timer");
+        const expiredModal = document.getElementById("expired-modal");
+        const fileLinks = document.querySelectorAll(".file-link");
+
+        function formatTime(seconds) {
+          const minutes = Math.floor(seconds / 60);
+          const remainingSeconds = seconds % 60;
+          return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+        }
+
+        function updateTimer() {
+          if (timerElement) {
+            timerElement.textContent = formatTime(timeRemaining);
+
+            if (timeRemaining <= 60) {
+              timerElement.className = "text-2xl font-bold animate-pulse";
+            } else if (timeRemaining <= 120) {
+              timerElement.className = "text-2xl font-bold text-yellow-200";
+            } else {
+              timerElement.className = "text-2xl font-bold";
+            }
+          }
+        }
+
+        function expireSession() {
+          window.isExpired = true;
+
+          if (sessionTimer) {
+            clearInterval(sessionTimer);
+          }
+
+          fileLinks.forEach((link) => {
+            link.classList.add(
+              "opacity-50",
+              "cursor-not-allowed",
+              "bg-gray-400"
+            );
+            link.setAttribute("disabled", "true");
+            link.onclick = function (e) {
+              e.preventDefault();
+              return false;
+            };
+          });
+
+          if (expiredModal) {
+            expiredModal.classList.remove("hidden");
+          }
+        }
+
+        function startSessionTimer() {
+          updateTimer();
+          sessionTimer = setInterval(() => {
+            timeRemaining--;
+            updateTimer();
+            if (timeRemaining <= 0 && !window.isExpired) {
+              expireSession();
+            }
+          }, 1000);
+        }
+
+        // Initialize
+        displayLocalAccessTime();
+
+        // Add event listeners to file buttons
+        const fileButtons = document.querySelectorAll(
+          ".file-link[data-container]"
+        );
+        fileButtons.forEach((button) => {
+          button.addEventListener("click", function () {
+            const container = this.getAttribute("data-container");
+            const folder = this.getAttribute("data-folder");
+            const filename = this.getAttribute("data-filename");
+            viewFile(container, folder, filename);
+          });
+        });
+
+        startSessionTimer();
+
+        // Prevent navigation after expiry
+        window.addEventListener("beforeunload", function (e) {
+          if (window.isExpired) {
+            e.preventDefault();
+            e.returnValue =
+              "Your session has expired. Please scan the SmartToken again.";
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
