@@ -7,7 +7,18 @@ export default defineConfig({
   build: {
     outDir: "dist",
   },
+  server: {
+    host:true,
+    port:5173,
+    proxy: {
+      "/api": {
+        target: "http://localhost:5000", // Your backend URL
+        changeOrigin: true,
+      },
+      "/patients": {
+        target: "http://localhost:5000", // Your backend URL
+        changeOrigin: true,
+      },
+    },
+  },
 });
-
-
-

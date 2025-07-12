@@ -1,6 +1,6 @@
-// api/index.js - ENHANCED VERSION WITH PROFILE IMAGE SUPPORT
+// src/api/index.js - ENHANCED VERSION WITH EMERGENCY FEATURES
 import axios from "axios";
-//TESTUNG DEV
+
 // Create axios instance
 const api = axios.create({
   baseURL: `${import.meta.env.VITE_REACT_API_URL}/api`,
@@ -25,52 +25,6 @@ api.interceptors.request.use(
 
 // Add response interceptor to handle auth errors
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      if (!window.location.pathname.includes("/login")) {
-        localStorage.removeItem("token");
-        if (window.fileViewerWindows) {
-          window.fileViewerWindows.forEach((win) => {
-            if (!win.closed) {
-              win.close();
-            }
-          });
-          window.fileViewerWindows = [];
-        }
-        window.location.href = "/login?session=expired";
-      }
-    }
-    return Promise.reject(error);
-  }
-);
-
-// Create separate axios instance for SmartToken APIs
-const smartTokenAxios = axios.create({
-  baseURL: import.meta.env.VITE_REACT_API_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
-
-// Add authentication token to SmartToken requests
-smartTokenAxios.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers["x-auth-token"] = token;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-// Add response interceptor for SmartToken API
-smartTokenAxios.interceptors.response.use(
   (response) => {
     return response;
   },
@@ -278,15 +232,19 @@ const blobsAPI = {
   getAuditLogs: (params) => api.get("/blobs/audit", { params }),
 };
 
-// SmartToken API
+// ✅ ENHANCED: SmartToken API with Emergency Features
 const smartTokenAPI = {
-  getUnclaimedTokens: () => smartTokenAxios.get("/patients/admin/unclaimed"),
-  getAllAssignedTokens: () => smartTokenAxios.get("/patients/admin/assigned"),
+  // Core token management
+  getUnclaimedTokens: () => api.get("/smart-tokens/unclaimed"),
+  getAllAssignedTokens: () => api.get("/smart-tokens/all-with-users"),
 
-  // NEW: Get assigned folders for a specific container
-  getAssignedFolders: (containerName) =>
-    smartTokenAxios.get(`/patients/admin/assigned-folders/${containerName}`),
+  // Enhanced assignment features
+  getPatientsForAssignment: () =>
+    api.get("/smart-tokens/patients-for-assignment"),
+  getDoctorsForPatient: (patientUserId) =>
+    api.get(`/smart-tokens/doctors-for-patient/${patientUserId}`),
 
+  // Token assignment
   assignTokenToPatient: (tokenData) => {
     const {
       tokenId,
@@ -294,35 +252,118 @@ const smartTokenAPI = {
       folderName,
       patientName,
       patientDateOfBirth,
+      patientUserId,
+      doctorUserId,
     } = tokenData;
-    return smartTokenAxios.post("/patients/admin/assign", {
+
+    return api.post("/smart-tokens/assign-enhanced", {
       tokenId,
       containerName,
       folderName,
       patientName: patientName || "Unknown Patient",
       patientDateOfBirth,
+      patientUserId,
+      doctorUserId,
     });
   },
 
+  // Token management
   revokeToken: (tokenId, reason) => {
-    return smartTokenAxios.post("/patients/admin/revoke", {
+    return api.post("/smart-tokens/revoke", {
       tokenId: tokenId,
       reason: reason,
     });
   },
 
   reactivateToken: (tokenId) => {
-    return smartTokenAxios.post("/patients/admin/reactivate", {
+    return api.post("/smart-tokens/reactivate", {
       tokenId: tokenId,
     });
   },
 
-  // NEW: Delete token permanently (for lost tokens)
   deleteToken: (tokenId) => {
-    return smartTokenAxios.delete(`/patients/admin/delete/${tokenId}`);
+    return api.delete(`/smart-tokens/${tokenId}`);
   },
-  getSmartTokenLogs: (params) =>
-    smartTokenAxios.get("/patients/admin/logs", { params }),
+
+  // Folder assignments
+  getAssignedFolders: (containerName) =>
+    api.get(`/smart-tokens/assigned-folders/${containerName}`),
+
+  // Logs and monitoring
+  getSmartTokenLogs: (params) => api.get("/smart-tokens/logs", { params }),
+
+  // ✅ ENHANCED: User-specific token access with emergency features
+  getMyTokens: () => api.get("/smart-tokens/my-tokens"),
+  getDeviceLogs: (tokenId) => api.get(`/smart-tokens/device-logs/${tokenId}`),
+  getMyAlerts: () => api.get("/smart-tokens/my-alerts"),
+  markAlertAsRead: (alertId) =>
+    api.post(`/smart-tokens/alerts/${alertId}/read`),
+};
+
+// Device Management API - ENHANCED with Emergency Features
+const deviceAPI = {
+  // Core device management
+  registerDevice: (deviceData) => api.post("/devices/register", deviceData),
+  getMyDevices: () => api.get("/devices/my-devices"),
+  removeDevice: (fingerprintId) => api.delete(`/devices/${fingerprintId}`),
+
+  // QR Code functionality for family registration
+  generateQRForFamilyRegistration: () => api.post("/devices/generate-qr"),
+  registerDeviceViaQR: (qrToken, deviceData) =>
+    api.post(`/devices/register-via-qr/${qrToken}`, deviceData),
+  checkQRStatus: (qrToken) => api.get(`/devices/qr-status/${qrToken}`),
+
+  // Device verification
+  verifyDevice: (deviceData) => api.post("/devices/verify", deviceData),
+
+  // Device monitoring
+  getDeviceStats: () => api.get("/devices/stats"),
+  updateDeviceName: (fingerprintId, newName) =>
+    api.put(`/devices/${fingerprintId}`, { deviceName: newName }),
+};
+
+// ✅ NEW: Emergency Contacts API
+const emergencyContactsAPI = {
+  // Emergency contacts management
+  getEmergencyContacts: () => api.get("/emergency-contacts"),
+  addEmergencyContact: (contactData) =>
+    api.post("/emergency-contacts", contactData),
+  updateEmergencyContact: (contactId, contactData) =>
+    api.put(`/emergency-contacts/${contactId}`, contactData),
+  deleteEmergencyContact: (contactId) =>
+    api.delete(`/emergency-contacts/${contactId}`),
+  testEmergencyContact: (contactId) =>
+    api.post(`/emergency-contacts/${contactId}/test`),
+
+  // Emergency alerts management
+  getEmergencyAlertsHistory: (params = {}) => {
+    const queryParams = new URLSearchParams({
+      limit: params.limit || 20,
+      offset: params.offset || 0,
+      ...params,
+    });
+    return api.get(`/emergency-contacts/alerts/history?${queryParams}`);
+  },
+
+  resolveAlert: (alertId, resolveData = {}) =>
+    api.post(`/emergency-contacts/alerts/${alertId}/resolve`, resolveData),
+
+  // Statistics
+  getEmergencyContactStats: () => api.get("/emergency-contacts/stats"),
+
+  // Admin/Doctor endpoints
+  getPatientEmergencyContacts: (patientId) =>
+    api.get(`/emergency-contacts/patient/${patientId}`),
+  getPatientEmergencyAlerts: (patientId, params = {}) => {
+    const queryParams = new URLSearchParams({
+      limit: params.limit || 20,
+      offset: params.offset || 0,
+      ...params,
+    });
+    return api.get(
+      `/emergency-contacts/alerts/patient/${patientId}?${queryParams}`
+    );
+  },
 };
 
 // Utility functions for SmartToken API
@@ -487,7 +528,6 @@ const patientRequestsAPI = {
     api.put(`/patient-requests/${requestId}/reject`, {
       rejectionReason: notes,
     }),
-  // ✅ NEW: Check folder availability
   getAvailableFolders: (containerName) =>
     api.get(`/patient-requests/available-folders/${containerName}`),
 };
@@ -510,7 +550,7 @@ window.addEventListener("storage", (e) => {
   }
 });
 
-// Export everything
+// Export everything including new emergency features
 export {
   authAPI,
   usersAPI,
@@ -520,5 +560,7 @@ export {
   smartTokenUtils,
   profileImageUtils,
   patientRequestsAPI,
+  deviceAPI,
+  emergencyContactsAPI, // ✅ NEW: Emergency contacts API
   enhancedLogout,
 };
