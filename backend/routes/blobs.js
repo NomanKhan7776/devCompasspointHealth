@@ -41,7 +41,7 @@ router.get("/:containerName/:folderName/:blobName/url", auth, getBlobSasUrl);
 router.post(
   "/:containerName/:folderName",
   auth,
-  checkRole(["admin", "doctor", "nurse","patient"]),
+  checkRole(["admin", "doctor", "nurse", "patient"]),
   uploadBlob
 );
 
