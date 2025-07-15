@@ -103,9 +103,12 @@ app.use(
       // Allow requests from your frontend domains
       const allowedOrigins = [
         process.env.FRONTEND_URL,
-        "https://compasspointpr.ms",
-        "https://www.compasspointpr.ms",
-        "https://cph-prms-api-2.azurewebsites.net",
+        // "https://compasspointpr.ms",
+        // "https://www.compasspointpr.ms",
+        // "https://cph-prms-api-2.azurewebsites.net",
+        "https://compasspointpr-dev.ms",
+        "https://www.compasspointpr-dev.ms",
+        "https://cph-prms-api-dev.azurewebsites.net/",
         ...(process.env.NODE_ENV === "development"
           ? [
               "http://localhost:5000",
