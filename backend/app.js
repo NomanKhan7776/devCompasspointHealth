@@ -108,7 +108,7 @@ app.use(
         // "https://cph-prms-api-2.azurewebsites.net",
         "https://compasspointpr-dev.ms",
         "https://www.compasspointpr-dev.ms",
-        "https://cph-prms-api-dev.azurewebsites.net/",
+        "https://cph-prms-api-dev.azurewebsites.net",
         ...(process.env.NODE_ENV === "development"
           ? [
               "http://localhost:5000",
