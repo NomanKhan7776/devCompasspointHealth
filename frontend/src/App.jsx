@@ -48,194 +48,39 @@ import MySmartTokens from "./components/Dashboard/Patient/MySmartTokens";
 import PatientRequestList from "./components/patient-requests/PatientRequestList";
 import CreatePatientRequest from "./components/patient-requests/CreatePatientRequest";
 import PatientRequestDetail from "./components/patient-requests/PatientRequestDetail";
-
+import FamilyDeviceQR from "./components/Dashboard/Patient/FamilyDeviceQR";
 // Context Providers
 import { AssignmentsProvider } from "./context/AssignmentsContext";
 import { AdminProvider } from "./context/AdminContext";
 import { DashboardProvider } from "./context/DashboardContext";
 import { PatientRequestProvider } from "./context/PatientRequestContext";
+import fingerprintService from "./services/fingerprintService";
 
 const App = () => {
-  // Load device fingerprinting service on app startup for emergency features
   useEffect(() => {
-    const loadDeviceFingerprintingService = () => {
-      // Check if service already loaded
-      if (window.DeviceFingerprintingService) {
-        console.log("✅ Device Fingerprinting Service already loaded");
-        return;
-      }
+    const initializeFingerprintService = async () => {
+      try {
+        console.log(
+          "🔄 Initializing FingerprintJS Pro for emergency features..."
+        );
+        await fingerprintService.initialize();
+        console.log(
+          "✅ FingerprintJS Pro ready for device management and emergency access"
+        );
 
-      // Get backend URL from environment or default
-      const backendUrl =
-        import.meta.env.VITE_REACT_API_URL || "http://localhost:5000";
-
-      // Create script element
-      const script = document.createElement("script");
-      script.src = `${backendUrl}/js/deviceFingerprintingService.js`;
-      script.async = true;
-      script.crossOrigin = "anonymous";
-
-      script.onload = () => {
-        console.log("✅ Device Fingerprinting Service loaded successfully");
-
-        // Verify service is available
-        if (window.DeviceFingerprintingService) {
-          console.log(
-            "✅ DeviceFingerprintingService is ready for emergency features"
-          );
-        } else {
-          console.warn(
-            "⚠️ Service loaded but DeviceFingerprintingService not found on window"
-          );
+        // Optional: Test consistency on startup (useful for debugging)
+        if (import.meta.env.NODE_ENV === "development") {
+          fingerprintService.testConsistency();
         }
-      };
-
-      script.onerror = (error) => {
+      } catch (error) {
+        console.error("❌ Failed to initialize FingerprintJS Pro:", error);
         console.warn(
-          "⚠️ Failed to load Device Fingerprinting Service from backend"
+          "🔄 Falling back to basic fingerprinting for emergency access"
         );
-        console.warn(`Attempted URL: ${script.src}`);
-
-        // Fallback: Try to load from public folder
-        loadFallbackService();
-      };
-
-      // Add to head
-      document.head.appendChild(script);
+      }
     };
 
-    // Fallback function to load from public folder
-    const loadFallbackService = () => {
-      console.log(
-        "🔄 Attempting to load fingerprinting service from public folder..."
-      );
-
-      const fallbackScript = document.createElement("script");
-      fallbackScript.src = "/deviceFingerprintingService.js";
-      fallbackScript.async = true;
-
-      fallbackScript.onload = () => {
-        console.log(
-          "✅ Device Fingerprinting Service loaded from fallback location"
-        );
-      };
-
-      fallbackScript.onerror = () => {
-        console.error(
-          "❌ Failed to load Device Fingerprinting Service from both locations"
-        );
-        console.log(
-          "📝 Please ensure the service file is available at one of these locations:"
-        );
-        console.log(
-          "   1. Backend: http://localhost:5000/js/deviceFingerprintingService.js"
-        );
-        console.log("   2. Frontend: /public/deviceFingerprintingService.js");
-
-        // Create a minimal fallback service for emergency features
-        createFallbackService();
-      };
-
-      document.head.appendChild(fallbackScript);
-    };
-
-    // Create minimal fallback service for emergency features
-    const createFallbackService = () => {
-      console.log(
-        "🛠️ Creating fallback device fingerprinting service for emergency features..."
-      );
-
-      window.DeviceFingerprintingService = class {
-        constructor() {
-          console.warn(
-            "Using fallback fingerprinting service with limited features"
-          );
-        }
-
-        async generateFingerprint() {
-          // Basic fingerprint using available browser APIs
-          const basicData = {
-            userAgent: navigator.userAgent,
-            language: navigator.language,
-            platform: navigator.platform,
-            screenResolution: `${screen.width}x${screen.height}`,
-            timezone: new Date().getTimezoneOffset(),
-            timestamp: Date.now(),
-            deviceType: this.getDeviceType(),
-            browserName: this.getBrowserName(),
-          };
-
-          // Generate a simple hash
-          const dataString = JSON.stringify(basicData);
-          const hash = btoa(dataString)
-            .replace(/[^a-zA-Z0-9]/g, "")
-            .substring(0, 32);
-
-          return {
-            hash: hash,
-            details: basicData,
-            metadata: {
-              deviceName: this.getDeviceName(),
-              browserName: this.getBrowserName(),
-              osName: this.getOSName(),
-              deviceType: this.getDeviceType(),
-            },
-          };
-        }
-
-        getDeviceName() {
-          const userAgent = navigator.userAgent;
-          if (/iPhone/i.test(userAgent)) return "iPhone";
-          if (/iPad/i.test(userAgent)) return "iPad";
-          if (/Android/i.test(userAgent)) return "Android Device";
-          if (/Windows/i.test(userAgent)) return "Windows PC";
-          if (/Mac/i.test(userAgent)) return "Mac";
-          return "Unknown Device";
-        }
-
-        getBrowserName() {
-          const userAgent = navigator.userAgent;
-          if (/Chrome/i.test(userAgent)) return "Chrome";
-          if (/Firefox/i.test(userAgent)) return "Firefox";
-          if (/Safari/i.test(userAgent)) return "Safari";
-          if (/Edge/i.test(userAgent)) return "Edge";
-          return "Unknown Browser";
-        }
-
-        getOSName() {
-          const userAgent = navigator.userAgent;
-          if (/Windows/i.test(userAgent)) return "Windows";
-          if (/Mac OS X/i.test(userAgent)) return "macOS";
-          if (/Android/i.test(userAgent)) return "Android";
-          if (/iPhone OS/i.test(userAgent)) return "iOS";
-          if (/Linux/i.test(userAgent)) return "Linux";
-          return "Unknown OS";
-        }
-
-        getDeviceType() {
-          const userAgent = navigator.userAgent;
-          if (
-            /Mobile|Android|iPhone|iPad|iPod|BlackBerry|Windows Phone/i.test(
-              userAgent
-            )
-          ) {
-            return "mobile";
-          }
-          return "desktop";
-        }
-
-        async detectBrowserUpdate(previousFingerprint) {
-          return { updated: false, changes: [] };
-        }
-      };
-
-      console.log(
-        "✅ Fallback Device Fingerprinting Service created for emergency features"
-      );
-    };
-
-    // Start loading process
-    loadDeviceFingerprintingService();
+    initializeFingerprintService();
   }, []);
 
   return (
@@ -305,6 +150,14 @@ const App = () => {
                       element={
                         <RoleCheck allowedRoles={["patient"]}>
                           <MySmartTokens />
+                        </RoleCheck>
+                      }
+                    />
+                    <Route
+                      path="/family-registration"
+                      element={
+                        <RoleCheck allowedRoles={["patient"]}>
+                          <FamilyDeviceQR />
                         </RoleCheck>
                       }
                     />

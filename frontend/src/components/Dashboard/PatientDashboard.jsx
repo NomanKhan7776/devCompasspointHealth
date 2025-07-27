@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { deviceAPI, smartTokenAPI } from "../../api"; // ✅ Import APIs
 import DeviceRegistration from "./Patient/DeviceRegistration";
 import AssociatedTokens from "./Patient/AssociatedTokens";
-
+import FamilyDeviceQR from "./Patient/FamilyDeviceQR";
 const PatientDashboard = () => {
   const [activeSection, setActiveSection] = useState("overview");
   const [user, setUser] = useState(null);
@@ -203,6 +203,16 @@ const PatientDashboard = () => {
               Device Registration
             </button>
             <button
+              onClick={() => setActiveSection("family-qr")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeSection === "family-qr"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              Family Registration
+            </button>
+            <button
               onClick={() => setActiveSection("tokens")}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeSection === "tokens"
@@ -251,6 +261,12 @@ const PatientDashboard = () => {
                         className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg"
                       >
                         📱 Register New Device
+                      </button>
+                      <button
+                        onClick={() => setActiveSection("family-qr")}
+                        className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg"
+                      >
+                        👨‍👩‍👧‍👦 Family Registration
                       </button>
                       <button
                         onClick={() => setActiveSection("tokens")}
@@ -328,7 +344,7 @@ const PatientDashboard = () => {
 
           {/* Device Registration Section */}
           {activeSection === "devices" && <DeviceRegistration />}
-
+          {activeSection === "family-qr" && <FamilyDeviceQR />}
           {/* My Tokens Section */}
           {activeSection === "tokens" && (
             <AssociatedTokens userRole="patient" />

@@ -10,6 +10,8 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@fingerprintjs/fingerprintjs-pro": "^3.11.13",
+    "@fingerprintjs/fingerprintjs-pro-react": "^2.7.0",
     "@tailwindcss/vite": "^4.0.14",
     "axios": "^1.8.3",
     "qrcode.react": "^4.2.0",

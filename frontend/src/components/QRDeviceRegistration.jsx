@@ -1,7 +1,8 @@
-// components/QRDeviceRegistration.jsx - FIXED Android issues with auto-detection
+// components/QRDeviceRegistration.jsx - Enhanced Family Device Registration
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
+import fingerprintService from "../services/fingerprintService";
 import { deviceAPI } from "../api";
 
 const QRDeviceRegistration = () => {
@@ -12,128 +13,143 @@ const QRDeviceRegistration = () => {
   const [registering, setRegistering] = useState(false);
   const [qrStatus, setQrStatus] = useState(null);
   const [deviceName, setDeviceName] = useState("");
-  const [fingerprintService, setFingerprintService] = useState(null);
   const [registrationComplete, setRegistrationComplete] = useState(false);
   const [duplicateDeviceInfo, setDuplicateDeviceInfo] = useState(null);
 
-  // ✅ FIX: Add service loading state for auto-detection
+  // Enhanced service state management
   const [serviceLoading, setServiceLoading] = useState(true);
   const [serviceReady, setServiceReady] = useState(false);
+  const [serviceInfo, setServiceInfo] = useState(null);
 
-  // ✅ FIX: Enhanced device fingerprinting service loading with proper async handling
-  const loadFingerprintingService = async () => {
+  const initializeFingerprintService = async () => {
     try {
       setServiceLoading(true);
-      console.log("🔄 Loading device fingerprinting service...");
+      console.log(
+        "🔄 Initializing FingerprintJS Pro for family registration..."
+      );
 
-      // Wait for service to be available with timeout
-      let attempts = 0;
-      const maxAttempts = 50; // 5 seconds max wait
+      await fingerprintService.initialize();
 
-      while (!window.DeviceFingerprintingService && attempts < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        attempts++;
-      }
+      // Get service health info
+      const healthCheck = await fingerprintService.healthCheck();
+      setServiceInfo(healthCheck);
 
-      if (!window.DeviceFingerprintingService) {
-        console.error(
-          "❌ Device fingerprinting service not available after 5 seconds"
-        );
-        toast.error("Device fingerprinting service not available");
-        return;
-      }
+      console.log("✅ FingerprintJS Pro service loaded:", healthCheck);
 
-      console.log("✅ Device fingerprinting service loaded");
-      const service = new window.DeviceFingerprintingService();
-      setFingerprintService(service);
-
-      // ✅ FIX: Auto-detect device name with proper async handling
-      console.log("🔄 Auto-detecting device name...");
-      const detectedName = service.getDeviceName();
-
-      if (detectedName && detectedName !== "Unknown Device") {
-        setDeviceName(detectedName);
-        console.log("✅ Device name auto-detected:", detectedName);
-      } else {
-        // ✅ FIX: Enhanced fallback device name detection
-        const isAndroid = /Android/i.test(navigator.userAgent);
-        const isIPhone = /iPhone/i.test(navigator.userAgent);
-        const isIPad = /iPad/i.test(navigator.userAgent);
-
-        let fallbackName;
-        if (isAndroid) {
-          // Try to extract Android device model from user agent
-          const modelMatch = navigator.userAgent.match(
-            /Android.*?;\s*(.*?)\s*Build/
-          );
-          fallbackName = modelMatch ? modelMatch[1] : "Android Device";
-        } else if (isIPhone) {
-          fallbackName = "iPhone";
-        } else if (isIPad) {
-          fallbackName = "iPad";
-        } else {
-          fallbackName = "My Device";
-        }
-
-        setDeviceName(fallbackName);
-        console.log("⚠️ Using fallback device name:", fallbackName);
-      }
+      // Enhanced device auto-detection
+      const detectedName = await autoDetectDeviceName();
+      setDeviceName(detectedName);
 
       setServiceReady(true);
-      console.log("✅ Service ready for device registration");
+      console.log("✅ FingerprintJS Pro ready for family device registration");
     } catch (error) {
-      console.error("❌ Error loading fingerprinting service:", error);
-      toast.error("Failed to load device detection service");
+      console.error("❌ Error initializing FingerprintJS Pro:", error);
+      toast.error("Failed to initialize device fingerprinting service");
+      setServiceReady(false);
     } finally {
       setServiceLoading(false);
     }
   };
 
+  const autoDetectDeviceName = async () => {
+    try {
+      // Try FingerprintJS Pro detection first
+      const detectedName = fingerprintService.getDeviceName();
+
+      if (detectedName && detectedName !== "Unknown Device") {
+        console.log(
+          "✅ Device name auto-detected via FingerprintJS Pro:",
+          detectedName
+        );
+        return detectedName;
+      }
+
+      // Enhanced fallback detection
+      const userAgent = navigator.userAgent;
+      const isAndroid = /Android/i.test(userAgent);
+      const isIPhone = /iPhone/i.test(userAgent);
+      const isIPad = /iPad/i.test(userAgent);
+      const isMac = /Mac/i.test(userAgent) && !isIPad;
+      const isWindows = /Windows/i.test(userAgent);
+
+      let fallbackName;
+
+      if (isAndroid) {
+        // Enhanced Android device detection
+        const modelMatch = userAgent.match(/Android.*?;\s*(.*?)\s*Build/);
+        if (modelMatch && modelMatch[1]) {
+          const model = modelMatch[1].trim();
+          // Clean up common Android model names
+          const cleanModel = model
+            .replace(/^\w+\s/, "") // Remove manufacturer prefix
+            .replace(/Build.*$/, "") // Remove build info
+            .trim();
+          fallbackName = cleanModel || "Android Device";
+        } else {
+          fallbackName = "Android Device";
+        }
+      } else if (isIPhone) {
+        fallbackName = "iPhone";
+      } else if (isIPad) {
+        fallbackName = "iPad";
+      } else if (isMac) {
+        fallbackName = "Mac";
+      } else if (isWindows) {
+        fallbackName = "Windows PC";
+      } else {
+        fallbackName = "Family Device";
+      }
+
+      console.log("⚠️ Using enhanced fallback device name:", fallbackName);
+      return fallbackName;
+    } catch (error) {
+      console.error("Error in device auto-detection:", error);
+      return "Family Device";
+    }
+  };
+
   useEffect(() => {
-    // ✅ FIX: Load service first, then check QR status
     const initializeComponent = async () => {
-      console.log("🚀 Initializing QR Device Registration...");
-      await loadFingerprintingService();
+      console.log("🚀 Initializing Family QR Device Registration...");
+      await initializeFingerprintService();
       await checkQRStatus();
     };
 
     initializeComponent();
   }, [qrToken]);
 
-  // Check if QR code is valid using deviceAPI
   const checkQRStatus = async () => {
     try {
       setLoading(true);
-      console.log("🔄 Checking QR status for token:", qrToken);
+      console.log("🔄 Checking QR status for family registration:", qrToken);
 
       const response = await deviceAPI.checkQRStatus(qrToken);
 
       if (response.data.success) {
         setQrStatus(response.data.status);
-        console.log("✅ QR status verified:", response.data.status);
+        console.log("✅ Family QR status verified:", response.data.status);
 
         if (!response.data.status.isValid) {
           if (response.data.status.isExpired) {
-            toast.error("QR code has expired");
+            toast.error("QR code has expired. Please ask for a new one.");
           } else if (response.data.status.isUsed) {
-            toast.error("QR code has already been used");
+            toast.error("QR code has already been used.");
           }
         }
       } else {
-        console.error("❌ Invalid QR code response");
+        console.error("❌ Invalid family QR code response");
         toast.error("Invalid QR code");
       }
     } catch (error) {
-      console.error("❌ QR status check error:", error);
+      console.error("❌ Family QR status check error:", error);
       toast.error("Failed to verify QR code");
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ FIX: Enhanced device registration with proper Android duplicate detection
   const registerDevice = async () => {
-    if (!fingerprintService || !serviceReady) {
+    if (!serviceReady) {
       toast.error("Device fingerprinting service not ready. Please wait...");
       return;
     }
@@ -147,33 +163,31 @@ const QRDeviceRegistration = () => {
       setRegistering(true);
       setDuplicateDeviceInfo(null);
 
-      console.log("🔄 Generating device fingerprint...");
+      console.log("🔄 Generating family device fingerprint...");
 
-      // Generate device fingerprint with timeout
-      const fingerprintPromise = fingerprintService.generateFingerprint();
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Fingerprint generation timeout")),
-          15000
-        )
-      );
-
-      const fingerprint = await Promise.race([
-        fingerprintPromise,
-        timeoutPromise,
-      ]);
+      // Generate device fingerprint for family registration
+      const fingerprint = await fingerprintService.generateFingerprint({
+        userAction: "family_qr_device_registration",
+        qrToken: qrToken,
+        deviceName: deviceName.trim(),
+        patientName: qrStatus?.patientName,
+        component: "QRDeviceRegistration",
+        deviceType: "family",
+        registrationMethod: "qr_code",
+      });
 
       if (!fingerprint || !fingerprint.hash) {
         throw new Error("Failed to generate valid device fingerprint");
       }
 
-      console.log("✅ Device fingerprint generated:", {
-        hash: fingerprint.hash,
-        method: fingerprint.details?.collectMethod,
-        isAndroid: fingerprint.details?.isAndroid,
+      console.log("✅ Family device fingerprint generated:", {
+        visitorId: fingerprint.hash,
+        confidence: fingerprint.metadata?.confidenceScore,
+        method: fingerprint.metadata?.method,
+        service: fingerprint.metadata?.service,
       });
 
-      console.log("🔄 Registering device via QR...");
+      console.log("🔄 Registering family device via QR...");
       const response = await deviceAPI.registerDeviceViaQR(qrToken, {
         deviceFingerprint: fingerprint,
         deviceName: deviceName.trim(),
@@ -181,103 +195,114 @@ const QRDeviceRegistration = () => {
 
       if (response.data.success) {
         setRegistrationComplete(true);
-        console.log("✅ Device registered successfully:", response.data.device);
+        console.log(
+          "✅ Family device registered successfully:",
+          response.data.device
+        );
 
-        if (response.data.device.wasReactivated) {
-          toast.success("Device reactivated successfully!");
-        } else {
-          toast.success("Device registered successfully!");
-        }
+        const successMessage = response.data.device.wasReactivated
+          ? `Family device reactivated successfully for ${response.data.device.patientName}!`
+          : `Family device registered successfully for ${response.data.device.patientName}!`;
+
+        toast.success(successMessage, {
+          style: {
+            backgroundColor: "#F0FDF4",
+            color: "#166534",
+            border: "1px solid #BBF7D0",
+          },
+          duration: 5000,
+        });
 
         // Auto-redirect after success
         setTimeout(() => {
           navigate("/login", {
             state: {
-              message: `Device registered for ${
-                response.data.device.patientName || qrStatus?.patientName
-              }`,
+              message: `Family device registered for ${response.data.device.patientName}`,
+              deviceInfo: response.data.device,
             },
           });
         }, 3000);
       } else {
-        console.error("❌ Registration failed:", response.data.message);
-        toast.error(response.data.message || "Failed to register device");
+        console.error(
+          "❌ Family device registration failed:",
+          response.data.message
+        );
+        toast.error(
+          response.data.message || "Failed to register family device"
+        );
       }
     } catch (error) {
-      console.error("❌ Device registration error:", error);
-
-      // ✅ FIX: Enhanced error handling for Android duplicate detection
-      if (error.response?.status === 409) {
-        const errorData = error.response.data;
-        console.log("🔍 Duplicate device detected:", errorData);
-
-        // ✅ Handle Android-specific duplicate errors
-        if (
-          errorData.error === "DEVICE_ALREADY_REGISTERED_ANDROID_QR" ||
-          errorData.error === "DEVICE_ALREADY_REGISTERED"
-        ) {
-          setDuplicateDeviceInfo(errorData.existingDevice);
-
-          const isAndroid = /Android/i.test(navigator.userAgent);
-          const deviceType = isAndroid ? "Android device" : "device";
-
-          toast.error(
-            `This ${deviceType} is already registered for ${
-              qrStatus?.patientName || "the patient"
-            }!`,
-            {
-              duration: 8000,
-              style: {
-                backgroundColor: "#FEF2F2",
-                color: "#DC2626",
-                border: "1px solid #FECACA",
-                fontSize: "14px",
-              },
-            }
-          );
-        } else if (errorData.error === "SIMILAR_DEVICE_EXISTS") {
-          setDuplicateDeviceInfo(errorData.existingDevice);
-          toast.error(
-            "A similar device is already registered. This might be the same device with updated settings.",
-            { duration: 8000 }
-          );
-        }
-      } else if (error.response?.status === 400) {
-        const errorData = error.response.data;
-
-        if (errorData.error === "QR_EXPIRED") {
-          toast.error("QR code has expired. Please ask for a new one.");
-        } else if (errorData.error === "QR_ALREADY_USED") {
-          toast.error("This QR code has already been used.");
-        } else {
-          toast.error(errorData.message || "Registration failed");
-        }
-      } else if (error.response?.data?.message) {
-        toast.error(error.response.data.message);
-      } else if (error.message === "Fingerprint generation timeout") {
-        toast.error(
-          "Device detection timed out. Please refresh and try again."
-        );
-      } else {
-        toast.error("Failed to register device");
-      }
+      console.error("❌ Family device registration error:", error);
+      handleRegistrationError(error);
     } finally {
       setRegistering(false);
     }
   };
 
-  // Working cancel function
+  const handleRegistrationError = (error) => {
+    if (error.response?.status === 409) {
+      const errorData = error.response.data;
+      console.log("🔍 Duplicate family device detected:", errorData);
+
+      if (
+        errorData.error === "DEVICE_ALREADY_REGISTERED_ANDROID_QR" ||
+        errorData.error === "DEVICE_ALREADY_REGISTERED"
+      ) {
+        setDuplicateDeviceInfo(errorData.existingDevice);
+
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        const deviceType = isAndroid ? "Android device" : "device";
+
+        toast.error(
+          `This ${deviceType} is already registered as a family device for ${
+            qrStatus?.patientName || "the patient"
+          }!`,
+          {
+            duration: 8000,
+            style: {
+              backgroundColor: "#FEF2F2",
+              color: "#DC2626",
+              border: "1px solid #FECACA",
+              fontSize: "14px",
+            },
+          }
+        );
+      }
+    } else if (error.response?.status === 400) {
+      const errorData = error.response.data;
+
+      if (errorData.error === "QR_EXPIRED") {
+        toast.error(
+          "QR code has expired. Please ask the patient for a new one."
+        );
+      } else if (errorData.error === "QR_ALREADY_USED") {
+        toast.error("This QR code has already been used.");
+      } else if (errorData.error === "QR_NOT_FOUND") {
+        toast.error("Invalid QR code. Please check the QR code and try again.");
+      } else {
+        toast.error(errorData.message || "Registration failed");
+      }
+    } else if (error.response?.data?.message) {
+      toast.error(error.response.data.message);
+    } else if (error.name === "FingerprintJSError") {
+      toast.error(
+        "Device fingerprinting failed. Please refresh and try again."
+      );
+    } else {
+      toast.error("Failed to register family device. Please try again.");
+    }
+  };
+
   const handleCancel = () => {
-    const confirmed = confirm(
-      "Are you sure you want to cancel device registration?"
+    const confirmed = window.confirm(
+      "Are you sure you want to cancel family device registration?"
     );
 
     if (confirmed) {
-      toast.info("Registration cancelled");
+      toast.info("Family device registration cancelled");
 
       try {
         window.close();
-
         setTimeout(() => {
           if (!window.closed) {
             try {
@@ -302,12 +327,10 @@ const QRDeviceRegistration = () => {
     }
   };
 
-  // Clear duplicate device info
   const clearDuplicateInfo = () => {
     setDuplicateDeviceInfo(null);
   };
 
-  // Format date for display
   const formatDate = (dateString) => {
     try {
       return new Date(dateString).toLocaleString("en-US", {
@@ -322,7 +345,7 @@ const QRDeviceRegistration = () => {
     }
   };
 
-  // ✅ FIX: Enhanced loading state that shows service preparation
+  // Enhanced loading state
   if (serviceLoading || loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -331,35 +354,43 @@ const QRDeviceRegistration = () => {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">
               {serviceLoading
-                ? "Preparing Device Detection..."
-                : "Verifying QR Code..."}
+                ? "Initializing Device Fingerprinting..."
+                : "Verifying Family QR Code..."}
             </h3>
             <p className="text-sm text-gray-500">
               {serviceLoading
-                ? "Setting up fingerprinting service for auto-detection..."
-                : "Please wait while we verify your QR code..."}
+                ? "Setting up FingerprintJS Pro service for family device detection..."
+                : "Please wait while we verify your family registration QR code..."}
             </p>
+            {serviceInfo && (
+              <p className="text-xs text-blue-600 mt-2">
+                Service: {serviceInfo.service || "FingerprintJS Pro"}
+              </p>
+            )}
           </div>
         </div>
       </div>
     );
   }
 
+  // Invalid QR code state
   if (!qrStatus || !qrStatus.isValid) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
           <div className="text-red-600 text-6xl mb-4">❌</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Invalid QR Code
+            Invalid Family Registration QR Code
           </h2>
 
           {qrStatus?.isExpired && (
             <div>
-              <p className="text-gray-600 mb-4">This QR code has expired.</p>
+              <p className="text-gray-600 mb-4">
+                This family registration QR code has expired.
+              </p>
               <p className="text-sm text-gray-500">
                 QR codes are valid for 24 hours. Please ask the patient to
-                generate a new one.
+                generate a new one from their device management page.
               </p>
             </div>
           )}
@@ -367,21 +398,23 @@ const QRDeviceRegistration = () => {
           {qrStatus?.isUsed && (
             <div>
               <p className="text-gray-600 mb-4">
-                This QR code has already been used.
+                This family registration QR code has already been used.
               </p>
               <p className="text-sm text-gray-500">
                 Each QR code can only be used once for security reasons. Please
-                ask for a new QR code if you need to register another device.
+                ask the patient for a new family registration QR code.
               </p>
             </div>
           )}
 
           {!qrStatus && (
             <div>
-              <p className="text-gray-600 mb-4">This QR code is not valid.</p>
+              <p className="text-gray-600 mb-4">
+                This family registration QR code is not valid.
+              </p>
               <p className="text-sm text-gray-500">
                 Please make sure you scanned the correct QR code from the
-                patient's device registration page.
+                patient's family device registration page.
               </p>
             </div>
           )}
@@ -399,18 +432,18 @@ const QRDeviceRegistration = () => {
     );
   }
 
-  // Show registration complete message
+  // Registration complete state
   if (registrationComplete) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
           <div className="text-green-600 text-6xl mb-4">✅</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Registration Complete!
+            Family Device Registration Complete!
           </h2>
           <p className="text-gray-600 mb-4">
-            Your device has been successfully registered for accessing{" "}
-            {qrStatus.patientName}'s medical records.
+            Your device has been successfully registered as a family device for
+            accessing {qrStatus.patientName}'s medical records.
           </p>
           <p className="text-sm text-gray-500 mb-6">
             You will be redirected to the login page shortly, or you can close
@@ -436,7 +469,7 @@ const QRDeviceRegistration = () => {
     );
   }
 
-  // Main registration form
+  // Main family registration form
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8">
@@ -446,19 +479,19 @@ const QRDeviceRegistration = () => {
             Register Family Device
           </h2>
           <p className="text-gray-600">
-            Register this device to access {qrStatus.patientName}'s medical
-            records
+            Register this device as a family device to access{" "}
+            {qrStatus.patientName}'s medical records
           </p>
         </div>
 
-        {/* ✅ FIX: Service readiness indicator */}
+        {/* Service status indicator */}
         {!serviceReady && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
             <div className="flex items-start space-x-3">
               <div className="animate-spin rounded-full h-4 w-4 border-2 border-amber-600 border-t-transparent mt-0.5"></div>
               <div className="text-sm text-amber-800">
                 <p className="font-medium mb-1">
-                  Finalizing device detection...
+                  Initializing fingerprinting service...
                 </p>
                 <p>Please wait while we complete the setup process.</p>
               </div>
@@ -466,19 +499,20 @@ const QRDeviceRegistration = () => {
           </div>
         )}
 
-        {/* ✅ FIX: Enhanced duplicate device warning for Android */}
+        {/* Duplicate device warning */}
         {duplicateDeviceInfo && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
             <div className="flex items-start space-x-3">
               <div className="text-red-600 text-xl">⚠️</div>
               <div className="flex-1">
                 <div className="text-sm text-red-800">
-                  <p className="font-medium mb-1">Device Already Registered</p>
+                  <p className="font-medium mb-1">
+                    Family Device Already Registered
+                  </p>
                   <p className="mb-2">
-                    This{" "}
-                    {/Android/i.test(navigator.userAgent) ? "Android " : ""}
-                    device is already registered for {qrStatus.patientName} with
-                    the name "{duplicateDeviceInfo.deviceName}".
+                    This device is already registered as a family device for{" "}
+                    {qrStatus.patientName}
+                    with the name "{duplicateDeviceInfo.deviceName}".
                   </p>
                   <p className="text-xs text-red-600">
                     Device Type: {duplicateDeviceInfo.deviceType}
@@ -507,10 +541,11 @@ const QRDeviceRegistration = () => {
           <div className="flex items-start space-x-3">
             <div className="text-blue-600 text-xl">🔒</div>
             <div className="text-sm text-blue-800">
-              <p className="font-medium mb-1">Secure Access</p>
+              <p className="font-medium mb-1">Secure Family Access</p>
               <p>
-                This device will be registered using advanced fingerprinting.
-                Your access will still be logged for safety purposes.
+                This device will be registered using advanced fingerprinting
+                technology. All access will be logged for security and audit
+                purposes.
               </p>
             </div>
           </div>
@@ -519,20 +554,20 @@ const QRDeviceRegistration = () => {
         {/* Device Name Input */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Device Name
+            Family Device Name
           </label>
           <input
             type="text"
             value={deviceName}
             onChange={(e) => setDeviceName(e.target.value)}
-            placeholder="Enter a name for this device"
+            placeholder="Enter a name for this family device"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={registering || !serviceReady}
           />
           <p className="text-xs text-gray-500 mt-1">
-            Example: "Mom's Phone", "Dad's Laptop", "Sister's iPad"
+            Example: "Mom's Phone", "Dad's Laptop", "Sister's iPad", "Son's
+            Android"
           </p>
-          {/* ✅ FIX: Show auto-detection status */}
           {serviceReady && deviceName && (
             <p className="text-xs text-green-600 mt-1">
               ✅ Device automatically detected: {deviceName}
@@ -545,9 +580,9 @@ const QRDeviceRegistration = () => {
           <div className="flex items-start space-x-3">
             <div className="text-amber-600 text-xl">⚠️</div>
             <div className="text-sm text-amber-800">
-              <p className="font-medium mb-1">Security Reminder</p>
+              <p className="font-medium mb-1">Family Access Security</p>
               <p>
-                Only register devices you personally use and trust. Once
+                Only register devices used by trusted family members. Once
                 registered, this device will have authorized access to{" "}
                 {qrStatus.patientName}'s medical records.
               </p>
@@ -576,14 +611,14 @@ const QRDeviceRegistration = () => {
           {registering ? (
             <div className="flex items-center justify-center">
               <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-              Registering Device...
+              Registering Family Device...
             </div>
           ) : !serviceReady ? (
-            "Preparing Device Detection..."
+            "Initializing fingerprinting service..."
           ) : duplicateDeviceInfo ? (
-            "Device Already Registered"
+            "Family Device Already Registered"
           ) : (
-            "Register This Device"
+            "Register This Family Device"
           )}
         </button>
 
@@ -600,7 +635,7 @@ const QRDeviceRegistration = () => {
             onClick={handleCancel}
             className="text-gray-600 hover:text-gray-800 text-sm font-medium"
           >
-            Cancel Registration
+            Cancel Family Registration
           </button>
         </div>
       </div>
