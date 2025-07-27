@@ -13,6 +13,7 @@
   "dependencies": {
     "@azure/cognitiveservices-computervision": "^8.2.0",
     "@azure/storage-blob": "^12.26.0",
+    "@fingerprintjs/fingerprintjs-pro-server-api": "^6.7.0",
     "axios": "^1.9.0",
     "bcryptjs": "^3.0.2",
     "cloudconvert": "^3.0.0",

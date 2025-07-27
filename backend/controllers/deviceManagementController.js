@@ -1,6 +1,109 @@
 // controllers/deviceManagementController.js - ANDROID-COMPATIBLE with enhanced mobile support
 const { pool, sql } = require("../config/database");
+const fingerprintjsService = require("../services/fingerprintjsService");
+
 const crypto = require("crypto");
+
+const validateFingerprintJSProData = (deviceFingerprint, userAgent) => {
+  try {
+    // Basic structure validation
+    if (!deviceFingerprint || typeof deviceFingerprint !== "object") {
+      return {
+        isValid: false,
+        error: "INVALID_FINGERPRINT_FORMAT",
+        message: "Device fingerprint must be an object",
+      };
+    }
+
+    // Check for required hash (visitor ID)
+    if (!deviceFingerprint.hash || typeof deviceFingerprint.hash !== "string") {
+      return {
+        isValid: false,
+        error: "MISSING_VISITOR_ID",
+        message: "Device fingerprint must contain a valid visitor ID (hash)",
+      };
+    }
+
+    // Validate hash format (FingerprintJS Pro visitor IDs are typically 20 characters)
+    if (
+      deviceFingerprint.hash.length < 10 ||
+      deviceFingerprint.hash.length > 50
+    ) {
+      return {
+        isValid: false,
+        error: "INVALID_VISITOR_ID_FORMAT",
+        message: "Visitor ID format is invalid",
+      };
+    }
+
+    // Check for details object (optional but recommended)
+    if (
+      deviceFingerprint.details &&
+      typeof deviceFingerprint.details !== "object"
+    ) {
+      return {
+        isValid: false,
+        error: "INVALID_DETAILS_FORMAT",
+        message: "Fingerprint details must be an object",
+      };
+    }
+
+    // Check for metadata object (optional but recommended)
+    if (
+      deviceFingerprint.metadata &&
+      typeof deviceFingerprint.metadata !== "object"
+    ) {
+      return {
+        isValid: false,
+        error: "INVALID_METADATA_FORMAT",
+        message: "Fingerprint metadata must be an object",
+      };
+    }
+
+    // Additional validation for FingerprintJS Pro specific fields
+    if (deviceFingerprint.details) {
+      // Validate requestId if present
+      if (
+        deviceFingerprint.details.requestId &&
+        typeof deviceFingerprint.details.requestId !== "string"
+      ) {
+        return {
+          isValid: false,
+          error: "INVALID_REQUEST_ID",
+          message: "Request ID must be a string",
+        };
+      }
+    }
+
+    // Validate confidence score if present
+    if (
+      deviceFingerprint.metadata &&
+      deviceFingerprint.metadata.confidenceScore !== undefined
+    ) {
+      const confidence = deviceFingerprint.metadata.confidenceScore;
+      if (typeof confidence !== "number" || confidence < 0 || confidence > 1) {
+        return {
+          isValid: false,
+          error: "INVALID_CONFIDENCE_SCORE",
+          message: "Confidence score must be a number between 0 and 1",
+        };
+      }
+    }
+
+    return {
+      isValid: true,
+      visitorId: deviceFingerprint.hash,
+      service: deviceFingerprint.metadata?.service || "fingerprintjs_pro",
+      confidence: deviceFingerprint.metadata?.confidenceScore || 0.5,
+    };
+  } catch (error) {
+    return {
+      isValid: false,
+      error: "VALIDATION_ERROR",
+      message: `Validation failed: ${error.message}`,
+    };
+  }
+};
 
 // ✅ ANDROID FIX: Helper function to detect Android devices
 const isAndroidDevice = (userAgent) => {
@@ -49,82 +152,86 @@ exports.registerDevice = async (req, res) => {
     const userAgent = req.headers["user-agent"] || "";
     const androidInfo = getAndroidDeviceInfo(userAgent, deviceFingerprint);
 
-    // ✅ ANDROID FIX: Enhanced validation with Android-specific error messages
-    if (!deviceFingerprint || !deviceName) {
-      console.error("❌ ANDROID DEBUG - Missing required fields:", {
-        hasFingerprint: !!deviceFingerprint,
-        hasDeviceName: !!deviceName,
-        isAndroid: androidInfo.isAndroid,
-        userAgent: userAgent,
-      });
-
-      return res.status(400).json({
-        success: false,
-        message: "Device fingerprint and name are required",
-        error: androidInfo.isAndroid
-          ? "MISSING_REQUIRED_FIELDS_ANDROID"
-          : "MISSING_REQUIRED_FIELDS",
-        debug: {
-          isAndroid: androidInfo.isAndroid,
-          hasFingerprint: !!deviceFingerprint,
-          hasDeviceName: !!deviceName,
-        },
-      });
-    }
-
-    // ✅ ANDROID FIX: Enhanced fingerprint validation
-    if (!deviceFingerprint.hash || !deviceFingerprint.details) {
-      console.error("❌ ANDROID DEBUG - Invalid fingerprint format:", {
-        hasHash: !!deviceFingerprint.hash,
-        hasDetails: !!deviceFingerprint.details,
-        isAndroid: androidInfo.isAndroid,
-        userAgent: userAgent,
-        fingerprintMethod: deviceFingerprint.details?.collectMethod,
-        receivedData: deviceFingerprint,
-      });
-
-      return res.status(400).json({
-        success: false,
-        message: "Invalid device fingerprint format",
-        error: androidInfo.isAndroid
-          ? "INVALID_FINGERPRINT_ANDROID"
-          : "INVALID_FINGERPRINT",
-        debug: {
-          received: typeof deviceFingerprint,
-          hasHash: !!deviceFingerprint.hash,
-          hasDetails: !!deviceFingerprint.details,
-          isAndroid: androidInfo.isAndroid,
-          collectMethod: deviceFingerprint.details?.collectMethod,
-        },
-      });
-    }
-
-    // ✅ ANDROID DEBUG: Comprehensive device registration logging
-    console.log("📱 ANDROID DEVICE REGISTRATION DEBUG:", {
+    console.log("📱 Device Registration Request:", {
+      deviceName,
+      deviceType,
+      hasFingerprint: !!deviceFingerprint,
+      fingerprintHash: deviceFingerprint?.hash,
       isAndroid: androidInfo.isAndroid,
-      isMobile: androidInfo.isMobile,
-      androidVersion: androidInfo.androidVersion,
-      chromeVersion: androidInfo.chromeVersion,
-      deviceModel: androidInfo.deviceModel,
-      userAgent: userAgent,
-      fingerprintHash: deviceFingerprint.hash,
-      deviceName: deviceName,
-      deviceType: deviceType,
-      fingerprintMethod: deviceFingerprint.details?.collectMethod,
-      screenInfo: deviceFingerprint.details?.screen,
-      platform: deviceFingerprint.details?.platform,
-      audioComponent: deviceFingerprint.details?.audio,
-      canvasComponent: deviceFingerprint.details?.canvas,
-      webglComponent: deviceFingerprint.details?.webgl,
+      userAgent: userAgent.substring(0, 100) + "...",
     });
+
+    // ✅ FIXED: Validate FingerprintJS Pro data
+    const validation = validateFingerprintJSProData(
+      deviceFingerprint,
+      userAgent
+    );
+    if (!validation.isValid) {
+      console.error("❌ FingerprintJS Pro validation failed:", {
+        error: validation.error,
+        message: validation.message,
+        isAndroid: androidInfo.isAndroid,
+      });
+
+      return res.status(400).json({
+        success: false,
+        message: validation.message,
+        error: validation.error,
+        debug: {
+          isAndroid: androidInfo.isAndroid,
+          service: "fingerprintjs_pro",
+          hasFingerprint: !!deviceFingerprint,
+          hasVisitorId: !!deviceFingerprint?.hash,
+        },
+      });
+    }
+
+    if (!deviceName) {
+      return res.status(400).json({
+        success: false,
+        message: "Device name is required",
+        error: androidInfo.isAndroid
+          ? "MISSING_DEVICE_NAME_ANDROID"
+          : "MISSING_DEVICE_NAME",
+      });
+    }
+
+    // ✅ NEW: Validate with FingerprintJS Pro API if available
+    if (
+      fingerprintjsService.isAvailable() &&
+      deviceFingerprint.details?.requestId
+    ) {
+      try {
+        const fpValidation = await fingerprintjsService.validateFingerprint(
+          deviceFingerprint.hash,
+          deviceFingerprint.details.requestId
+        );
+
+        if (!fpValidation.isValid) {
+          console.warn(
+            "⚠️ FingerprintJS Pro server validation failed:",
+            fpValidation.reason
+          );
+          // Continue with registration but log the issue
+        } else {
+          console.log("✅ FingerprintJS Pro server validation successful");
+        }
+      } catch (validationError) {
+        console.warn(
+          "⚠️ FingerprintJS Pro validation error:",
+          validationError.message
+        );
+        // Continue with registration - don't block for validation errors
+      }
+    }
 
     await pool.connect();
 
-    // ✅ ANDROID FIX: Enhanced duplicate checking with multiple fallback methods
+    // ✅ UPDATED: Device lookup using FingerprintJS Pro visitor ID
     const existingDevice = await pool
       .request()
       .input("userId", req.user.userId)
-      .input("fingerprintHash", deviceFingerprint.hash)
+      .input("visitorId", deviceFingerprint.hash) // Use visitor ID as primary key
       .input(
         "userAgent",
         deviceFingerprint.details?.userAgent || userAgent || ""
@@ -135,8 +242,7 @@ exports.registerDevice = async (req, res) => {
           ? `${deviceFingerprint.details.screen.width}x${deviceFingerprint.details.screen.height}`
           : ""
       )
-      .input("platform", deviceFingerprint.details?.platform?.platform || "")
-      .input("deviceModel", androidInfo.deviceModel).query(`
+      .input("platform", deviceFingerprint.details?.platform || "").query(`
         SELECT 
           fingerprintId, 
           deviceName, 
@@ -162,39 +268,28 @@ exports.registerDevice = async (req, res) => {
         ) dal ON df.fingerprintId = dal.deviceFingerprintId
         WHERE userId = @userId 
         AND (
-          JSON_VALUE(fingerprint, '$.hash') = @fingerprintHash
+          JSON_VALUE(fingerprint, '$.hash') = @visitorId
+          OR JSON_VALUE(fingerprint, '$.details.visitorId') = @visitorId
           OR (userAgent = @userAgent AND screenResolution = @screenResolution)
-          OR (@platform != '' AND platform = @platform AND screenResolution = @screenResolution)
-          OR (@deviceModel != 'unknown' AND userAgent LIKE '%' + @deviceModel + '%' AND screenResolution = @screenResolution)
         )
         ORDER BY 
-          CASE WHEN JSON_VALUE(fingerprint, '$.hash') = @fingerprintHash THEN 1 ELSE 2 END,
+          CASE 
+            WHEN JSON_VALUE(fingerprint, '$.hash') = @visitorId THEN 1 
+            WHEN JSON_VALUE(fingerprint, '$.details.visitorId') = @visitorId THEN 2
+            ELSE 3 
+          END,
           registeredAt DESC
       `);
 
     if (existingDevice.recordset.length > 0) {
       const device = existingDevice.recordset[0];
 
-      // ✅ ANDROID DEBUG: Enhanced duplicate detection logging
-      console.log("🔍 ANDROID DUPLICATE DEVICE CHECK:", {
+      console.log("🔍 FingerprintJS Pro Duplicate Check:", {
         isAndroid: androidInfo.isAndroid,
-        androidInfo: androidInfo,
-        existingHash: JSON.parse(device.fingerprint)?.hash,
-        newHash: deviceFingerprint.hash,
-        existingUserAgent: device.userAgent,
-        newUserAgent: deviceFingerprint.details?.userAgent,
-        existingScreen: device.screenResolution,
-        newScreen: deviceFingerprint.details?.screen
-          ? `${deviceFingerprint.details.screen.width}x${deviceFingerprint.details.screen.height}`
-          : "",
-        existingPlatform: device.platform,
-        newPlatform: deviceFingerprint.details?.platform?.platform,
+        existingVisitorId: JSON.parse(device.fingerprint)?.hash,
+        newVisitorId: deviceFingerprint.hash,
         deviceName: device.deviceName,
         isActive: device.isActive,
-        matchReason:
-          JSON.parse(device.fingerprint)?.hash === deviceFingerprint.hash
-            ? "exact_hash_match"
-            : "fallback_match",
       });
 
       // If device exists but inactive, reactivate it
@@ -213,174 +308,250 @@ exports.registerDevice = async (req, res) => {
             WHERE fingerprintId = @fingerprintId
           `);
 
-        console.log("✅ ANDROID DEVICE REACTIVATED:", {
+        console.log("✅ FingerprintJS Pro Device Reactivated:", {
           fingerprintId: device.fingerprintId,
+          visitorId: deviceFingerprint.hash,
           deviceName: deviceName,
           isAndroid: androidInfo.isAndroid,
-          androidVersion: androidInfo.androidVersion,
         });
 
         return res.json({
           success: true,
           message: androidInfo.isAndroid
-            ? "Android device reactivated and updated successfully"
-            : "Device reactivated and updated successfully",
+            ? "Android device reactivated with FingerprintJS Pro"
+            : "Device reactivated with FingerprintJS Pro",
           device: {
             fingerprintId: device.fingerprintId,
             deviceName: deviceName,
+            visitorId: deviceFingerprint.hash,
+            confidence: deviceFingerprint.metadata?.confidenceScore,
             isActive: true,
             wasReactivated: true,
-            isAndroid: androidInfo.isAndroid,
-            androidInfo: androidInfo.isAndroid ? androidInfo : undefined,
+            service: "fingerprintjs_pro",
           },
         });
       }
 
-      // ✅ ANDROID FIX: Device already active - return detailed error with platform info
+      // Device already active - return error
       return res.status(409).json({
         success: false,
         message: androidInfo.isAndroid
-          ? "This Android device is already registered"
-          : "This device is already registered",
+          ? "This Android device is already registered with FingerprintJS Pro"
+          : "This device is already registered with FingerprintJS Pro",
         error: androidInfo.isAndroid
-          ? "DEVICE_ALREADY_REGISTERED_ANDROID"
-          : "DEVICE_ALREADY_REGISTERED",
+          ? "DEVICE_ALREADY_REGISTERED_ANDROID_FPJS"
+          : "DEVICE_ALREADY_REGISTERED_FPJS",
         existingDevice: {
           deviceName: device.deviceName,
           registeredAt: device.registeredAt,
           lastUsed: device.lastUsed,
-          lastUpdated: device.lastUpdated,
-          isAndroid: androidInfo.isAndroid,
-          androidInfo: androidInfo.isAndroid ? androidInfo : undefined,
+          visitorId: deviceFingerprint.hash,
+          service: "fingerprintjs_pro",
         },
       });
     }
 
-    // ✅ ANDROID FIX: Register new device with enhanced Android support
-    const result = await pool
-      .request()
-      .input("userId", req.user.userId)
-      .input("deviceType", deviceType || "patient")
-      .input("deviceName", deviceName)
-      .input("fingerprint", JSON.stringify(deviceFingerprint))
-      .input(
-        "userAgent",
-        deviceFingerprint.details?.userAgent || userAgent || null
-      )
-      .input(
-        "screenResolution",
-        deviceFingerprint.details?.screen
-          ? `${deviceFingerprint.details.screen.width}x${deviceFingerprint.details.screen.height}`
-          : null
-      )
-      .input("timezone", deviceFingerprint.details?.timezone?.timezone || null)
-      .input("language", deviceFingerprint.details?.language?.language || null)
-      .input("platform", deviceFingerprint.details?.platform?.platform || null)
-      .input("registeredBy", req.user.userId).query(`
-        INSERT INTO DeviceFingerprints 
-        (userId, deviceType, deviceName, fingerprint, userAgent, screenResolution, timezone, language, platform, registeredBy)
-        OUTPUT INSERTED.fingerprintId
-        VALUES (@userId, @deviceType, @deviceName, @fingerprint, @userAgent, @screenResolution, @timezone, @language, @platform, @registeredBy)
-      `);
+    // ✅ ENHANCED: Extract device info with fallback handling
+    let deviceInfo;
+    try {
+      if (
+        fingerprintjsService.isAvailable() &&
+        fingerprintjsService.extractDeviceInfo
+      ) {
+        deviceInfo = fingerprintjsService.extractDeviceInfo(deviceFingerprint);
+      } else {
+        // Fallback device info extraction
+        deviceInfo = {
+          userAgent: deviceFingerprint.details?.userAgent || userAgent,
+          platform: deviceFingerprint.details?.platform || "unknown",
+          screen: deviceFingerprint.details?.screen || null,
+          confidence: deviceFingerprint.metadata?.confidenceScore || 0.5,
+          service: deviceFingerprint.metadata?.service || "fingerprintjs_pro",
+        };
+      }
+    } catch (extractError) {
+      console.warn(
+        "⚠️ Device info extraction failed, using fallback:",
+        extractError.message
+      );
+      deviceInfo = {
+        userAgent: userAgent,
+        platform: "unknown",
+        screen: null,
+        confidence: 0.5,
+        service: "fallback",
+      };
+    }
 
-    // ✅ ANDROID SUCCESS: Enhanced registration success logging
-    console.log("✅ ANDROID DEVICE REGISTERED SUCCESSFULLY:", {
-      fingerprintId: result.recordset[0].fingerprintId,
-      hash: deviceFingerprint.hash,
-      deviceName: deviceName,
+    console.log("📱 FingerprintJS Pro Device Registration:", {
       isAndroid: androidInfo.isAndroid,
-      androidInfo: androidInfo,
-      userAgent: deviceFingerprint.details?.userAgent || userAgent,
-      screenResolution: deviceFingerprint.details?.screen
-        ? `${deviceFingerprint.details.screen.width}x${deviceFingerprint.details.screen.height}`
-        : null,
-      collectMethod: deviceFingerprint.details?.collectMethod,
-      registrationTimestamp: new Date().toISOString(),
+      visitorId: deviceFingerprint.hash,
+      confidence: deviceInfo.confidence,
+      method: deviceFingerprint.metadata?.method,
+      service: deviceInfo.service,
+      deviceName: deviceName,
+      deviceType: deviceType,
     });
 
-    // ✅ ANDROID FIX: Enhanced access logging with Android-specific info
-    await pool
-      .request()
-      .input("deviceFingerprintId", result.recordset[0].fingerprintId)
-      .input("userId", req.user.userId)
-      .input(
-        "accessType",
-        androidInfo.isAndroid
-          ? "android_device_registration"
-          : "device_registration"
-      )
-      .input("ipAddress", req.ip)
-      .input(
-        "location",
-        JSON.stringify({
-          ip: req.ip,
-          timestamp: new Date().toISOString(),
-          userAgent: deviceFingerprint.details?.userAgent || userAgent,
-          isAndroid: androidInfo.isAndroid,
-          isMobile: androidInfo.isMobile,
-          androidInfo: androidInfo.isAndroid ? androidInfo : undefined,
-          platform: deviceFingerprint.details?.platform?.platform,
-          screenResolution: deviceFingerprint.details?.screen
+    // ✅ FIXED: Register new device with enhanced error handling for database schema
+    let result;
+    try {
+      // Try with new FingerprintJS Pro columns first
+      result = await pool
+        .request()
+        .input("userId", req.user.userId)
+        .input("deviceType", deviceType || "patient")
+        .input("deviceName", deviceName)
+        .input("fingerprint", JSON.stringify(deviceFingerprint))
+        .input("userAgent", deviceInfo.userAgent || userAgent)
+        .input(
+          "screenResolution",
+          deviceInfo.screen?.width && deviceInfo.screen?.height
+            ? `${deviceInfo.screen.width}x${deviceInfo.screen.height}`
+            : deviceFingerprint.details?.screen
             ? `${deviceFingerprint.details.screen.width}x${deviceFingerprint.details.screen.height}`
-            : null,
-        })
-      ).query(`
-        INSERT INTO DeviceAccessLogs 
-        (deviceFingerprintId, userId, accessType, ipAddress, location)
-        VALUES (@deviceFingerprintId, @userId, @accessType, @ipAddress, @location)
-      `);
+            : null
+        )
+        .input("timezone", null) // FingerprintJS Pro doesn't expose timezone directly
+        .input("language", deviceFingerprint.details?.language || null)
+        .input(
+          "platform",
+          deviceInfo.platform || deviceFingerprint.details?.platform || null
+        )
+        .input("registeredBy", req.user.userId)
+        // ✅ NEW: Add FingerprintJS Pro specific fields
+        .input("visitorId", deviceFingerprint.hash)
+        .input("requestId", deviceFingerprint.details?.requestId || null)
+        .input("confidenceScore", deviceInfo.confidence || 0.5).query(`
+          INSERT INTO DeviceFingerprints 
+          (userId, deviceType, deviceName, fingerprint, userAgent, screenResolution, 
+           timezone, language, platform, registeredBy, visitorId, requestId, confidenceScore)
+          OUTPUT INSERTED.fingerprintId
+          VALUES (@userId, @deviceType, @deviceName, @fingerprint, @userAgent, @screenResolution, 
+                  @timezone, @language, @platform, @registeredBy, @visitorId, @requestId, @confidenceScore)
+        `);
 
+      console.log(
+        "✅ FingerprintJS Pro Device Registered with Enhanced Schema:",
+        {
+          fingerprintId: result.recordset[0].fingerprintId,
+          visitorId: deviceFingerprint.hash,
+          confidence: deviceInfo.confidence,
+          deviceName: deviceName,
+          service: deviceInfo.service,
+          isAndroid: androidInfo.isAndroid,
+        }
+      );
+    } catch (dbError) {
+      // If the error is about missing columns, try the fallback insert without new columns
+      if (
+        dbError.message.includes("Invalid column name") ||
+        dbError.message.includes("visitorId") ||
+        dbError.message.includes("requestId") ||
+        dbError.message.includes("confidenceScore")
+      ) {
+        console.warn(
+          "⚠️ New FingerprintJS Pro columns not found, using legacy schema..."
+        );
+
+        result = await pool
+          .request()
+          .input("userId", req.user.userId)
+          .input("deviceType", deviceType || "patient")
+          .input("deviceName", deviceName)
+          .input("fingerprint", JSON.stringify(deviceFingerprint))
+          .input("userAgent", deviceInfo.userAgent || userAgent)
+          .input(
+            "screenResolution",
+            deviceInfo.screen?.width && deviceInfo.screen?.height
+              ? `${deviceInfo.screen.width}x${deviceInfo.screen.height}`
+              : deviceFingerprint.details?.screen
+              ? `${deviceFingerprint.details.screen.width}x${deviceFingerprint.details.screen.height}`
+              : null
+          )
+          .input("timezone", null)
+          .input("language", deviceFingerprint.details?.language || null)
+          .input(
+            "platform",
+            deviceInfo.platform || deviceFingerprint.details?.platform || null
+          )
+          .input("registeredBy", req.user.userId).query(`
+            INSERT INTO DeviceFingerprints 
+            (userId, deviceType, deviceName, fingerprint, userAgent, screenResolution, 
+             timezone, language, platform, registeredBy)
+            OUTPUT INSERTED.fingerprintId
+            VALUES (@userId, @deviceType, @deviceName, @fingerprint, @userAgent, @screenResolution, 
+                    @timezone, @language, @platform, @registeredBy)
+          `);
+
+        console.log("✅ Device registered with legacy schema:", {
+          fingerprintId: result.recordset[0].fingerprintId,
+          visitorId: deviceFingerprint.hash,
+          deviceName: deviceName,
+          note: "Consider running database migration to add FingerprintJS Pro columns",
+          isAndroid: androidInfo.isAndroid,
+        });
+
+        return res.json({
+          success: true,
+          message: androidInfo.isAndroid
+            ? "Android device registered successfully"
+            : "Device registered successfully",
+          device: {
+            fingerprintId: result.recordset[0].fingerprintId,
+            deviceName: deviceName,
+            visitorId: deviceFingerprint.hash,
+            confidence: deviceInfo.confidence,
+            service: "fingerprintjs_pro",
+            registeredAt: new Date(),
+            isAndroid: androidInfo.isAndroid,
+          },
+          warning:
+            "Some FingerprintJS Pro features may not be available. Consider updating your database schema.",
+        });
+      } else {
+        throw dbError; // Re-throw if it's a different error
+      }
+    }
+
+    // ✅ SUCCESS: Enhanced logging for FingerprintJS Pro
     res.json({
       success: true,
       message: androidInfo.isAndroid
-        ? "Android device registered successfully"
-        : "Device registered successfully",
+        ? "Android device registered with FingerprintJS Pro"
+        : "Device registered with FingerprintJS Pro",
       device: {
         fingerprintId: result.recordset[0].fingerprintId,
         deviceName: deviceName,
-        deviceType: deviceType || "patient",
+        visitorId: deviceFingerprint.hash,
+        confidence: deviceInfo.confidence,
+        service: "fingerprintjs_pro",
         registeredAt: new Date(),
         isAndroid: androidInfo.isAndroid,
-        androidInfo: androidInfo.isAndroid ? androidInfo : undefined,
       },
     });
   } catch (error) {
-    // ✅ ANDROID FIX: Enhanced error logging with Android context
     const userAgent = req.headers["user-agent"] || "";
     const androidInfo = getAndroidDeviceInfo(userAgent);
 
-    console.error("❌ ANDROID DEVICE REGISTRATION ERROR:", {
+    console.error("❌ FingerprintJS Pro Registration Error:", {
       error: error.message,
       stack: error.stack,
       isAndroid: androidInfo.isAndroid,
-      androidInfo: androidInfo,
-      userAgent: userAgent,
-      requestBody: {
-        deviceName: req.body?.deviceName,
-        deviceType: req.body?.deviceType,
-        hasFingerprint: !!req.body?.deviceFingerprint,
-        fingerprintMethod: req.body?.deviceFingerprint?.details?.collectMethod,
-      },
+      service: "fingerprintjs_pro",
       timestamp: new Date().toISOString(),
     });
 
     res.status(500).json({
       success: false,
       message: androidInfo.isAndroid
-        ? "Failed to register Android device"
-        : "Failed to register device",
+        ? "Failed to register Android device with FingerprintJS Pro"
+        : "Failed to register device with FingerprintJS Pro",
       error: androidInfo.isAndroid
-        ? "ANDROID_REGISTRATION_FAILED"
-        : "REGISTRATION_FAILED",
-      debug:
-        process.env.NODE_ENV === "development"
-          ? {
-              isAndroid: androidInfo.isAndroid,
-              userAgent: userAgent,
-              errorMessage: error.message,
-              androidInfo: androidInfo.isAndroid ? androidInfo : undefined,
-            }
-          : undefined,
+        ? "ANDROID_FPJS_REGISTRATION_FAILED"
+        : "FPJS_REGISTRATION_FAILED",
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
@@ -542,75 +713,69 @@ exports.verifyDevice = async (req, res) => {
     const userAgent = req.headers["user-agent"] || "";
     const androidInfo = getAndroidDeviceInfo(userAgent, deviceFingerprint);
 
-    if (!deviceFingerprint || !deviceFingerprint.hash) {
-      console.error("❌ ANDROID VERIFY ERROR - Missing fingerprint:", {
-        isAndroid: androidInfo.isAndroid,
-        userAgent: userAgent,
-        hasFingerprint: !!deviceFingerprint,
-        hasHash: !!deviceFingerprint?.hash,
-      });
-
+    // ✅ NEW: Validate FingerprintJS Pro data
+    const validation = validateFingerprintJSProData(
+      deviceFingerprint,
+      userAgent
+    );
+    if (!validation.isValid) {
       return res.status(400).json({
         success: false,
-        message: "Device fingerprint is required",
-        error: androidInfo.isAndroid
-          ? "MISSING_FINGERPRINT_ANDROID"
-          : "MISSING_FINGERPRINT",
+        message: validation.message,
+        error: validation.error,
+        service: "fingerprintjs_pro",
       });
     }
 
     await pool.connect();
 
-    // ✅ ANDROID FIX: Enhanced device lookup with multiple fallback methods
+    // ✅ UPDATED: Device lookup using FingerprintJS Pro visitor ID
     const deviceResult = await pool
       .request()
       .input("userId", req.user.userId)
-      .input("fingerprintHash", deviceFingerprint.hash)
-      .input(
-        "userAgent",
-        deviceFingerprint.details?.userAgent || userAgent || ""
-      )
+      .input("visitorId", deviceFingerprint.hash)
+      .input("userAgent", deviceFingerprint.details?.userAgent || userAgent)
       .input(
         "screenResolution",
         deviceFingerprint.details?.screen
           ? `${deviceFingerprint.details.screen.width}x${deviceFingerprint.details.screen.height}`
           : ""
       )
-      .input("platform", deviceFingerprint.details?.platform?.platform || "")
-      .query(`
+      .input("platform", deviceFingerprint.details?.platform || "").query(`
         SELECT 
           df.fingerprintId,
           df.deviceName,
           df.deviceType,
           df.isActive,
           df.fingerprint as storedFingerprint,
-          df.userAgent as storedUserAgent,
-          df.screenResolution as storedScreenResolution,
-          df.platform as storedPlatform
+          df.visitorId as storedVisitorId,
+          df.confidenceScore as storedConfidence
         FROM DeviceFingerprints df
         WHERE df.userId = @userId 
         AND df.isActive = 1
         AND (
-          JSON_VALUE(df.fingerprint, '$.hash') = @fingerprintHash
+          df.visitorId = @visitorId
+          OR JSON_VALUE(df.fingerprint, '$.hash') = @visitorId
           OR (df.userAgent = @userAgent AND df.screenResolution = @screenResolution)
-          OR (@platform != '' AND df.platform = @platform AND df.screenResolution = @screenResolution)
         )
         ORDER BY 
-          CASE WHEN JSON_VALUE(df.fingerprint, '$.hash') = @fingerprintHash THEN 1 ELSE 2 END,
+          CASE 
+            WHEN df.visitorId = @visitorId THEN 1 
+            WHEN JSON_VALUE(df.fingerprint, '$.hash') = @visitorId THEN 2
+            ELSE 3 
+          END,
           df.registeredAt DESC
       `);
 
     if (deviceResult.recordset.length === 0) {
-      // ✅ ANDROID DEBUG: Enhanced unauthorized access logging
-      console.error("❌ ANDROID UNAUTHORIZED DEVICE ACCESS:", {
+      // ✅ ENHANCED: Log unauthorized access with FingerprintJS Pro data
+      console.error("❌ FingerprintJS Pro Unauthorized Access:", {
         isAndroid: androidInfo.isAndroid,
-        androidInfo: androidInfo,
+        visitorId: deviceFingerprint.hash,
+        confidence: deviceFingerprint.metadata?.confidenceScore,
+        method: deviceFingerprint.metadata?.method,
+        service: "fingerprintjs_pro",
         userAgent: userAgent,
-        fingerprintHash: deviceFingerprint.hash,
-        screenInfo: deviceFingerprint.details?.screen,
-        collectMethod: deviceFingerprint.details?.collectMethod,
-        platform: deviceFingerprint.details?.platform?.platform,
-        timestamp: new Date().toISOString(),
       });
 
       // Log unauthorized access attempt
@@ -621,8 +786,8 @@ exports.verifyDevice = async (req, res) => {
         .input(
           "accessType",
           androidInfo.isAndroid
-            ? "unauthorized_android_access"
-            : "unauthorized_device_access"
+            ? "unauthorized_android_fpjs_access"
+            : "unauthorized_fpjs_device_access"
         )
         .input("ipAddress", req.ip)
         .input(
@@ -630,11 +795,10 @@ exports.verifyDevice = async (req, res) => {
           JSON.stringify({
             ip: req.ip,
             timestamp: new Date().toISOString(),
-            attemptedFingerprint: deviceFingerprint.hash,
-            userAgent: userAgent,
+            visitorId: deviceFingerprint.hash,
+            confidence: deviceFingerprint.metadata?.confidenceScore,
+            service: "fingerprintjs_pro",
             isAndroid: androidInfo.isAndroid,
-            androidInfo: androidInfo.isAndroid ? androidInfo : undefined,
-            collectMethod: deviceFingerprint.details?.collectMethod,
           })
         )
         .input("isAuthorized", 0).query(`
@@ -646,54 +810,26 @@ exports.verifyDevice = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: androidInfo.isAndroid
-          ? "Android device not authorized"
-          : "Device not authorized",
+          ? "Android device not authorized (FingerprintJS Pro)"
+          : "Device not authorized (FingerprintJS Pro)",
         isAuthorized: false,
         error: androidInfo.isAndroid
-          ? "ANDROID_DEVICE_UNAUTHORIZED"
-          : "DEVICE_UNAUTHORIZED",
+          ? "ANDROID_DEVICE_UNAUTHORIZED_FPJS"
+          : "DEVICE_UNAUTHORIZED_FPJS",
+        service: "fingerprintjs_pro",
       });
     }
 
     const device = deviceResult.recordset[0];
 
-    // ✅ ANDROID FIX: Check if device fingerprint has significantly changed
-    const storedFingerprint = JSON.parse(device.storedFingerprint);
-    const fingerprintChanged = await this.checkFingerprintChanges(
-      storedFingerprint,
-      deviceFingerprint
-    );
-
-    // If significant changes detected, update the fingerprint
-    if (fingerprintChanged.shouldUpdate) {
-      await pool
-        .request()
-        .input("fingerprintId", device.fingerprintId)
-        .input("newFingerprint", JSON.stringify(deviceFingerprint)).query(`
-          UPDATE DeviceFingerprints 
-          SET fingerprint = @newFingerprint, lastUpdated = GETDATE()
-          WHERE fingerprintId = @fingerprintId
-        `);
-
-      console.log("🔄 ANDROID FINGERPRINT UPDATED:", {
-        fingerprintId: device.fingerprintId,
-        deviceName: device.deviceName,
-        isAndroid: androidInfo.isAndroid,
-        changes: fingerprintChanged.changes,
-      });
-    }
-
-    // ✅ ANDROID SUCCESS: Log successful verification
-    console.log("✅ ANDROID DEVICE VERIFIED:", {
+    // ✅ SUCCESS: Log successful verification with FingerprintJS Pro
+    console.log("✅ FingerprintJS Pro Device Verified:", {
       fingerprintId: device.fingerprintId,
       deviceName: device.deviceName,
+      visitorId: deviceFingerprint.hash,
+      confidence: deviceFingerprint.metadata?.confidenceScore,
+      service: "fingerprintjs_pro",
       isAndroid: androidInfo.isAndroid,
-      androidInfo: androidInfo,
-      matchedBy:
-        JSON.parse(device.storedFingerprint)?.hash === deviceFingerprint.hash
-          ? "exact_hash_match"
-          : "fallback_match",
-      fingerprintUpdated: fingerprintChanged.shouldUpdate,
     });
 
     // Log successful access
@@ -704,8 +840,8 @@ exports.verifyDevice = async (req, res) => {
       .input(
         "accessType",
         androidInfo.isAndroid
-          ? "android_device_verification"
-          : "device_verification"
+          ? "android_fpjs_device_verification"
+          : "fpjs_device_verification"
       )
       .input("ipAddress", req.ip)
       .input(
@@ -713,9 +849,9 @@ exports.verifyDevice = async (req, res) => {
         JSON.stringify({
           ip: req.ip,
           timestamp: new Date().toISOString(),
-          userAgent: userAgent,
+          visitorId: deviceFingerprint.hash,
+          service: "fingerprintjs_pro",
           isAndroid: androidInfo.isAndroid,
-          androidInfo: androidInfo.isAndroid ? androidInfo : undefined,
         })
       ).query(`
         INSERT INTO DeviceAccessLogs 
@@ -726,43 +862,28 @@ exports.verifyDevice = async (req, res) => {
     res.json({
       success: true,
       message: androidInfo.isAndroid
-        ? "Android device verified successfully"
-        : "Device verified successfully",
+        ? "Android device verified with FingerprintJS Pro"
+        : "Device verified with FingerprintJS Pro",
       isAuthorized: true,
       device: {
         fingerprintId: device.fingerprintId,
         deviceName: device.deviceName,
         deviceType: device.deviceType,
-        isAndroid: androidInfo.isAndroid,
-        androidInfo: androidInfo.isAndroid ? androidInfo : undefined,
+        visitorId: deviceFingerprint.hash,
+        confidence: deviceFingerprint.metadata?.confidenceScore,
+        service: "fingerprintjs_pro",
       },
-      fingerprintUpdated: fingerprintChanged.shouldUpdate,
     });
   } catch (error) {
-    const userAgent = req.headers["user-agent"] || "";
-    const androidInfo = getAndroidDeviceInfo(userAgent);
-
-    console.error("❌ ANDROID DEVICE VERIFICATION ERROR:", {
-      error: error.message,
-      stack: error.stack,
-      isAndroid: androidInfo.isAndroid,
-      androidInfo: androidInfo,
-      userAgent: userAgent,
-      timestamp: new Date().toISOString(),
-    });
-
+    console.error("❌ FingerprintJS Pro Verification Error:", error);
     res.status(500).json({
       success: false,
-      message: androidInfo.isAndroid
-        ? "Failed to verify Android device"
-        : "Failed to verify device",
-      error: androidInfo.isAndroid
-        ? "ANDROID_VERIFICATION_FAILED"
-        : "VERIFICATION_FAILED",
+      message: "Failed to verify device with FingerprintJS Pro",
+      error: "FPJS_VERIFICATION_FAILED",
+      service: "fingerprintjs_pro",
     });
   }
 };
-
 // @route   POST api/devices/generate-qr
 // @desc    Generate QR code for family device registration
 // @access  Private (Patient only)
@@ -1118,62 +1239,41 @@ exports.checkFingerprintChanges = async (oldFingerprint, newFingerprint) => {
   try {
     const significantChanges = [];
 
-    // Check browser version changes
-    if (
-      oldFingerprint.details?.browserVersion !==
-      newFingerprint.details?.browserVersion
-    ) {
-      significantChanges.push("browser_version");
+    // For FingerprintJS Pro, the visitor ID should remain stable
+    // Only check for major changes that might indicate a different device
+
+    if (oldFingerprint.hash !== newFingerprint.hash) {
+      significantChanges.push("visitor_id_change");
     }
 
-    // Check user agent changes
-    if (
-      oldFingerprint.details?.userAgent !== newFingerprint.details?.userAgent
-    ) {
-      significantChanges.push("user_agent");
+    // Check confidence score changes (significant drops might indicate issues)
+    const oldConfidence = oldFingerprint.metadata?.confidenceScore || 0;
+    const newConfidence = newFingerprint.metadata?.confidenceScore || 0;
+
+    if (Math.abs(oldConfidence - newConfidence) > 0.3) {
+      significantChanges.push("confidence_change");
     }
 
-    // Check WebGL changes (driver updates)
-    if (
-      JSON.stringify(oldFingerprint.details?.webgl) !==
-      JSON.stringify(newFingerprint.details?.webgl)
-    ) {
-      significantChanges.push("webgl");
+    // Check service method changes
+    if (oldFingerprint.metadata?.method !== newFingerprint.metadata?.method) {
+      significantChanges.push("method_change");
     }
 
-    // ✅ ANDROID FIX: Check Android-specific changes
-    if (
-      oldFingerprint.details?.isAndroid !== newFingerprint.details?.isAndroid
-    ) {
-      significantChanges.push("android_detection");
-    }
-
-    // Check collect method changes (important for Android compatibility)
-    if (
-      oldFingerprint.details?.collectMethod !==
-      newFingerprint.details?.collectMethod
-    ) {
-      significantChanges.push("collect_method");
-    }
-
-    // ✅ ANDROID FIX: More lenient update threshold for mobile devices
-    const isAndroid = newFingerprint.details?.isAndroid || false;
-    const updateThreshold = isAndroid ? 1 : 2; // Android devices are more tolerant of changes
-    const shouldUpdate = significantChanges.length >= updateThreshold;
+    const shouldUpdate = significantChanges.length > 0;
 
     return {
       shouldUpdate,
       changes: significantChanges,
-      isAndroid: isAndroid,
-      threshold: updateThreshold,
+      service: "fingerprintjs_pro",
+      oldConfidence,
+      newConfidence,
     };
   } catch (error) {
     return {
       shouldUpdate: false,
       changes: [],
       error: error.message,
-      isAndroid: false,
-      threshold: 2,
+      service: "fingerprintjs_pro",
     };
   }
 };
