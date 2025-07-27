@@ -68,7 +68,7 @@ app.use(
           // VivoKey API for SmartToken verification
           "https://auth.vivokey.com",
           // Your actual Azure backend API
-          "https://cph-prms-api-2.azurewebsites.net",
+          "https://cph-prms-api-dev.azurewebsites.net",
           // Development localhost fallbacks
           // ✅ NEW: Location and SMS services
           "https://maps.googleapis.com",
