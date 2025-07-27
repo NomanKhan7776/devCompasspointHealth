@@ -666,7 +666,7 @@ app.get("/api/ip-location", async (req, res) => {
   }
 });
 
-// ✅ NEW: Enhanced Device Fingerprint Verification Endpoint
+// ✅ FIXED: Enhanced Device Fingerprint Verification Endpoint - NO MORE FALSE ALERTS
 app.post("/patients/verify/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -678,11 +678,6 @@ app.post("/patients/verify/:id", async (req, res) => {
     console.log(`   - GPS: ${gpsCoordinates ? "Yes" : "No"}`);
     console.log(`   - Method: ${deviceMetadata?.method}`);
     console.log(`   - Consistency: ${deviceMetadata?.consistency}`);
-
-    // ✅ Import the enhanced controller
-    const {
-      checkDeviceAndTriggerAlerts,
-    } = require("./controllers/consolidatedSmartTokenController");
 
     // ✅ Get token info from database
     const { pool, sql } = require("./config/database");
@@ -704,44 +699,261 @@ app.post("/patients/verify/:id", async (req, res) => {
 
     const token = tokenResult.recordset[0];
 
-    // ✅ CRITICAL FIX: Enhanced device check with client fingerprint
-    const deviceCheckResult = await checkDeviceAndTriggerAlerts(
-      req,
-      id,
-      token.patientUserId,
-      token.patientName,
-      false // Don't skip alerts - we have client fingerprint
+    // ✅ CRITICAL FIX: Check if server-side verification already succeeded
+    console.log(
+      `🔍 Checking recent server-side verification for token ${id}...`
     );
 
-    console.log("✅ Enhanced device check completed:", {
-      isRegistered: deviceCheckResult.isRegisteredDevice,
-      alertsTriggered: deviceCheckResult.alertsTriggered,
-      method: deviceCheckResult.fingerprintMethod,
-      usingClient: deviceCheckResult.usingClientFingerprint,
-      locationData: !!deviceCheckResult.locationData,
-    });
+    const recentVerification = await pool
+      .request()
+      .input("tokenId", sql.NVarChar, id)
+      .input("timeWindow", sql.DateTime, new Date(Date.now() - 5 * 60 * 1000)) // Last 5 minutes
+      .query(`
+        SELECT TOP 1 
+          isRegisteredDevice, 
+          deviceName,
+          accessTime,
+          deviceType
+        FROM EnhancedTokenAccessLog 
+        WHERE tokenId = @tokenId 
+          AND accessTime > @timeWindow
+          AND isRegisteredDevice = 1
+        ORDER BY accessTime DESC
+      `);
 
-    // ✅ Return comprehensive result
+    const hasRecentSuccessfulVerification =
+      recentVerification.recordset.length > 0;
+
+    if (hasRecentSuccessfulVerification) {
+      console.log(
+        `✅ Recent successful server-side verification found - SKIPPING CLIENT ALERTS`
+      );
+      console.log(
+        `   - Verified at: ${recentVerification.recordset[0].accessTime}`
+      );
+      console.log(`   - Device: ${recentVerification.recordset[0].deviceName}`);
+
+      // ✅ Log the client fingerprint but DON'T trigger alerts
+      await pool
+        .request()
+        .input("tokenId", sql.NVarChar, id)
+        .input("containerName", sql.NVarChar, "patient-data")
+        .input("folderName", sql.NVarChar, "emergency-access")
+        .input("ipAddress", sql.NVarChar, getRealUserIP(req))
+        .input("accessMode", sql.NVarChar, "client_verified_skip")
+        .input(
+          "deviceFingerprint",
+          sql.NVarChar,
+          JSON.stringify(deviceFingerprint)
+        )
+        .input("isRegisteredDevice", sql.Bit, 1) // Mark as registered since server verification succeeded
+        .input(
+          "deviceName",
+          sql.NVarChar,
+          deviceMetadata?.deviceName || "Unknown"
+        )
+        .input(
+          "deviceType",
+          sql.NVarChar,
+          deviceMetadata?.deviceType || "unknown"
+        )
+        .input("patientUserId", sql.Int, token.patientUserId)
+        .input("userAgent", sql.NVarChar, req.headers["user-agent"] || "")
+        .query(`
+          INSERT INTO EnhancedTokenAccessLog (
+            tokenId, containerName, folderName, ipAddress, accessMode,
+            deviceFingerprint, isRegisteredDevice, deviceName, deviceType,
+            patientUserId, userAgent, alertsSent
+          )
+          VALUES (
+            @tokenId, @containerName, @folderName, @ipAddress, @accessMode,
+            @deviceFingerprint, @isRegisteredDevice, @deviceName, @deviceType,
+            @patientUserId, @userAgent, 0
+          )
+        `);
+
+      return res.json({
+        success: true,
+        tokenId: id,
+        isRegisteredDevice: true, // Based on server verification
+        alertsTriggered: false, // ✅ NO ALERTS for registered devices
+        deviceInfo: {
+          name: deviceMetadata?.deviceName,
+          type: deviceMetadata?.deviceType,
+          browser: deviceMetadata?.browserName,
+          os: deviceMetadata?.osName,
+        },
+        securityStatus: "registered",
+        verificationType: "client_fingerprint_with_server_backup",
+        serverVerificationFound: true,
+        skipReason: "Recent server verification succeeded",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // ✅ If no recent server verification, proceed with client fingerprint check
+    console.log(
+      `🔍 No recent server verification - proceeding with client fingerprint check`
+    );
+
+    if (!deviceFingerprint || !deviceFingerprint.hash) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid device fingerprint provided",
+      });
+    }
+
+    // ✅ Check client fingerprint against database
+    const clientDeviceCheck = await pool
+      .request()
+      .input("fingerprintHash", sql.NVarChar, deviceFingerprint.hash)
+      .input("userId", sql.Int, token.patientUserId).query(`
+        SELECT df.*, 
+               CASE WHEN df.registeredBy = @userId THEN 1 ELSE 0 END as isOwnedByPatient
+        FROM DeviceFingerprints df
+        WHERE df.userId = @userId
+          AND df.isActive = 1
+          AND JSON_VALUE(df.fingerprint, '$.hash') = @fingerprintHash
+        ORDER BY df.registeredAt DESC
+      `);
+
+    const isClientRegistered = clientDeviceCheck.recordset.length > 0;
+
+    console.log(`🔍 CLIENT fingerprint check results:`);
+    console.log(
+      `   - Found ${clientDeviceCheck.recordset.length} matching device(s)`
+    );
+    console.log(`   - Is registered: ${isClientRegistered}`);
+
+    // ✅ Log the client fingerprint access
+    const logResult = await pool
+      .request()
+      .input("tokenId", sql.NVarChar, id)
+      .input("containerName", sql.NVarChar, "patient-data")
+      .input("folderName", sql.NVarChar, "emergency-access")
+      .input("ipAddress", sql.NVarChar, getRealUserIP(req))
+      .input(
+        "accessMode",
+        sql.NVarChar,
+        isClientRegistered ? "client_registered" : "client_unregistered"
+      )
+      .input(
+        "deviceFingerprint",
+        sql.NVarChar,
+        JSON.stringify(deviceFingerprint)
+      )
+      .input("isRegisteredDevice", sql.Bit, isClientRegistered ? 1 : 0)
+      .input(
+        "deviceName",
+        sql.NVarChar,
+        deviceMetadata?.deviceName || "Unknown"
+      )
+      .input(
+        "deviceType",
+        sql.NVarChar,
+        deviceMetadata?.deviceType || "unknown"
+      )
+      .input("patientUserId", sql.Int, token.patientUserId)
+      .input("userAgent", sql.NVarChar, req.headers["user-agent"] || "").query(`
+        INSERT INTO EnhancedTokenAccessLog (
+          tokenId, containerName, folderName, ipAddress, accessMode,
+          deviceFingerprint, isRegisteredDevice, deviceName, deviceType,
+          patientUserId, userAgent, alertsSent
+        )
+        OUTPUT inserted.logId
+        VALUES (
+          @tokenId, @containerName, @folderName, @ipAddress, @accessMode,
+          @deviceFingerprint, @isRegisteredDevice, @deviceName, @deviceType,
+          @patientUserId, @userAgent, 0
+        )
+      `);
+
+    const logId = logResult.recordset[0]?.logId;
+
+    // ✅ Only trigger alerts for truly unregistered devices
+    let alertsTriggered = false;
+    if (!isClientRegistered && token.patientUserId) {
+      console.log(`🚨 UNREGISTERED CLIENT DEVICE DETECTED - Triggering alerts`);
+
+      // Import the alert function
+      const {
+        triggerEmergencyAlerts,
+      } = require("./controllers/consolidatedSmartTokenController");
+
+      const deviceInfo = {
+        type: deviceMetadata?.deviceType || "unknown",
+        browser: deviceMetadata?.browserName || "unknown",
+        os: deviceMetadata?.osName || "unknown",
+        service: "client_fingerprint",
+        confidence: deviceMetadata?.consistency || "unknown",
+        visitorId: deviceFingerprint.hash,
+      };
+
+      try {
+        const alertResult = await triggerEmergencyAlerts(
+          id,
+          token.patientUserId,
+          token.patientName,
+          logId,
+          deviceInfo,
+          { type: "ip", source: "client_verification" },
+          req
+        );
+
+        alertsTriggered = alertResult.success;
+        console.log(
+          `✅ Emergency alerts triggered for CLIENT fingerprint:`,
+          alertsTriggered
+        );
+
+        // Update log with alert count
+        if (alertResult.smsSuccessful) {
+          await pool
+            .request()
+            .input("logId", sql.Int, logId)
+            .input("alertsSent", sql.Int, alertResult.smsSuccessful).query(`
+              UPDATE EnhancedTokenAccessLog 
+              SET alertsSent = @alertsSent 
+              WHERE logId = @logId
+            `);
+        }
+      } catch (alertError) {
+        console.error("Error triggering emergency alerts:", alertError);
+      }
+    } else if (isClientRegistered) {
+      console.log(`✅ REGISTERED CLIENT DEVICE DETECTED - No alerts needed`);
+      const registeredDevice = clientDeviceCheck.recordset[0];
+      console.log(
+        `   - Device registered by user ID: ${registeredDevice.registeredBy}`
+      );
+      console.log(`   - Registration date: ${registeredDevice.registeredAt}`);
+      console.log(`   - Device name: ${registeredDevice.deviceName}`);
+    }
+
+    // ✅ Return comprehensive response
     res.json({
       success: true,
+      message: "Device fingerprint processed with CLIENT verification",
       tokenId: id,
-      isRegisteredDevice: deviceCheckResult.isRegisteredDevice,
-      alertsTriggered: deviceCheckResult.alertsTriggered,
-      deviceInfo: deviceCheckResult.deviceInfo,
-      locationData: deviceCheckResult.locationData,
-      securityStatus: deviceCheckResult.isRegisteredDevice
-        ? "registered"
-        : "unregistered",
-      verificationType: deviceCheckResult.usingClientFingerprint
-        ? "client_fingerprint"
-        : "server_fallback",
+      clientFingerprintHash: deviceFingerprint.hash,
+      isRegisteredDevice: isClientRegistered,
+      alertsTriggered: alertsTriggered,
+      verificationType: "client_fingerprint",
+      deviceInfo: {
+        name: deviceMetadata?.deviceName,
+        type: deviceMetadata?.deviceType,
+        browser: deviceMetadata?.browserName,
+        os: deviceMetadata?.osName,
+      },
+      registeredDeviceCount: clientDeviceCheck.recordset.length,
+      securityStatus: isClientRegistered ? "registered" : "unregistered",
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("❌ Device verification error:", error);
+    console.error("❌ Error in enhanced POST fingerprint route:", error);
     res.status(500).json({
       success: false,
-      message: "Device verification failed",
+      message: "Failed to process device fingerprint",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
@@ -754,49 +966,20 @@ app.post("/patients/verify/:id", async (req, res) => {
  * Handles proxies, load balancers, CDNs, and direct connections
  */
 function getRealUserIP(req) {
-  // Check various headers that proxies/load balancers use to forward real IP
   const forwardedFor = req.headers["x-forwarded-for"];
   const realIP = req.headers["x-real-ip"];
-  const cfConnectingIP = req.headers["cf-connecting-ip"]; // Cloudflare
-  const xClientIP = req.headers["x-client-ip"];
-  const xForwardedForAlt = req.headers["x-forwarded"];
-  const forwardedForAlt = req.headers["forwarded-for"];
-  const forwarded = req.headers["forwarded"];
+  const cfConnectingIP = req.headers["cf-connecting-ip"];
 
-  // x-forwarded-for can contain multiple IPs (client, proxy1, proxy2, ...)
-  // The first IP is the original client
   if (forwardedFor) {
     const ips = forwardedFor.split(",").map((ip) => ip.trim());
-    // Return the first non-private IP or the first IP if all are private
-    for (const ip of ips) {
-      if (isValidPublicIP(ip)) {
-        return ip;
-      }
-    }
-    return ips[0]; // Fallback to first IP even if private
+    return ips[0];
   }
 
-  // Check other headers in order of preference
-  if (realIP && isValidIP(realIP)) return realIP;
-  if (cfConnectingIP && isValidIP(cfConnectingIP)) return cfConnectingIP;
-  if (xClientIP && isValidIP(xClientIP)) return xClientIP;
-  if (xForwardedForAlt && isValidIP(xForwardedForAlt)) return xForwardedForAlt;
-  if (forwardedForAlt && isValidIP(forwardedForAlt)) return forwardedForAlt;
-
-  // Parse the forwarded header (more complex format)
-  if (forwarded) {
-    const forMatch = forwarded.match(/for=([^;,\s]+)/);
-    if (forMatch && forMatch[1]) {
-      const ip = forMatch[1].replace(/"/g, "").replace(/\[|\]/g, "");
-      if (isValidIP(ip)) return ip;
-    }
-  }
-
-  // Fallback to connection-level IPs
   return (
+    realIP ||
+    cfConnectingIP ||
     req.connection?.remoteAddress ||
     req.socket?.remoteAddress ||
-    req.req?.connection?.remoteAddress ||
     req.ip ||
     "unknown"
   );
