@@ -47,9 +47,21 @@ class TwilioSMSService {
         };
       }
 
+      // Check if trial account and truncate message if needed
+      const isTrial = await this.isTrialAccount();
+      let finalMessage = message;
+
+      if (isTrial && message.length > 140) {
+        // Truncate to fit in single segment for trial
+        finalMessage = message.substring(0, 140) + "...";
+        console.log(
+          `⚠️ Trial account: Message truncated to ${finalMessage.length} chars`
+        );
+      }
+
       // Send SMS via Twilio
       const messageResult = await this.client.messages.create({
-        body: message,
+        body: finalMessage,
         from: this.fromNumber,
         to: cleanPhoneNumber,
         // Optional: Add status callback URL for delivery tracking
@@ -261,7 +273,16 @@ class TwilioSMSService {
    * @param {Object} locationData - Location data (GPS or IP-based)
    * @returns {string} Formatted emergency message
    */
-  createEmergencyMessage(patientName, deviceInfo, locationData) {
+  async createEmergencyMessage(patientName, deviceInfo, locationData) {
+    const isTrial = await this.isTrialAccount();
+
+    if (isTrial) {
+      // Short message for trial accounts (under 160 characters)
+      const city = locationData?.city || "unknown location";
+      return `🚨 ALERT: ${patientName}'s SmartToken accessed from ${city} by unregistered device. Contact medical staff if unauthorized.`;
+    }
+
+    // Full message for paid accounts
     const deviceDesc =
       deviceInfo.type === "mobile" ? "mobile device" : "device";
     const browserInfo = deviceInfo.browser ? ` (${deviceInfo.browser})` : "";
@@ -309,6 +330,21 @@ class TwilioSMSService {
         : "Not configured",
       configured: !!(this.accountSid && this.authToken && this.fromNumber),
     };
+  }
+
+  /**
+   * Create trial-safe emergency message
+   * @param {string} patientName - Patient name
+   * @param {Object} deviceInfo - Device information with ipLocation
+   * @returns {string} Short emergency message for trial accounts
+   */
+  async createTrialEmergencyMessage(patientName, deviceInfo) {
+    const location = deviceInfo.ipLocation?.city
+      ? `${deviceInfo.ipLocation.city}, ${deviceInfo.ipLocation.country}`
+      : "unknown location";
+
+    // Keep under 160 characters for single segment
+    return `🚨 ${patientName}'s SmartToken accessed from ${location}. Contact medical staff if unauthorized.`;
   }
 }
 

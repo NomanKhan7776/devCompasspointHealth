@@ -60,16 +60,35 @@ app.use(
           "'self'",
           "'unsafe-inline'", // Allow inline scripts for patient data page and device fingerprinting
           "https://maps.googleapis.com",
+          "https://cdn.jsdelivr.net",
+          "https://fpjscdn.net",
+          "https://fpnpmcdn.net",
         ],
         fontSrc: ["'self'", "https://cdnjs.cloudflare.com"],
-        imgSrc: ["'self'", "data:", "https:", "https://maps.googleapis.com"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "https:",
+          "https://maps.googleapis.com",
+          ...(process.env.NODE_ENV === "development"
+            ? [
+                "http://localhost:5000",
+                "http://localhost:3000",
+                "http://127.0.0.1:5000",
+                "http://192.168.1.3:5000", // Add your network IP
+              ]
+            : []),
+        ],
         connectSrc: [
           "'self'",
           // VivoKey API for SmartToken verification
           "https://auth.vivokey.com",
           // Your actual Azure backend API
           "https://cph-prms-api-dev.azurewebsites.net",
-          // Development localhost fallbacks
+          // ✅ FingerprintJS Pro API endpoints
+          "https://api.fpjs.io",
+          "https://eu.api.fpjs.io",
+          "https://ap.api.fpjs.io",
           // ✅ NEW: Location and SMS services
           "https://maps.googleapis.com",
           "https://api.twilio.com",
@@ -82,6 +101,8 @@ app.use(
                 "http://localhost:3000",
                 "http://127.0.0.1:5000",
                 "http://localhost:5173", // Add Vite dev server
+                "http://192.168.1.3:5000", // ✅ ADD: Network IP for API calls
+                "http://192.168.1.3:5173", // ✅ ADD: Frontend network IP
               ]
             : []),
         ],
@@ -92,7 +113,11 @@ app.use(
       },
     },
     crossOriginEmbedderPolicy: false, // Allow file viewing in new windows
-    crossOriginResourcePolicy: { policy: "same-site" },
+    // ✅ CRITICAL FIX: Make CORP permissive for development with different ports
+    crossOriginResourcePolicy: {
+      policy:
+        process.env.NODE_ENV === "development" ? "cross-origin" : "same-site",
+    },
   })
 );
 
@@ -113,8 +138,8 @@ app.use(
           ? [
               "http://localhost:5000",
               "http://localhost:5173",
-              "http://192.168.1.22:5173",
-              "http://192.168.1.22:5000",
+              "http://192.168.1.3:5173",
+              "http://192.168.1.3:5000",
               "http://localhost:3000",
               null,
             ]
@@ -148,15 +173,49 @@ app.use("/patients", (req, res, next) => {
     "'self'",
     "'unsafe-inline'",
     "https://cdnjs.cloudflare.com",
+    "https://cdn.jsdelivr.net",
+    "https://fpjscdn.net",
+    "https://fpnpmcdn.net", // ✅ FingerprintJS Pro NPM CDN
   ];
 
-  // ✅ FIX: Add localhost sources in development
+  // ✅ FIXED: Add ALL development sources including network IP
   if (process.env.NODE_ENV === "development") {
     scriptSources.push(
       "http://localhost:5000",
       "http://localhost:3000",
       "http://127.0.0.1:5000",
-      "http://localhost:5173"
+      "http://localhost:5173",
+      "http://192.168.1.3:5000", // ✅ ADD: Network IP for mobile access
+      "http://192.168.1.3:5173" // ✅ ADD: Frontend network IP
+    );
+  }
+
+  // ✅ FIXED: Update img-src to include HTTP for development
+  const imageSources = ["'self'", "data:", "https:"];
+  if (process.env.NODE_ENV === "development") {
+    imageSources.push(
+      "http://localhost:5000",
+      "http://192.168.1.3:5000" // ✅ ADD: Network IP for images
+    );
+  }
+
+  // ✅ FIXED: Update connect-src to include network IP
+  const connectSources = [
+    "'self'",
+    "https://api.fpjs.io",
+    "https://eu.api.fpjs.io",
+    "https://ap.api.fpjs.io",
+    "https://auth.vivokey.com",
+  ];
+
+  if (process.env.NODE_ENV === "development") {
+    connectSources.push(
+      "http://localhost:5000",
+      "http://localhost:3000",
+      "http://127.0.0.1:5000",
+      "http://localhost:5173",
+      "http://192.168.1.3:5000", // ✅ ADD: Network IP for API calls
+      "http://192.168.1.3:5173" // ✅ ADD: Frontend network IP
     );
   }
 
@@ -166,12 +225,8 @@ app.use("/patients", (req, res, next) => {
       `script-src ${scriptSources.join(" ")}; ` +
       `style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; ` +
       `font-src 'self' https://cdnjs.cloudflare.com; ` +
-      `img-src 'self' data: https:; ` +
-      `connect-src 'self' https: data: ${
-        process.env.NODE_ENV === "development"
-          ? "http://localhost:5000 http://localhost:3000 http://127.0.0.1:5000 http://localhost:5173"
-          : ""
-      }; ` +
+      `img-src ${imageSources.join(" ")}; ` + // ✅ FIXED: Use dynamic image sources
+      `connect-src ${connectSources.join(" ")}; ` + // ✅ FIXED: Use dynamic connect sources
       `object-src 'none'; ` +
       `frame-ancestors 'self';`
   );
@@ -185,6 +240,16 @@ app.use((req, res, next) => {
   res.setHeader("X-Frame-Options", "SAMEORIGIN"); // Changed from DENY for Safari iOS compatibility
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
 
+  // ✅ FIX: Only set COOP and OAC headers for HTTPS in production
+  if (
+    process.env.NODE_ENV === "production" ||
+    req.secure ||
+    req.headers["x-forwarded-proto"] === "https"
+  ) {
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    res.setHeader("Origin-Agent-Cluster", "?1");
+  }
+
   // Special headers for file viewing endpoints with Safari iOS considerations
   if (req.url.includes("/view")) {
     res.setHeader(
@@ -194,11 +259,13 @@ app.use((req, res, next) => {
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
 
-    // More permissive CSP for Safari iOS file viewing
-    res.setHeader(
-      "Content-Security-Policy",
-      "default-src 'self' 'unsafe-inline'; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
-    );
+    // ✅ FIXED: More permissive CSP for Safari iOS file viewing with network IP support
+    const fileViewCSP =
+      process.env.NODE_ENV === "development"
+        ? "default-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:5000 http://192.168.1.3:5000; style-src 'self' 'unsafe-inline';"
+        : "default-src 'self' 'unsafe-inline'; img-src 'self' data:; style-src 'self' 'unsafe-inline';";
+
+    res.setHeader("Content-Security-Policy", fileViewCSP);
   }
 
   next();
@@ -281,6 +348,14 @@ app.use(
     setHeaders: (res, path) => {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Cache-Control", "public, max-age=31536000"); // 1 year for static assets
+
+      // ✅ FIX: Allow cross-origin access in development for network IP
+      if (process.env.NODE_ENV === "development") {
+        res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      }
     },
   })
 );
@@ -293,6 +368,14 @@ app.use(
       if (filePath.endsWith(".js")) {
         res.setHeader("Content-Type", "application/javascript");
         res.setHeader("Cache-Control", "public, max-age=86400"); // 1 day cache for JS files
+
+        // ✅ FIX: Allow cross-origin access in development for network IP
+        if (process.env.NODE_ENV === "development") {
+          res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+          res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+        }
       }
     },
   })
@@ -686,7 +769,7 @@ app.get("/api/ip-location", async (req, res) => {
 //     const tokenResult = await pool.request().input("tokenId", sql.NVarChar, id)
 //       .query(`
 //         SELECT patientUserId, patientName, status
-//         FROM SmartTokens 
+//         FROM SmartTokens
 //         WHERE smartTokenId = @tokenId
 //       `);
 
@@ -709,13 +792,13 @@ app.get("/api/ip-location", async (req, res) => {
 //       .input("tokenId", sql.NVarChar, id)
 //       .input("timeWindow", sql.DateTime, new Date(Date.now() - 5 * 60 * 1000)) // Last 5 minutes
 //       .query(`
-//         SELECT TOP 1 
-//           isRegisteredDevice, 
+//         SELECT TOP 1
+//           isRegisteredDevice,
 //           deviceName,
 //           accessTime,
 //           deviceType
-//         FROM EnhancedTokenAccessLog 
-//         WHERE tokenId = @tokenId 
+//         FROM EnhancedTokenAccessLog
+//         WHERE tokenId = @tokenId
 //           AND accessTime > @timeWindow
 //           AND isRegisteredDevice = 1
 //         ORDER BY accessTime DESC
@@ -808,7 +891,7 @@ app.get("/api/ip-location", async (req, res) => {
 //       .request()
 //       .input("fingerprintHash", sql.NVarChar, deviceFingerprint.hash)
 //       .input("userId", sql.Int, token.patientUserId).query(`
-//         SELECT df.*, 
+//         SELECT df.*,
 //                CASE WHEN df.registeredBy = @userId THEN 1 ELSE 0 END as isOwnedByPatient
 //         FROM DeviceFingerprints df
 //         WHERE df.userId = @userId
@@ -912,8 +995,8 @@ app.get("/api/ip-location", async (req, res) => {
 //             .request()
 //             .input("logId", sql.Int, logId)
 //             .input("alertsSent", sql.Int, alertResult.smsSuccessful).query(`
-//               UPDATE EnhancedTokenAccessLog 
-//               SET alertsSent = @alertsSent 
+//               UPDATE EnhancedTokenAccessLog
+//               SET alertsSent = @alertsSent
 //               WHERE logId = @logId
 //             `);
 //         }

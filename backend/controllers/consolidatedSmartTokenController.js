@@ -1,4 +1,4 @@
-// controllers/consolidatedSmartTokenController.js - COMPLETE UNIFIED VERSION
+// controllers/consolidatedSmartTokenController.js - COMPLETE FingerprintJS Pro ONLY Implementation
 const { pool, sql } = require("../config/database");
 const { blobServiceClient } = require("../config/azure-storage");
 const fingerprintjsService = require("../services/fingerprintjsService");
@@ -13,11 +13,11 @@ const twilioSMSService = require("../services/twilioSMSService");
 const locationService = require("../services/locationService");
 
 // ============================================================================
-// ENHANCED EMERGENCY ALERT SYSTEM
+// FINGERPRINTJS PRO ONLY DEVICE VERIFICATION - NO FALLBACKS
 // ============================================================================
 
 /**
- * Enhanced device fingerprinting and alert system
+ * FingerprintJS Pro ONLY device verification and alert system
  * Detects unregistered devices and triggers emergency alerts
  */
 const checkDeviceAndTriggerAlerts = async (
@@ -28,381 +28,217 @@ const checkDeviceAndTriggerAlerts = async (
   skipAlertsUntilClientFingerprint = false
 ) => {
   try {
-    const userAgent = req.headers["user-agent"] || "";
-    const ipAddress = getRealUserIP(req);
+    console.log(`🔐 FingerprintJS Pro ONLY device verification started:`);
+    console.log(`   - Token: ${tokenId}`);
+    console.log(`   - Patient: ${patientName} (ID: ${patientUserId})`);
 
-    // ✅ IMPROVED VALIDATION (keep existing validation logic)
-    const isValidPatientUserId =
-      patientUserId &&
-      (typeof patientUserId === "string" ||
-        typeof patientUserId === "number") &&
-      String(patientUserId).trim() !== "" &&
-      String(patientUserId).trim() !== "null" &&
-      String(patientUserId).trim() !== "undefined" &&
-      !String(patientUserId).includes(",") &&
-      !isNaN(parseInt(String(patientUserId))) &&
-      parseInt(String(patientUserId)) > 0;
+    // ✅ CRITICAL: Only accept FingerprintJS Pro fingerprints
+    if (!req.body?.deviceFingerprint) {
+      console.warn("⚠️ No FingerprintJS Pro fingerprint provided");
 
-    const isValidPatientName =
-      patientName &&
-      typeof patientName === "string" &&
-      patientName.trim() !== "" &&
-      patientName.trim() !== "null" &&
-      !patientName.includes(",");
+      // ✅ FIX: Don't trigger alerts on GET requests - only on POST with actual fingerprint data
+      if (req.method === "GET") {
+        console.log(
+          "📝 GET request - skipping alerts, waiting for FingerprintJS Pro data"
+        );
+        return {
+          isRegisteredDevice: false,
+          alertsTriggered: false,
+          error:
+            "Missing FingerprintJS Pro fingerprint - waiting for client data",
+          service: "fingerprintjs_pro_required",
+        };
+      }
 
-    console.log(`🔍 FingerprintJS Pro Device Check Validation:`);
-    console.log(
-      `   - PatientUserId: "${patientUserId}" (valid: ${isValidPatientUserId})`
-    );
-    console.log(
-      `   - PatientName: "${patientName}" (valid: ${isValidPatientName})`
-    );
-
-    if (!isValidPatientUserId) {
-      console.log(
-        `⚠️ SmartToken ${tokenId} accessed but no valid patientUserId. Skipping device check.`
+      // Only trigger alert for POST requests without fingerprint (actual security issue)
+      await triggerEmergencyAlerts(
+        tokenId,
+        patientUserId,
+        patientName,
+        null,
+        {
+          error: "No FingerprintJS Pro fingerprint provided",
+          service: "missing_fpjs",
+          visitorId: "unknown",
+        },
+        null,
+        req
       );
+
       return {
         isRegisteredDevice: false,
-        deviceInfo: { type: "unknown", error: "No valid patient assignment" },
-        enhancedLogId: null,
-        alertsTriggered: false,
-        skippedReason: "No valid patient assignment",
-        tokenStatus: "unassigned",
-        service: "fingerprintjs_pro",
+        alertsTriggered: true,
+        error: "Missing FingerprintJS Pro fingerprint",
+        service: "fingerprintjs_pro_required",
       };
     }
 
-    const cleanPatientUserId = parseInt(String(patientUserId));
-    const cleanPatientName = isValidPatientName
-      ? String(patientName).trim()
-      : "Unknown Patient";
+    const deviceFingerprint = req.body.deviceFingerprint;
+    const visitorId = deviceFingerprint.visitorId;
 
-    console.log(
-      `✅ Proceeding with FingerprintJS Pro device check for patient: ${cleanPatientUserId}`
-    );
-
-    // ✅ ENHANCED: Get comprehensive location data (keep existing location logic)
-    let comprehensiveLocation;
-    try {
-      const gpsCoordinates = req.body?.gpsCoordinates || null;
-      comprehensiveLocation = await locationService.getComprehensiveLocation(
-        req,
-        gpsCoordinates
-      );
-    } catch (locationError) {
-      console.error("Error getting comprehensive location:", locationError);
-      comprehensiveLocation = {
-        primary: null,
-        fallback: await locationService.getLocationFromIP(ipAddress),
-        best: await locationService.getLocationFromIP(ipAddress),
-        hasGPS: false,
-        hasIP: true,
-      };
-    }
-
-    // ✅ UPDATED: Check for FingerprintJS Pro client fingerprint
-    let deviceFingerprint = null;
-    let deviceMetadata = null;
-    let usingClientFingerprint = false;
-
-    // Try to get FingerprintJS Pro fingerprint from request body
-    if (req.body && req.body.deviceFingerprint) {
-      deviceFingerprint = req.body.deviceFingerprint;
-      deviceMetadata = req.body.deviceMetadata;
-      usingClientFingerprint = true;
-
-      // ✅ NEW: Validate FingerprintJS Pro format
-      if (deviceFingerprint.hash && deviceFingerprint.details) {
-        console.log(
-          `📱 Using FingerprintJS Pro fingerprint: ${deviceFingerprint.hash.substring(
-            0,
-            16
-          )}...`
-        );
-        console.log(
-          `   - Confidence: ${
-            deviceFingerprint.metadata?.confidenceScore || "unknown"
-          }`
-        );
-        console.log(
-          `   - Method: ${deviceFingerprint.metadata?.method || "unknown"}`
-        );
-        console.log(
-          `   - Service: ${deviceFingerprint.metadata?.service || "unknown"}`
-        );
-      } else {
-        console.warn(`⚠️ Invalid FingerprintJS Pro format received`);
-        usingClientFingerprint = false;
-        deviceFingerprint = null;
-      }
-    }
-
-    // ✅ UPDATED: Enhanced fallback fingerprint with FingerprintJS Pro compatibility
-    if (!deviceFingerprint && !skipAlertsUntilClientFingerprint) {
-      console.log(
-        "📱 Generating FingerprintJS Pro compatible fallback fingerprint..."
-      );
-      // ✅ FIXED: Stable fingerprint
-      const stableDeviceString = [
-        userAgent,
-        req.headers["accept-language"] || "",
-        req.headers["accept-encoding"] || "",
-        req.headers["accept"] || "",
-      ].join("|");
-
-      deviceFingerprint = {
-        hash: require("crypto")
-          .createHash("sha256")
-          .update(stableDeviceString) // ← FIXED: No date dependency
-          .digest("hex")
-          .substring(0, 20),
-        details: {
-          userAgent: userAgent,
-          ipAddress: ipAddress,
-          timestamp: new Date().toISOString(),
-          method: "fallback_server_side",
-          isFallback: true,
-        },
-        metadata: {
-          method: "server_fallback",
-          service: "fallback_fingerprintjs_compatible",
-          confidenceScore: 0.5, // Lower confidence for fallback
-          consistency: "fallback_only",
-        },
-      };
-
-      deviceMetadata = {
-        deviceName: getDeviceNameFromUserAgent(userAgent),
-        browserName: getBrowserFromUserAgent(userAgent),
-        osName: getOSFromUserAgent(userAgent),
-        deviceType: getDeviceTypeFromUserAgent(userAgent),
-        method: "server_fallback",
-        service: "fallback_fingerprintjs_compatible",
-      };
-    }
-
-    // ✅ UPDATED: Early return for pending client verification
-    if (!deviceFingerprint && skipAlertsUntilClientFingerprint) {
-      console.log(
-        "⏳ Waiting for FingerprintJS Pro client fingerprint before device check..."
-      );
-      return {
-        isRegisteredDevice: null,
-        deviceInfo: { type: "pending", waiting: "fingerprintjs_pro_client" },
-        enhancedLogId: null,
-        alertsTriggered: false,
-        pendingClientVerification: true,
-        service: "fingerprintjs_pro",
-      };
-    }
-
-    await pool.connect();
-
-    // ✅ UPDATED: Enhanced device lookup for FingerprintJS Pro
-    console.log(`🔍 Checking FingerprintJS Pro device registration...`);
-    console.log(`   - Visitor ID: ${deviceFingerprint.hash}`);
-    console.log(`   - Patient ID: ${cleanPatientUserId}`);
-    console.log(
-      `   - Service: ${
-        usingClientFingerprint ? "FingerprintJS Pro" : "Fallback"
-      }`
-    );
-    console.log(
-      `   - Confidence: ${deviceFingerprint.metadata?.confidenceScore || "N/A"}`
-    );
-
-    const deviceCheck = await pool
-      .request()
-      .input("fingerprintHash", sql.NVarChar, deviceFingerprint.hash)
-      .input("userId", sql.Int, cleanPatientUserId)
-      .input("userAgent", sql.NVarChar, userAgent)
-      .input(
-        "screenResolution",
-        sql.NVarChar,
-        deviceFingerprint.details?.screen
-          ? `${deviceFingerprint.details.screen.width}x${deviceFingerprint.details.screen.height}`
-          : "unknown"
-      )
-      .input(
-        "platform",
-        sql.NVarChar,
-        deviceFingerprint.details?.platform || "unknown"
-      ).query(`
-    SELECT df.*, 
-           CASE WHEN df.registeredBy = @userId THEN 1 ELSE 0 END as isOwnedByPatient
-    FROM DeviceFingerprints df
-    WHERE df.userId = @userId
-      AND df.isActive = 1
-      AND (
-        JSON_VALUE(df.fingerprint, '$.hash') = @fingerprintHash
-        OR (df.userAgent = @userAgent AND @userAgent != '' AND LEN(@userAgent) > 10)
-        OR (@platform != 'unknown' AND df.platform = @platform AND df.platform IS NOT NULL)
-      )
-    ORDER BY 
-      CASE 
-        WHEN JSON_VALUE(df.fingerprint, '$.hash') = @fingerprintHash THEN 1 
-        WHEN df.userAgent = @userAgent THEN 2
-        ELSE 3 
-      END,
-      df.registeredAt DESC
-  `);
-
-    const isRegisteredDevice = deviceCheck.recordset.length > 0;
-
-    console.log(`🔍 Device check results:`);
-    console.log(
-      `   - Found ${deviceCheck.recordset.length} matching device(s)`
-    );
-    console.log(`   - Is registered: ${isRegisteredDevice}`);
-
-    if (deviceCheck.recordset.length > 0) {
-      const device = deviceCheck.recordset[0];
-      console.log(`   - Matched device: ${device.deviceName}`);
-      console.log(`   - Registered: ${device.registeredAt}`);
-      console.log(`   - Last updated: ${device.lastUpdated}`);
-    }
-
-    // ✅ ENHANCED: Create comprehensive device info with FingerprintJS Pro data
-    const deviceInfo = {
-      type: deviceMetadata?.deviceType || getDeviceTypeFromUserAgent(userAgent),
-      browser:
-        deviceMetadata?.browserName || getBrowserFromUserAgent(userAgent),
-      os: deviceMetadata?.osName || getOSFromUserAgent(userAgent),
-      deviceName:
-        deviceMetadata?.deviceName || getDeviceNameFromUserAgent(userAgent),
-      isRegistered: isRegisteredDevice,
-      visitorId: deviceFingerprint.hash, // Use visitor ID instead of hash
-      fingerprintHash: deviceFingerprint.hash, // Keep for backward compatibility
-      method: deviceMetadata?.method || "unknown",
-      service:
-        deviceMetadata?.service ||
-        (usingClientFingerprint ? "fingerprintjs_pro" : "fallback"),
-      confidence: deviceFingerprint.metadata?.confidenceScore || 0,
-      isLocalhost: isLocalhost(ipAddress),
-      usingClientFingerprint: usingClientFingerprint,
-      isFingerprintJSPro:
-        usingClientFingerprint && !deviceFingerprint.details?.isFallback,
-    };
-
-    console.log(`🔍 FingerprintJS Pro device check results:`);
-    console.log(
-      `   - Found ${deviceCheck.recordset.length} matching device(s)`
-    );
-    console.log(`   - Is registered: ${isRegisteredDevice}`);
-    console.log(`   - Device: ${deviceInfo.deviceName}`);
-    console.log(`   - Browser: ${deviceInfo.browser} on ${deviceInfo.os}`);
-    console.log(`   - Service: ${deviceInfo.service}`);
-    console.log(`   - Confidence: ${deviceInfo.confidence}`);
-    console.log(`   - Visitor ID: ${deviceInfo.visitorId}`);
-
-    // ✅ UPDATED: Enhanced access logging with FingerprintJS Pro data
-    const accessMode = usingClientFingerprint
-      ? isRegisteredDevice
-        ? "fpjs_registered"
-        : "fpjs_unregistered"
-      : isRegisteredDevice
-      ? "fallback_registered"
-      : "fallback_unregistered";
-
-    const logResult = await pool
-      .request()
-      .input("tokenId", sql.NVarChar, tokenId)
-      .input("containerName", sql.NVarChar, "patient-data")
-      .input("folderName", sql.NVarChar, "emergency-access")
-      .input("ipAddress", sql.NVarChar, ipAddress)
-      .input("accessMode", sql.NVarChar, accessMode)
-      .input(
-        "deviceFingerprint",
-        sql.NVarChar,
-        JSON.stringify(deviceFingerprint)
-      )
-      .input("isRegisteredDevice", sql.Bit, isRegisteredDevice ? 1 : 0)
-      .input("deviceName", sql.NVarChar, deviceInfo.deviceName)
-      .input("deviceType", sql.NVarChar, deviceInfo.type)
-      .input("patientUserId", sql.Int, cleanPatientUserId)
-      .input("userAgent", sql.NVarChar, userAgent)
-      .input(
-        "locationData",
-        sql.NVarChar,
-        JSON.stringify(comprehensiveLocation.best)
-      ).query(`
-    INSERT INTO EnhancedTokenAccessLog (
-      tokenId, containerName, folderName, ipAddress, accessMode,
-      deviceFingerprint, isRegisteredDevice, deviceName, deviceType,
-      patientUserId, userAgent, locationData, alertsSent
-    )
-    OUTPUT INSERTED.logId
-    VALUES (
-      @tokenId, @containerName, @folderName, @ipAddress, @accessMode,
-      @deviceFingerprint, @isRegisteredDevice, @deviceName, @deviceType,
-      @patientUserId, @userAgent, @locationData, 0
-    )
-  `);
-
-    const enhancedLogId = logResult.recordset[0].logId;
-    console.log(
-      `📝 Enhanced FingerprintJS Pro access logged with ID: ${enhancedLogId}`
-    );
-
-    // ✅ UPDATED: Enhanced alert triggering for FingerprintJS Pro
-    let alertsTriggered = false;
-    if (!isRegisteredDevice) {
-      console.log(`🚨 UNREGISTERED DEVICE DETECTED`);
-      console.log(`   - Fingerprint: ${deviceFingerprint.hash}`);
-      console.log(`   - User Agent: ${userAgent.substring(0, 50)}...`);
-      console.log(`   - Service: ${deviceInfo.service}`);
+    // ✅ Validate FingerprintJS Pro data structure
+    if (!visitorId) {
+      console.warn("⚠️ No FingerprintJS Pro visitorId found");
 
       await triggerEmergencyAlerts(
         tokenId,
-        cleanPatientUserId,
-        cleanPatientName,
-        enhancedLogId,
-        deviceInfo,
-        comprehensiveLocation.best,
+        patientUserId,
+        patientName,
+        null,
+        {
+          error: "Invalid FingerprintJS Pro data - no visitorId",
+          service: "invalid_fpjs",
+          visitorId: "missing",
+        },
+        null,
         req
       );
-      alertsTriggered = true;
-    } else if (isRegisteredDevice) {
+
+      return {
+        isRegisteredDevice: false,
+        alertsTriggered: true,
+        error: "No valid FingerprintJS Pro visitorId",
+        service: "fingerprintjs_pro_required",
+      };
+    }
+
+    // ✅ Validate this is actually FingerprintJS Pro data
+    const service = deviceFingerprint.metadata?.service;
+    if (service !== "fingerprintjs_pro") {
+      console.warn(`⚠️ Invalid fingerprint service: ${service}`);
+
+      await triggerEmergencyAlerts(
+        tokenId,
+        patientUserId,
+        patientName,
+        null,
+        {
+          error: `Invalid service: ${service}`,
+          service: service || "unknown",
+          visitorId: visitorId,
+        },
+        null,
+        req
+      );
+
+      return {
+        isRegisteredDevice: false,
+        alertsTriggered: true,
+        error: "Invalid fingerprint service - FingerprintJS Pro required",
+        service: "fingerprintjs_pro_required",
+      };
+    }
+
+    console.log(`🔍 FingerprintJS Pro Device Check:`);
+    console.log(`   - Visitor ID: ${visitorId}`);
+    console.log(`   - Request ID: ${deviceFingerprint.requestId}`);
+    console.log(`   - Confidence: ${deviceFingerprint.confidence}`);
+    console.log(`   - Patient ID: ${patientUserId}`);
+
+    await pool.connect();
+
+    // ✅ Check if this FingerprintJS Pro visitorId is registered for this patient
+    const deviceCheck = await pool
+      .request()
+      .input("patientUserId", sql.Int, patientUserId)
+      .input("visitorId", sql.NVarChar, visitorId).query(`
+        SELECT 
+          fingerprintId,
+          deviceName,
+          deviceType,
+          registeredAt,
+          registeredBy,
+          isActive,
+          confidence,
+          requestId
+        FROM DeviceFingerprints 
+        WHERE isActive = 1
+        AND (userId = @patientUserId OR registeredBy = @patientUserId)
+        AND visitorId = @visitorId
+        ORDER BY registeredAt DESC
+      `);
+
+    const isRegistered = deviceCheck.recordset.length > 0;
+    let alertsTriggered = false;
+
+    console.log(`✅ FingerprintJS Pro device check result:`);
+    console.log(`   - Is registered: ${isRegistered}`);
+    console.log(`   - Matches found: ${deviceCheck.recordset.length}`);
+
+    // ✅ Log the access attempt with FingerprintJS Pro data
+    const enhancedLogId = await logSmartTokenAccess(
+      tokenId,
+      patientUserId,
+      patientName,
+      deviceFingerprint,
+      req,
+      isRegistered
+    );
+
+    if (!isRegistered) {
+      console.log("🚨 UNREGISTERED DEVICE DETECTED - FingerprintJS Pro");
+      console.log("   - Visitor ID:", visitorId);
+      console.log("   - Confidence:", deviceFingerprint.confidence);
+      console.log("   - Request ID:", deviceFingerprint.requestId);
+
+      // Trigger emergency alerts for unregistered device
+      const alertResult = await triggerEmergencyAlerts(
+        tokenId,
+        patientUserId,
+        patientName,
+        enhancedLogId,
+        extractDeviceInfo(deviceFingerprint),
+        null,
+        req
+      );
+
+      alertsTriggered = alertResult.success;
+    } else {
       console.log(
-        `✅ REGISTERED DEVICE (FingerprintJS Pro) - No alerts needed`
+        "✅ REGISTERED DEVICE - No alerts needed (FingerprintJS Pro)"
       );
       const registeredDevice = deviceCheck.recordset[0];
-      console.log(
-        `   - Device registered by user ID: ${registeredDevice.registeredBy}`
-      );
-      console.log(`   - Registration date: ${registeredDevice.registeredAt}`);
-      console.log(`   - Device name: ${registeredDevice.deviceName}`);
-      console.log(`   - Visitor ID: ${deviceInfo.visitorId}`);
-    } else if (!usingClientFingerprint) {
-      console.log(
-        `⏳ Using fallback fingerprint - skipping alerts until FingerprintJS Pro verification`
-      );
+      console.log("   - Device Name:", registeredDevice.deviceName);
+      console.log("   - Device Type:", registeredDevice.deviceType);
+      console.log("   - Registered:", registeredDevice.registeredAt);
+      console.log("   - Visitor ID:", visitorId);
     }
 
     return {
-      isRegisteredDevice,
-      deviceInfo,
+      isRegisteredDevice: isRegistered,
+      deviceInfo: extractDeviceInfo(deviceFingerprint),
       enhancedLogId,
       alertsTriggered,
-      locationData: comprehensiveLocation.best,
-      fingerprintMethod: deviceMetadata?.method || "fallback",
-      usingClientFingerprint,
-      service: deviceInfo.service,
-      confidence: deviceInfo.confidence,
-      visitorId: deviceInfo.visitorId,
+      service: "fingerprintjs_pro",
+      confidence: deviceFingerprint.confidence,
+      visitorId: visitorId,
+      registeredDevice: isRegistered ? deviceCheck.recordset[0] : null,
     };
   } catch (error) {
-    console.error("❌ Error in FingerprintJS Pro device check:", error);
+    console.error("❌ Error in FingerprintJS Pro device verification:", error);
+
+    // On error, trigger alerts as a safety measure
+    try {
+      await triggerEmergencyAlerts(
+        tokenId,
+        patientUserId,
+        patientName,
+        null,
+        {
+          error: error.message,
+          service: "fingerprintjs_pro_error",
+          visitorId: "error",
+        },
+        null,
+        req
+      );
+    } catch (alertError) {
+      console.error("❌ Error triggering emergency alerts:", alertError);
+    }
+
     return {
       isRegisteredDevice: false,
-      deviceInfo: {
-        type: "unknown",
-        error: error.message,
-        service: "fingerprintjs_pro_error",
-      },
-      enhancedLogId: null,
-      alertsTriggered: false,
+      alertsTriggered: true,
       error: error.message,
       service: "fingerprintjs_pro",
     };
@@ -410,23 +246,117 @@ const checkDeviceAndTriggerAlerts = async (
 };
 
 /**
- * ✅ NEW: Helper function to get device name from user agent (fallback)
+ * Extract device information from FingerprintJS Pro fingerprint
  */
-const getDeviceNameFromUserAgent = (userAgent) => {
-  if (/iPhone/i.test(userAgent)) return "iPhone";
-  if (/iPad/i.test(userAgent)) return "iPad";
-  if (/Android/i.test(userAgent)) {
-    const match = userAgent.match(/Android.*?;\s*(.*?)\s*Build/);
-    return match ? match[1] : "Android Device";
+const extractDeviceInfo = (fingerprint) => {
+  const metadata = fingerprint.metadata || {};
+  const details = fingerprint.details || {};
+
+  // Extract IP location from FingerprintJS Pro ipInfo
+  let ipLocation = null;
+  if (fingerprint.ipInfo?.data?.v4?.geolocation) {
+    const geo = fingerprint.ipInfo.data.v4.geolocation;
+    ipLocation = {
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      city: geo.city?.name,
+      region: geo.subdivisions?.[0]?.name,
+      country: geo.country?.name,
+      countryCode: geo.country?.code,
+      postalCode: geo.postalCode,
+      timezone: geo.timezone,
+      accuracyRadius: geo.accuracyRadius,
+      ipAddress: fingerprint.ipInfo.data.v4.address,
+      asn: fingerprint.ipInfo.data.v4.asn?.name,
+    };
   }
-  if (/Mac/i.test(userAgent)) return "Mac";
-  if (/Windows/i.test(userAgent)) return "Windows PC";
-  if (/Linux/i.test(userAgent)) return "Linux PC";
-  return "Unknown Device";
+
+  return {
+    visitorId: fingerprint.visitorId,
+    requestId: fingerprint.requestId,
+    confidence: fingerprint.confidence,
+    service: "fingerprintjs_pro",
+    deviceName:
+      metadata.deviceName ||
+      getDeviceNameFromUserAgent(details.userAgent || ""),
+    browserName:
+      metadata.browserName ||
+      getBrowserNameFromUserAgent(details.userAgent || ""),
+    osName: metadata.osName || getOSNameFromUserAgent(details.userAgent || ""),
+    deviceType:
+      metadata.deviceType ||
+      getDeviceTypeFromUserAgent(details.userAgent || ""),
+    userAgent: details.userAgent || "",
+    ipLocation: ipLocation,
+    hasLocation: !!ipLocation,
+    timestamp: new Date().toISOString(),
+  };
 };
 
 /**
- * Trigger emergency alerts for unregistered device access
+ * Log SmartToken access with FingerprintJS Pro data
+ */
+const logSmartTokenAccess = async (
+  tokenId,
+  patientUserId,
+  patientName,
+  deviceFingerprint,
+  req,
+  isRegistered
+) => {
+  try {
+    await pool.connect();
+
+    const result = await pool
+      .request()
+      .input("tokenId", sql.NVarChar, tokenId)
+      .input("patientUserId", sql.Int, patientUserId)
+      .input("patientName", sql.NVarChar, patientName)
+      .input("accessMode", sql.NVarChar, "smarttoken_fpjs_scan")
+      .input("ipAddress", sql.NVarChar, getRealUserIP(req))
+      .input("userAgent", sql.NVarChar, req.headers["user-agent"] || "")
+      .input(
+        "deviceFingerprint",
+        sql.NVarChar,
+        JSON.stringify(deviceFingerprint)
+      )
+      .input("visitorId", sql.NVarChar, deviceFingerprint.visitorId)
+      .input("confidenceScore", sql.Float, deviceFingerprint.confidence)
+      .input("fingerprintService", sql.NVarChar, "fingerprintjs_pro")
+      .input("isRegisteredDevice", sql.Bit, isRegistered ? 1 : 0).query(`
+       INSERT INTO EnhancedTokenAccessLog (
+          tokenId, patientUserId, accessMode,
+          ipAddress, userAgent, deviceFingerprint,
+          visitorId, confidenceScore, fingerprintService,
+          isRegisteredDevice, accessTime
+        )
+        VALUES (
+          @tokenId, @patientUserId, @accessMode,
+          @ipAddress, @userAgent, @deviceFingerprint,
+          @visitorId, @confidenceScore, @fingerprintService,
+          @isRegisteredDevice, GETDATE()
+        )
+     `);
+
+    const logId = result.recordset[0].logId;
+
+    console.log("📝 SmartToken access logged:", {
+      logId: logId,
+      visitorId: deviceFingerprint.visitorId,
+      confidence: deviceFingerprint.confidence,
+      isRegistered: isRegistered,
+      service: "fingerprintjs_pro",
+    });
+
+    return logId;
+  } catch (error) {
+    console.error("❌ Error logging SmartToken access:", error);
+    return null;
+  }
+};
+
+/**
+ * Trigger emergency alerts for unregistered FingerprintJS Pro device access
  */
 const triggerEmergencyAlerts = async (
   tokenId,
@@ -438,116 +368,19 @@ const triggerEmergencyAlerts = async (
   req
 ) => {
   try {
-    // ✅ IMPROVED VALIDATION (keep existing validation logic)
-    const isValidPatientUserId =
-      patientUserId &&
-      (typeof patientUserId === "string" ||
-        typeof patientUserId === "number") &&
-      String(patientUserId).trim() !== "" &&
-      String(patientUserId).trim() !== "null" &&
-      String(patientUserId).trim() !== "undefined" &&
-      !isNaN(parseInt(String(patientUserId))) &&
-      parseInt(String(patientUserId)) > 0;
-
-    if (!isValidPatientUserId) {
-      console.log(
-        `⚠️ Cannot trigger alerts: invalid patientUserId "${patientUserId}"`
-      );
-      return {
-        success: false,
-        reason: "Invalid patient user ID",
-        patientUserId: patientUserId,
-        service: "fingerprintjs_pro",
-      };
-    }
-
-    const cleanPatientUserId = parseInt(String(patientUserId));
-    const cleanPatientName =
-      patientName && typeof patientName === "string"
-        ? String(patientName).trim()
-        : "Unknown Patient";
-
-    console.log(`🚨 FingerprintJS Pro EMERGENCY ALERT SYSTEM ACTIVATED`);
-    console.log(`   - Token: ${tokenId}`);
-    console.log(
-      `   - Patient: ${cleanPatientName} (ID: ${cleanPatientUserId})`
-    );
-    console.log(
-      `   - Device: ${deviceInfo.type} - ${deviceInfo.browser} on ${deviceInfo.os}`
-    );
-    console.log(`   - Service: ${deviceInfo.service}`);
-    console.log(`   - Confidence: ${deviceInfo.confidence}`);
-    console.log(`   - Visitor ID: ${deviceInfo.visitorId}`);
-    console.log(`   - Location: ${locationData?.type || "unknown"}`);
+    console.log("🚨 FingerprintJS Pro EMERGENCY ALERT SYSTEM ACTIVATED");
+    console.log("   - Token:", tokenId);
+    console.log("   - Patient:", patientName, "(ID:", patientUserId, ")");
+    console.log("   - Visitor ID:", deviceInfo.visitorId || "unknown");
+    console.log("   - Service: FingerprintJS Pro");
+    console.log("   - Confidence:", deviceInfo.confidence || "unknown");
 
     await pool.connect();
 
-    // ✅ ENHANCED: Create FingerprintJS Pro-aware alert message
-    const deviceDescription = `${deviceInfo.type} (${deviceInfo.browser} on ${deviceInfo.os})`;
-    const serviceInfo =
-      deviceInfo.service === "fingerprintjs_pro"
-        ? `with high-confidence device identification (${Math.round(
-            deviceInfo.confidence * 100
-          )}% confidence)`
-        : "with basic device identification";
-
-    const alertMessage = locationService.formatLocationForAlert(
-      locationData,
-      cleanPatientName,
-      `unregistered ${deviceDescription} ${serviceInfo}`
-    );
-
-    console.log(
-      `📱 FingerprintJS Pro alert message preview: ${alertMessage.substring(
-        0,
-        100
-      )}...`
-    );
-
-    // ✅ ENHANCED: Create emergency alert record with FingerprintJS Pro data
-    const alertResult = await pool
-      .request()
-      .input("tokenId", sql.NVarChar, tokenId)
-      .input("patientUserId", sql.Int, cleanPatientUserId)
-      .input("enhancedLogId", sql.Int, enhancedLogId)
-      .input("alertType", sql.NVarChar, "unregistered_device_access")
-      .input("alertMessage", sql.NVarChar, alertMessage)
-      .input("deviceFingerprint", sql.NVarChar, JSON.stringify(deviceInfo))
-      .input(
-        "deviceInfo",
-        sql.NVarChar,
-        `${deviceDescription} (${deviceInfo.service})`
-      )
-      .input("deviceType", sql.NVarChar, deviceInfo.type)
-      .input("locationInfo", sql.NVarChar, JSON.stringify(locationData))
-      .input(
-        "ipAddress",
-        sql.NVarChar,
-        locationData?.ipAddress || getRealUserIP(req)
-      )
-      .input("severity", sql.NVarChar, "high").query(`
-    INSERT INTO SmartTokenEmergencyAlerts (
-      tokenId, patientUserId, enhancedLogId, alertType, alertMessage,
-      deviceFingerprint, deviceInfo, deviceType, locationInfo, ipAddress, severity
-    )
-    OUTPUT INSERTED.alertId
-    VALUES (
-      @tokenId, @patientUserId, @enhancedLogId, @alertType, @alertMessage,
-      @deviceFingerprint, @deviceInfo, @deviceType, @locationInfo, @ipAddress, @severity
-    )
-  `);
-
-    const alertId = alertResult.recordset[0].alertId;
-    console.log(
-      `✅ FingerprintJS Pro emergency alert record created with ID: ${alertId}`
-    );
-
-    // ✅ Continue with existing emergency contact notification logic...
-    // (Keep the rest of the function unchanged)
-
+    // Get emergency contacts
     const contactsResult = await pool
       .request()
-      .input("patientUserId", sql.Int, cleanPatientUserId).query(`
+      .input("patientUserId", sql.Int, patientUserId).query(`
         SELECT contactId, contactName, phoneNumber, relationship, isPrimary
         FROM EmergencyContacts 
         WHERE patientUserId = @patientUserId AND isActive = 1
@@ -557,29 +390,61 @@ const triggerEmergencyAlerts = async (
     const emergencyContacts = contactsResult.recordset;
 
     if (emergencyContacts.length === 0) {
-      console.log(
-        `⚠️ No emergency contacts found for patient ${cleanPatientUserId}`
-      );
-      await pool.request().input("alertId", sql.Int, alertId).query(`
-        UPDATE SmartTokenEmergencyAlerts 
-        SET smsAlertsSent = 0, 
-            emergencyContactsNotified = 0,
-            smsDeliveryStatus = 'NO_CONTACTS_AVAILABLE'
-        WHERE alertId = @alertId
-      `);
-
+      console.log("⚠️ No emergency contacts found for patient", patientUserId);
       return {
         success: false,
         reason: "No emergency contacts found",
-        alertId: alertId,
-        patientUserId: cleanPatientUserId,
+        patientUserId: patientUserId,
         contactCount: 0,
         service: "fingerprintjs_pro",
       };
     }
 
-    // ✅ Enhanced SMS sending with FingerprintJS Pro context
-    let smsResults = [];
+    // Create alert message
+    const deviceDescription = `${deviceInfo.deviceName || "Unknown device"} (${
+      deviceInfo.browserName || "Unknown browser"
+    } on ${deviceInfo.osName || "Unknown OS"})`;
+    const locationText = deviceInfo.ipLocation
+      ? ` from ${deviceInfo.ipLocation.city || "Unknown City"}, ${
+          deviceInfo.ipLocation.region || "Unknown Region"
+        }, ${deviceInfo.ipLocation.country || "Unknown Country"} (IP: ${
+          deviceInfo.ipLocation.ipAddress
+        })`
+      : " from unknown location";
+    // Create trial-safe message
+    const alertMessage = await twilioSMSService.createEmergencyMessage(
+      patientName,
+      deviceInfo,
+      deviceInfo.ipLocation || {}
+    );
+
+    // Create alert record
+    const alertResult = await pool
+      .request()
+      .input("tokenId", sql.NVarChar, tokenId)
+      .input("patientUserId", sql.Int, patientUserId)
+      .input("enhancedLogId", sql.Int, enhancedLogId)
+      .input("alertType", sql.NVarChar, "unregistered_device_fpjs")
+      .input("alertMessage", sql.NVarChar, alertMessage)
+      .input("deviceFingerprint", sql.NVarChar, JSON.stringify(deviceInfo))
+      .input("deviceInfo", sql.NVarChar, deviceDescription)
+      .input("deviceType", sql.NVarChar, deviceInfo.deviceType || "unknown")
+      .input("ipAddress", sql.NVarChar, getRealUserIP(req))
+      .input("severity", sql.NVarChar, "HIGH").query(`
+        INSERT INTO SmartTokenEmergencyAlerts (
+          tokenId, patientUserId, enhancedLogId, alertType, alertMessage,
+          deviceFingerprint, deviceInfo, deviceType, ipAddress, severity
+        )
+        OUTPUT INSERTED.alertId
+        VALUES (
+          @tokenId, @patientUserId, @enhancedLogId, @alertType, @alertMessage,
+          @deviceFingerprint, @deviceInfo, @deviceType, @ipAddress, @severity
+        )
+      `);
+
+    const alertId = alertResult.recordset[0].alertId;
+
+    // Send SMS alerts
     let successfulSMS = 0;
     let failedSMS = 0;
 
@@ -607,28 +472,10 @@ const triggerEmergencyAlerts = async (
           );
         }
 
-        smsResults.push({
-          contactId: contact.contactId,
-          contactName: contact.contactName,
-          phoneNumber: contact.phoneNumber,
-          success: smsResult.success,
-          messageSid: smsResult.sid,
-          error: smsResult.error,
-          sentAt: new Date().toISOString(),
-        });
-
         await new Promise((resolve) => setTimeout(resolve, 500));
       } catch (smsError) {
         failedSMS++;
         console.error(`   ❌ SMS error for ${contact.contactName}:`, smsError);
-        smsResults.push({
-          contactId: contact.contactId,
-          contactName: contact.contactName,
-          phoneNumber: contact.phoneNumber,
-          success: false,
-          error: smsError.message,
-          sentAt: new Date().toISOString(),
-        });
       }
     }
 
@@ -639,6 +486,7 @@ const triggerEmergencyAlerts = async (
           : "ALL_SENT"
         : "ALL_FAILED";
 
+    // Update alert record
     await pool
       .request()
       .input("alertId", sql.Int, alertId)
@@ -652,28 +500,23 @@ const triggerEmergencyAlerts = async (
         WHERE alertId = @alertId
       `);
 
-    console.log(`🏁 FingerprintJS Pro EMERGENCY ALERT SUMMARY:`);
-    console.log(`   - Alert ID: ${alertId}`);
-    console.log(`   - Service: ${deviceInfo.service}`);
-    console.log(`   - Confidence: ${deviceInfo.confidence}`);
-    console.log(`   - Visitor ID: ${deviceInfo.visitorId}`);
-    console.log(`   - Contacts notified: ${emergencyContacts.length}`);
-    console.log(`   - SMS sent: ${successfulSMS}`);
-    console.log(`   - SMS failed: ${failedSMS}`);
-    console.log(`   - Status: ${deliveryStatus}`);
+    console.log("🏁 FingerprintJS Pro EMERGENCY ALERT SUMMARY:");
+    console.log("   - Alert ID:", alertId);
+    console.log("   - Service: FingerprintJS Pro");
+    console.log("   - Visitor ID:", deviceInfo.visitorId);
+    console.log("   - Contacts notified:", emergencyContacts.length);
+    console.log("   - SMS sent:", successfulSMS);
+    console.log("   - Status:", deliveryStatus);
 
     return {
       success: true,
       alertId: alertId,
-      patientUserId: cleanPatientUserId,
-      patientName: cleanPatientName,
+      patientUserId: patientUserId,
+      patientName: patientName,
       contactCount: emergencyContacts.length,
       smsSuccessful: successfulSMS,
       smsFailed: failedSMS,
       deliveryStatus: deliveryStatus,
-      smsResults: smsResults,
-      locationData: locationData,
-      deviceInfo: deviceInfo,
       service: "fingerprintjs_pro",
     };
   } catch (error) {
@@ -692,6 +535,10 @@ const triggerEmergencyAlerts = async (
   }
 };
 
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
 // Enhanced helper function to check if localhost
 const isLocalhost = (ipAddress) => {
   return (
@@ -704,145 +551,62 @@ const isLocalhost = (ipAddress) => {
   );
 };
 
-/**
- * Create alert message with location information
- */
-const createAlertMessage = (patientName, deviceInfo, locationData) => {
-  const deviceDesc = `${deviceInfo.type} (${deviceInfo.browser} on ${deviceInfo.os})`;
-
-  if (locationData.type === "gps" && locationData.address) {
-    return `🚨 SECURITY ALERT: Someone at GPS coordinates ${locationData.latitude}, ${locationData.longitude} (${locationData.address}) just accessed ${patientName}'s SmartToken with an unregistered ${deviceDesc}. If this was not authorized, please contact medical staff immediately.`;
-  } else if (locationData.type === "gps") {
-    return `🚨 SECURITY ALERT: Someone at GPS coordinates ${locationData.latitude}, ${locationData.longitude} just accessed ${patientName}'s SmartToken with an unregistered ${deviceDesc}. If this was not authorized, please contact medical staff immediately.`;
-  } else if (locationData.type === "ip" && locationData.city !== "Unknown") {
-    return `🚨 SECURITY ALERT: Someone in the ${locationData.city}, ${locationData.region} area just accessed ${patientName}'s SmartToken with an unregistered ${deviceDesc}. Location determined from internet connection. If this was not authorized, please contact medical staff immediately.`;
-  } else {
-    return `🚨 SECURITY ALERT: Someone just accessed ${patientName}'s SmartToken with an unregistered ${deviceDesc}. If this was not authorized, please contact medical staff immediately.`;
-  }
-};
-
 // Helper functions for device detection
-const getDeviceTypeFromUserAgent = (userAgent) => {
-  if (
-    /Mobile|Android|iPhone|iPad|iPod|BlackBerry|Windows Phone/i.test(userAgent)
-  ) {
-    return "mobile";
-  }
-  return "desktop";
-};
-
-const getBrowserFromUserAgent = (userAgent) => {
-  if (/Chrome/i.test(userAgent)) return "Chrome";
-  if (/Firefox/i.test(userAgent)) return "Firefox";
-  if (/Safari/i.test(userAgent)) return "Safari";
-  if (/Edge/i.test(userAgent)) return "Edge";
-  return "Unknown";
-};
-
-const getOSFromUserAgent = (userAgent) => {
-  if (/Windows/i.test(userAgent)) return "Windows";
-  if (/Mac OS X/i.test(userAgent)) return "macOS";
-  if (/Android/i.test(userAgent)) return "Android";
-  if (/iPhone OS/i.test(userAgent)) return "iOS";
-  if (/Linux/i.test(userAgent)) return "Linux";
-  return "Unknown";
-};
-
-// ============================================================================
-// HELPER FUNCTIONS (Enhanced with Emergency Features)
-// ============================================================================
-
-/**
- * Get the real user IP address from request headers
- * Handles proxies, load balancers, CDNs, and direct connections
- */
 const getRealUserIP = (req) => {
-  // Check various headers that proxies/load balancers use to forward real IP
   const forwardedFor = req.headers["x-forwarded-for"];
   const realIP = req.headers["x-real-ip"];
-  const cfConnectingIP = req.headers["cf-connecting-ip"]; // Cloudflare
-  const xClientIP = req.headers["x-client-ip"];
-  const xForwardedForAlt = req.headers["x-forwarded"];
-  const forwardedForAlt = req.headers["forwarded-for"];
-  const forwarded = req.headers["forwarded"];
+  const cfConnectingIP = req.headers["cf-connecting-ip"];
 
-  // x-forwarded-for can contain multiple IPs (client, proxy1, proxy2, ...)
-  // The first IP is the original client
   if (forwardedFor) {
     const ips = forwardedFor.split(",").map((ip) => ip.trim());
-    // Return the first non-private IP or the first IP if all are private
-    for (const ip of ips) {
-      if (isValidPublicIP(ip)) {
-        return ip;
-      }
-    }
-    return ips[0]; // Fallback to first IP even if private
+    return ips[0];
   }
 
-  // Check other headers in order of preference
-  if (realIP && isValidIP(realIP)) return realIP;
-  if (cfConnectingIP && isValidIP(cfConnectingIP)) return cfConnectingIP;
-  if (xClientIP && isValidIP(xClientIP)) return xClientIP;
-  if (xForwardedForAlt && isValidIP(xForwardedForAlt)) return xForwardedForAlt;
-  if (forwardedForAlt && isValidIP(forwardedForAlt)) return forwardedForAlt;
-
-  // Parse the forwarded header (more complex format)
-  if (forwarded) {
-    const forMatch = forwarded.match(/for=([^;,\s]+)/);
-    if (forMatch && forMatch[1]) {
-      const ip = forMatch[1].replace(/"/g, "").replace(/\[|\]/g, "");
-      if (isValidIP(ip)) return ip;
-    }
-  }
-
-  // Fallback to connection-level IPs
   return (
+    realIP ||
+    cfConnectingIP ||
     req.connection?.remoteAddress ||
     req.socket?.remoteAddress ||
-    req.req?.connection?.remoteAddress ||
     req.ip ||
     "unknown"
   );
 };
 
-/**
- * Validate if a string is a valid IP address
- */
-const isValidIP = (ip) => {
-  if (!ip || typeof ip !== "string") return false;
-
-  // Remove IPv6 brackets if present
-  ip = ip.replace(/\[|\]/g, "");
-
-  // IPv4 regex
-  const ipv4Regex =
-    /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-
-  // IPv6 regex (simplified)
-  const ipv6Regex = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::1$|^::$/;
-
-  return ipv4Regex.test(ip) || ipv6Regex.test(ip);
+const getDeviceNameFromUserAgent = (userAgent) => {
+  if (/iPhone/i.test(userAgent)) return "iPhone";
+  if (/iPad/i.test(userAgent)) return "iPad";
+  if (/Android/i.test(userAgent)) {
+    const match = userAgent.match(/Android.*?;\s*(.*?)\s*Build/);
+    return match ? match[1].trim() : "Android Device";
+  }
+  if (/Mac/i.test(userAgent)) return "Mac";
+  if (/Windows/i.test(userAgent)) return "Windows PC";
+  return "Unknown Device";
 };
 
-/**
- * Check if IP is a public IP (not private/local)
- */
-const isValidPublicIP = (ip) => {
-  if (!isValidIP(ip)) return false;
+const getBrowserNameFromUserAgent = (userAgent) => {
+  if (/Edg/i.test(userAgent)) return "Edge";
+  if (/Chrome/i.test(userAgent) && !/Edg/i.test(userAgent)) return "Chrome";
+  if (/Firefox/i.test(userAgent)) return "Firefox";
+  if (/Safari/i.test(userAgent) && !/Chrome/i.test(userAgent)) return "Safari";
+  if (/SamsungBrowser/i.test(userAgent)) return "Samsung Internet";
+  return "Unknown Browser";
+};
 
-  // Private IP ranges to exclude
-  const privateRanges = [
-    /^10\./, // 10.0.0.0/8
-    /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
-    /^192\.168\./, // 192.168.0.0/16
-    /^127\./, // 127.0.0.0/8 (localhost)
-    /^169\.254\./, // 169.254.0.0/16 (link-local)
-    /^::1$/, // IPv6 localhost
-    /^fc00:/, // IPv6 private
-    /^fe80:/, // IPv6 link-local
-  ];
+const getOSNameFromUserAgent = (userAgent) => {
+  if (/iPhone|iPad/i.test(userAgent)) return "iOS";
+  if (/Android/i.test(userAgent)) return "Android";
+  if (/Mac OS X/i.test(userAgent)) return "macOS";
+  if (/Windows/i.test(userAgent)) return "Windows";
+  return "Unknown OS";
+};
 
-  return !privateRanges.some((range) => range.test(ip));
+const getDeviceTypeFromUserAgent = (userAgent) => {
+  return /Mobile|Android|iPhone|iPad|iPod|BlackBerry|Windows Phone/i.test(
+    userAgent
+  )
+    ? "mobile"
+    : "desktop";
 };
 
 // Helper function to check if token is revoked/disabled
@@ -970,16 +734,18 @@ const logTokenAccess = async (
 };
 
 // ============================================================================
-// PUBLIC ROUTES (No Authentication Required) - ENHANCED WITH EMERGENCY ALERTS
+// PUBLIC ROUTES (No Authentication Required) - FINGERPRINTJS PRO ONLY
 // ============================================================================
 
-// Main verification endpoint - ENHANCED with device detection and alerts
+// Main verification endpoint - FingerprintJS Pro ONLY
 exports.verifySmartToken = async (req, res) => {
   try {
     const { id } = req.params;
     const { s: signature } = req.query;
 
-    console.log(`🔍 Starting SmartToken verification for: ${id}`);
+    console.log(
+      `🔍 Starting FingerprintJS Pro-only SmartToken verification: ${id}`
+    );
 
     // Validate input
     if (!id || !signature) {
@@ -987,12 +753,10 @@ exports.verifySmartToken = async (req, res) => {
         title: "Invalid Token",
         message: "Invalid token format. Please scan a valid SmartToken.",
         errorCode: "INVALID_FORMAT",
-        instructions:
-          "Please ensure you are scanning a valid SmartToken device.",
       });
     }
 
-    // Check if token is revoked/disabled FIRST
+    // Check token status
     const tokenStatus = await checkTokenStatus(id);
     if (tokenStatus.isRevoked) {
       return res.status(403).render("tokenRevoked", {
@@ -1003,27 +767,14 @@ exports.verifySmartToken = async (req, res) => {
         revokedAt: tokenStatus.revokedAt,
         revokeReason:
           tokenStatus.revokeReason || "Token reported lost or compromised",
-        instructions:
-          "Please contact the medical facility for a replacement token.",
       });
     }
 
-    // Validate signature format
-    if (!signature.match(/^[A-F0-9-]+$/i)) {
-      return res.status(400).render("error", {
-        title: "Invalid Signature",
-        message: "Invalid token signature format.",
-        errorCode: "INVALID_SIGNATURE",
-        instructions: "Please scan the SmartToken again or contact support.",
-      });
-    }
-
+    // Validate signature with VivoKey API
     let vivoKeyResponse;
-
     try {
       console.log(`🔑 Calling VivoKey API for signature validation...`);
 
-      // Call VivoKey Verify API
       vivoKeyResponse = await axios.post(
         "https://auth.vivokey.com/validate",
         {
@@ -1041,289 +792,125 @@ exports.verifySmartToken = async (req, res) => {
       console.log(`✅ VivoKey API Response: ${vivoKeyResponse.data.result}`);
     } catch (apiError) {
       console.log(`❌ VivoKey API Error: ${apiError.message}`);
-      // Handle network/API errors - fallback to offline mode
       return await handleOfflineMode(req, res, id);
     }
 
-    // Handle VivoKey API responses
     if (vivoKeyResponse.data.result === "success") {
       const jwtToken = vivoKeyResponse.data.token;
-
-      // Decode JWT to get secure chip ID
       const decoded = jwt.decode(jwtToken);
+
       if (!decoded || !decoded.sub) {
         return res.status(400).render("error", {
           title: "Token Error",
           message: "Invalid token response from verification service.",
           errorCode: "INVALID_JWT",
-          instructions: "Please try scanning the token again.",
         });
       }
 
       const secureChipId = decoded.sub;
       console.log(`🔐 Extracted secureChipId from JWT: ${secureChipId}`);
 
-      // Check database for token
+      // Get token from database
       await pool.connect();
 
-      // Enhanced token lookup with better error handling
       let tokenRecord = await pool
         .request()
-        .input("smartTokenId", id)
-        .input("secureChipId", secureChipId).query(`
+        .input("smartTokenId", sql.NVarChar, id)
+        .input("secureChipId", sql.NVarChar, secureChipId).query(`
           SELECT 
             st.smartTokenId,
             st.secureChipId,
-            st.productCode,
-            st.devId,
-            st.status,
             st.containerName,
             st.folderName,
             st.patientDateOfBirth,
-            st.assignedAt,
-            st.createdAt,
-            st.revokedAt,
-            st.revokedBy,
-            st.revokeReason,
+            st.status,
             COALESCE(u.name, st.patientName) as patientName,
-            st.patientUserId as tokenPatientUserId,
-            u.userId as userPatientUserId,
-            u.username as patientUsername,
-            COALESCE(st.patientUserId, u.userId) as finalPatientUserId
+            COALESCE(st.patientUserId, u.userId) as patientUserId
           FROM SmartTokens st
           LEFT JOIN Users u ON st.patientUserId = u.userId
           WHERE st.smartTokenId = @smartTokenId AND st.secureChipId = @secureChipId
         `);
 
-      // Fallback if no match
       if (tokenRecord.recordset.length === 0) {
-        console.log(`⚠️ Primary query failed, trying fallback query...`);
-
-        tokenRecord = await pool.request().input("smartTokenId", id).query(`
-          SELECT st.*, u.name as patientName, u.userId as patientUserId
-          FROM SmartTokens st
-          LEFT JOIN Users u ON st.patientUserId = u.userId
-          WHERE st.smartTokenId = @smartTokenId
-        `);
-
-        if (tokenRecord.recordset.length > 0) {
-          console.log(`✅ Fallback query found the token!`);
-          // Update the secureChipId for future use
-          await pool
-            .request()
-            .input("smartTokenId", id)
-            .input("secureChipId", secureChipId).query(`
-              UPDATE SmartTokens 
-              SET secureChipId = @secureChipId 
-              WHERE smartTokenId = @smartTokenId
-            `);
-        }
-      }
-
-      // Auto-enrollment for completely new tokens
-      if (tokenRecord.recordset.length === 0) {
-        console.log(`📝 Auto-enrolling new token...`);
-
-        await pool
-          .request()
-          .input("smartTokenId", id)
-          .input("secureChipId", secureChipId)
-          .input("productCode", decoded.product || 7)
-          .input("devId", decoded.dev_id).query(`
-            INSERT INTO SmartTokens (smartTokenId, secureChipId, productCode, devId, status, createdAt)
-            VALUES (@smartTokenId, @secureChipId, @productCode, @devId, 'unclaimed', GETDATE())
-          `);
-
-        return res.render("tokenStatus", {
-          title: "Token Registered",
-          message:
-            "SmartToken has been registered in the system but is not yet assigned to a patient.",
-          status: "unclaimed",
-          tokenId: id,
-          instructions:
-            "Please contact the medical facility to assign this token to a patient record.",
+        return res.status(404).render("error", {
+          title: "Token Not Found",
+          message: "SmartToken not found in the system.",
+          errorCode: "TOKEN_NOT_FOUND",
         });
       }
 
       const token = tokenRecord.recordset[0];
-      console.log(`✅ Token found and ready for processing:`);
-      console.log(`   - Patient: ${token.patientName || "Not assigned"}`);
-      console.log(`   - PatientUserId: ${token.patientUserId || "NULL"}`);
-      console.log(`   - Status: ${token.status}`);
 
-      const cleanTokenData = {
-        smartTokenId: token.smartTokenId,
-        status: token.status,
-        patientName: token.patientName
-          ? String(token.patientName).trim()
-          : null,
-        patientUserId: token.finalPatientUserId
-          ? String(token.finalPatientUserId).trim()
-          : null,
-        patientUsername: token.patientUsername,
-        patientDateOfBirth: token.patientDateOfBirth,
-        containerName: token.containerName,
-        folderName: token.folderName,
-        assignedAt: token.assignedAt,
-      };
-
-      // Handle different token statuses
-      if (token.status === "unclaimed") {
+      if (token.status !== "assigned") {
         return res.render("tokenStatus", {
           title: "Token Not Assigned",
-          message:
-            "This SmartToken is registered but not yet assigned to a patient.",
-          status: "unassigned",
+          message: "This SmartToken is not assigned to a patient.",
+          status: token.status,
           tokenId: id,
-          instructions:
-            "Please contact the medical facility to assign this token to a patient record.",
         });
       }
 
-      if (token.status === "inactive") {
-        return res.status(403).render("error", {
-          title: "Token Inactive",
-          message: "This SmartToken has been deactivated.",
-          errorCode: "TOKEN_INACTIVE",
-          instructions: "Please contact the medical facility for assistance.",
-        });
-      }
-
-      // ✅ ENHANCED: Get comprehensive location data BEFORE device check
-      let comprehensiveLocation;
-      try {
-        // Try to get GPS coordinates from request body if available
-        const gpsCoordinates = req.body?.gpsCoordinates || null;
-        comprehensiveLocation = await locationService.getComprehensiveLocation(
-          req,
-          gpsCoordinates
-        );
-
-        console.log("📍 Location Collection Results:", {
-          hasGPS: comprehensiveLocation.hasGPS,
-          hasIP: comprehensiveLocation.hasIP,
-          bestType: comprehensiveLocation.best?.type,
-          gpsFromBody: !!req.body?.gpsCoordinates,
-        });
-      } catch (locationError) {
-        console.error("Error getting comprehensive location:", locationError);
-        // Fallback to basic IP location
-        comprehensiveLocation = {
-          primary: null,
-          fallback: await locationService.getLocationFromIP(getRealUserIP(req)),
-          best: await locationService.getLocationFromIP(getRealUserIP(req)),
-          hasGPS: false,
-          hasIP: true,
-        };
-      }
-
-      // ✅ ENHANCED: Check device and trigger alerts with location data
       console.log(
-        `🔍 Starting device check for patient: ${token.patientUserId}`
+        `✅ Token found and ready for FingerprintJS Pro verification:`
       );
+      console.log(`   - Patient: ${token.patientName}`);
+      console.log(`   - PatientUserId: ${token.patientUserId}`);
 
-      const deviceCheckResult = await checkDeviceAndTriggerAlerts(
+      // Perform FingerprintJS Pro device verification
+      const deviceVerification = await checkDeviceAndTriggerAlerts(
         req,
         id,
-        cleanTokenData.patientUserId,
-        cleanTokenData.patientName,
-        false
+        token.patientUserId,
+        token.patientName,
+        true
       );
 
-      console.log(`✅ Device check completed:`);
+      console.log(`✅ FingerprintJS Pro verification completed:`);
       console.log(
-        `   - Registered Device: ${deviceCheckResult.isRegisteredDevice}`
-      );
-      console.log(
-        `   - Alerts Triggered: ${deviceCheckResult.alertsTriggered}`
+        `   - Registered Device: ${deviceVerification.isRegisteredDevice}`
       );
       console.log(
-        `   - Location Type: ${
-          deviceCheckResult.locationData?.type || "unknown"
-        }`
+        `   - Alerts Triggered: ${deviceVerification.alertsTriggered}`
       );
-
-      // Continue with normal patient data display...
-      const accessTime = new Date().toISOString();
-
-      // Log the basic access
-      await logTokenAccess(
-        id,
-        token.containerName,
-        token.folderName,
-        getRealUserIP(req),
-        "emergency"
-      );
+      console.log(`   - Visitor ID: ${deviceVerification.visitorId}`);
 
       // Get patient files
-      const containerName = token.assignedContainer || token.containerName;
-      const folderName = token.assignedFolder || token.folderName;
-
-      if (!containerName || !folderName) {
-        return res.render("tokenStatus", {
-          title: "No Files Assigned",
-          message:
-            "This SmartToken is valid but no medical files have been assigned yet.",
-          status: "no_files",
-          tokenId: id,
-          patientName: token.patientName,
-          instructions:
-            "Please contact the medical facility to assign medical files to this token.",
-        });
-      }
-
-      // Get files from Azure Storage
       const patientFiles = await getPatientFilesFromAzure(
-        containerName,
-        folderName
+        token.containerName,
+        token.folderName
       );
-
-      // Files will use view-only access through the emergency endpoint
       const filesForDisplay = patientFiles.map((file) => ({
         ...file,
         emergencyAccess: true,
       }));
 
-      // Format patient date of birth
+      // Format date of birth
       const formattedDOB = formatDateOfBirth(token.patientDateOfBirth);
 
-      console.log(`🎉 Successfully rendering patient data page`);
-
-      // ✅ ENHANCED: Use the best available location data for display
-      const displayLocationData =
-        deviceCheckResult.locationData || comprehensiveLocation.best;
-
-      // Render patient data page with enhanced location info
+      // Render patient data page
       return res.render("patientData", {
-        title: `Patient Data - ${token.patientName || token.folderName}`,
-        patientName: cleanTokenData.patientName || "Unknown Patient",
+        title: `Patient Data - ${token.patientName}`,
+        patientName: token.patientName,
         patientDateOfBirth: formattedDOB,
-        containerName: containerName,
-        folderName: folderName,
+        containerName: token.containerName,
+        folderName: token.folderName,
         files: filesForDisplay,
         isEmergencyAccess: true,
-        accessTime: accessTime,
+        accessTime: new Date().toISOString(),
         tokenId: id,
         formatFileSize: formatFileSize,
-        // ✅ ENHANCED: Device and location information
-        deviceInfo: deviceCheckResult.deviceInfo,
-        isRegisteredDevice: deviceCheckResult.isRegisteredDevice,
-        alertsTriggered: deviceCheckResult.alertsTriggered,
-        securityNotice: !deviceCheckResult.isRegisteredDevice
+        deviceInfo: deviceVerification.deviceInfo,
+        isRegisteredDevice: deviceVerification.isRegisteredDevice,
+        alertsTriggered: deviceVerification.alertsTriggered,
+        securityNotice: !deviceVerification.isRegisteredDevice
           ? "Emergency contacts have been notified of this access from an unregistered device."
           : null,
-        // ✅ ENHANCED: Comprehensive location data
-        locationData: displayLocationData,
-        hasGPS: comprehensiveLocation?.hasGPS || false,
-        hasIP: comprehensiveLocation?.hasIP || false,
         accessIP: getRealUserIP(req),
       });
     } else if (vivoKeyResponse.data.result === "expired") {
       return res.render("tokenExpired", {
         title: "Token Expired",
         message: "This SmartToken link has expired.",
-        instructions:
-          "Please scan the SmartToken again to generate a new link.",
         tokenId: id,
       });
     } else if (vivoKeyResponse.data.result === "invalid") {
@@ -1331,15 +918,12 @@ exports.verifySmartToken = async (req, res) => {
         title: "Invalid Token",
         message: "This SmartToken signature is invalid.",
         errorCode: "INVALID_TOKEN",
-        instructions:
-          "Please ensure you are scanning a valid SmartToken device.",
       });
     } else {
       return res.status(400).render("error", {
         title: "Unknown Response",
         message: "Received unknown response from verification service.",
         errorCode: "UNKNOWN_RESPONSE",
-        instructions: "Please try again or contact technical support.",
       });
     }
   } catch (error) {
@@ -1348,7 +932,6 @@ exports.verifySmartToken = async (req, res) => {
       title: "System Error",
       message: "An error occurred while verifying the SmartToken.",
       errorCode: "SYSTEM_ERROR",
-      instructions: "Please try again or contact technical support.",
     });
   }
 };
@@ -1689,7 +1272,7 @@ exports.getPatientFileViewOnly = async (req, res) => {
 };
 
 // ============================================================================
-// ADMIN API ENDPOINTS (Authentication Required)
+// ADMIN API ENDPOINTS (Authentication Required) - UNCHANGED
 // ============================================================================
 
 // Get unclaimed tokens
@@ -1725,7 +1308,7 @@ exports.getUnclaimedTokens = async (req, res) => {
   }
 };
 
-// ✅ Get all tokens with user associations (ENHANCED)
+// Get all tokens with user associations
 exports.getAllAssignedTokens = async (req, res) => {
   try {
     if (!req.user || req.user.role !== "admin") {
@@ -1782,7 +1365,7 @@ exports.getAllAssignedTokens = async (req, res) => {
   }
 };
 
-// ✅ Get patients for assignment dropdown (ENHANCED)
+// Get patients for assignment dropdown
 exports.getPatientsForAssignment = async (req, res) => {
   try {
     if (!req.user || req.user.role !== "admin") {
@@ -1821,7 +1404,7 @@ exports.getPatientsForAssignment = async (req, res) => {
   }
 };
 
-// ✅ Get doctors for patient (ENHANCED)
+// Get doctors for patient
 exports.getDoctorsForPatient = async (req, res) => {
   try {
     const { patientUserId } = req.params;
@@ -1860,7 +1443,7 @@ exports.getDoctorsForPatient = async (req, res) => {
   }
 };
 
-// ✅ Enhanced token assignment (ENHANCED)
+// Enhanced token assignment
 exports.assignTokenEnhanced = async (req, res) => {
   try {
     const {
@@ -2065,7 +1648,7 @@ exports.assignTokenEnhanced = async (req, res) => {
   }
 };
 
-// ✅ Get assigned folders for container (ENHANCED) - FIXES 404 ERROR!
+// Get assigned folders for container
 exports.getAssignedFolders = async (req, res) => {
   try {
     const { containerName } = req.params;
@@ -2120,7 +1703,7 @@ exports.getAssignedFolders = async (req, res) => {
   }
 };
 
-// ✅ Delete token (ENHANCED)
+// Delete token
 exports.deleteSmartToken = async (req, res) => {
   try {
     const { tokenId } = req.params;
@@ -2507,6 +2090,7 @@ exports.getSmartTokenLogs = async (req, res) => {
   }
 };
 
+// Get user's tokens
 exports.getMyTokens = async (req, res) => {
   try {
     if (!req.user) {
@@ -2590,7 +2174,7 @@ exports.getMyTokens = async (req, res) => {
   }
 };
 
-// ✅ Get my alerts (using recent access logs as alerts)
+// Get my alerts (using recent access logs as alerts)
 exports.getMyAlerts = async (req, res) => {
   try {
     if (!req.user) {
@@ -2685,7 +2269,7 @@ exports.getMyAlerts = async (req, res) => {
   }
 };
 
-// ✅ Mark alert as read (placeholder)
+// Mark alert as read (placeholder)
 exports.markAlertAsRead = async (req, res) => {
   try {
     const { alertId } = req.params;
@@ -2712,7 +2296,7 @@ exports.markAlertAsRead = async (req, res) => {
   }
 };
 
-// ✅ Get device logs for a token
+// Get device logs for a token
 exports.getDeviceLogs = async (req, res) => {
   try {
     const { tokenId } = req.params;
@@ -2799,6 +2383,152 @@ exports.getDeviceLogs = async (req, res) => {
   }
 };
 
+exports.triggerManualEmergencyAlert = async (req, res) => {
+  try {
+    const { id } = req.params; // Token ID
+    const {
+      patientName,
+      alertType = "manual_emergency_alert",
+      deviceInfo,
+      locationData,
+      triggerSource = "patient_emergency_button",
+    } = req.body;
+
+    console.log(`🚨 MANUAL EMERGENCY ALERT TRIGGERED:`);
+    console.log(`   - Token: ${id}`);
+    console.log(`   - Patient: ${patientName}`);
+    console.log(`   - Trigger: ${triggerSource}`);
+
+    // Get token information from database
+    await pool.connect();
+
+    const tokenResult = await pool
+      .request()
+      .input("smartTokenId", sql.NVarChar, id).query(`
+        SELECT 
+          st.smartTokenId,
+          st.patientUserId,
+          st.patientName,
+          st.containerName,
+          st.folderName,
+          st.status
+        FROM SmartTokens st
+        WHERE st.smartTokenId = @smartTokenId
+      `);
+
+    if (tokenResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "SmartToken not found",
+        error: "TOKEN_NOT_FOUND",
+      });
+    }
+
+    const token = tokenResult.recordset[0];
+
+    if (token.status !== "assigned") {
+      return res.status(400).json({
+        success: false,
+        message: "SmartToken is not assigned to a patient",
+        error: "TOKEN_NOT_ASSIGNED",
+      });
+    }
+
+    console.log(`✅ Token validated for manual emergency alert:`);
+    console.log(`   - Patient ID: ${token.patientUserId}`);
+    console.log(`   - Patient Name: ${token.patientName}`);
+
+    // Trigger the emergency alert system
+    const alertResult = await triggerEmergencyAlerts(
+      id,
+      token.patientUserId,
+      token.patientName || patientName,
+      null, // enhancedLogId - will be created in the function
+      {
+        ...deviceInfo,
+        alertType: alertType,
+        triggerSource: triggerSource,
+        manualTrigger: true,
+        visitorId: "manual_trigger",
+        service: "manual_emergency_alert",
+        confidence: 1.0,
+        timestamp: new Date().toISOString(),
+      },
+      locationData,
+      req
+    );
+
+    // Log the manual trigger event
+    try {
+      await pool
+        .request()
+        .input("tokenId", sql.NVarChar, id)
+        .input("patientUserId", sql.Int, token.patientUserId)
+        .input("patientName", sql.NVarChar, token.patientName)
+        .input("accessMode", sql.NVarChar, "manual_emergency_alert")
+        .input("ipAddress", sql.NVarChar, getRealUserIP(req))
+        .input("userAgent", sql.NVarChar, req.headers["user-agent"] || "")
+        .input("deviceInfo", sql.NVarChar, JSON.stringify(deviceInfo))
+        .input("locationData", sql.NVarChar, JSON.stringify(locationData))
+        .query(`
+          INSERT INTO EnhancedTokenAccessLog (
+            tokenId, patientUserId, accessMode, ipAddress, userAgent,
+            deviceFingerprint, visitorId, fingerprintService, 
+            isRegisteredDevice, accessTime
+          )
+          VALUES (
+            @tokenId, @patientUserId, @accessMode, @ipAddress, @userAgent,
+            @deviceInfo, 'manual_trigger', 'manual_emergency_alert',
+            1, GETDATE()
+          )
+        `);
+
+      console.log("📝 Manual emergency alert trigger logged");
+    } catch (logError) {
+      console.error("❌ Error logging manual emergency alert:", logError);
+      // Don't fail the request if logging fails
+    }
+
+    if (alertResult.success) {
+      console.log("✅ Manual emergency alert sent successfully");
+
+      res.json({
+        success: true,
+        message: "Emergency alert sent successfully",
+        alertId: alertResult.alertId,
+        patientName: token.patientName,
+        contactCount: alertResult.contactCount,
+        smsSuccessful: alertResult.smsSuccessful,
+        smsFailed: alertResult.smsFailed,
+        deliveryStatus: alertResult.deliveryStatus,
+        triggerSource: triggerSource,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      console.error("❌ Manual emergency alert failed:", alertResult.reason);
+
+      res.status(500).json({
+        success: false,
+        message: "Failed to send emergency alert",
+        error: alertResult.reason || "Unknown error",
+        reason: alertResult.reason,
+        contactCount: alertResult.contactCount || 0,
+        patientUserId: token.patientUserId,
+      });
+    }
+  } catch (error) {
+    console.error("❌ CRITICAL ERROR in manual emergency alert:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "System error while sending emergency alert",
+      error: error.message,
+      critical: true,
+    });
+  }
+};
+
+// Export the trigger function for use in other parts of the app
 exports.triggerEmergencyAlerts = triggerEmergencyAlerts;
 
 module.exports = exports;
