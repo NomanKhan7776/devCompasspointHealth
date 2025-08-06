@@ -302,19 +302,58 @@ const smartTokenAPI = {
 
 // Device Management API - ENHANCED with Emergency Features
 const deviceAPI = {
-  // Core device management
-  registerDevice: (deviceData) => api.post("/devices/register", deviceData),
+  // Core device management with enhanced payload structure
+  registerDevice: (deviceData) => {
+    console.log("📤 Device API: Sending registration request:", {
+      endpoint: "/devices/register",
+      visitorId: deviceData.deviceFingerprint?.visitorId,
+      requestId: deviceData.deviceFingerprint?.requestId,
+      confidenceScore: deviceData.deviceFingerprint?.confidenceScore,
+      service: deviceData.deviceFingerprint?.metadata?.service,
+      deviceName: deviceData.deviceName,
+      deviceType: deviceData.deviceType,
+    });
+
+    return api.post("/devices/register", deviceData);
+  },
+
   getMyDevices: () => api.get("/devices/my-devices"),
-  removeDevice: (fingerprintId) => api.delete(`/devices/${fingerprintId}`),
+  removeDevice: (fingerprintId, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.permanent) {
+      params.append("permanent", "true");
+    }
+
+    const url = `/devices/${fingerprintId}${
+      params.toString() ? `?${params.toString()}` : ""
+    }`;
+    return api.delete(url);
+  },
 
   // QR Code functionality for family registration
   generateQRForFamilyRegistration: () => api.post("/devices/generate-qr"),
-  registerDeviceViaQR: (qrToken, deviceData) =>
-    api.post(`/devices/register-via-qr/${qrToken}`, deviceData),
+  registerDeviceViaQR: (qrToken, deviceData) => {
+    console.log("📤 Device API: Sending QR registration request:", {
+      endpoint: `/devices/register-via-qr/${qrToken}`,
+      visitorId: deviceData.deviceFingerprint?.visitorId,
+      service: deviceData.deviceFingerprint?.metadata?.service,
+      deviceName: deviceData.deviceName,
+    });
+
+    return api.post(`/devices/register-via-qr/${qrToken}`, deviceData);
+  },
   checkQRStatus: (qrToken) => api.get(`/devices/qr-status/${qrToken}`),
 
-  // Device verification
-  verifyDevice: (deviceData) => api.post("/devices/verify", deviceData),
+  // Device verification with enhanced payload structure
+  verifyDevice: (deviceData) => {
+    console.log("📤 Device API: Sending verification request:", {
+      endpoint: "/devices/verify",
+      visitorId: deviceData.deviceFingerprint?.visitorId,
+      service: deviceData.deviceFingerprint?.metadata?.service,
+    });
+
+    return api.post("/devices/verify", deviceData);
+  },
 
   // Device monitoring
   getDeviceStats: () => api.get("/devices/stats"),

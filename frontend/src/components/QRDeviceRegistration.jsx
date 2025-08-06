@@ -1,8 +1,8 @@
-// components/QRDeviceRegistration.jsx - Enhanced Family Device Registration
+// QRDeviceRegistration.jsx - FingerprintJS Pro ONLY Implementation
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import fingerprintService from "../services/fingerprintService";
+import fingerprintService from "../services/fingerprintService"; // FingerprintJS Pro only
 import { deviceAPI } from "../api";
 
 const QRDeviceRegistration = () => {
@@ -16,44 +16,98 @@ const QRDeviceRegistration = () => {
   const [registrationComplete, setRegistrationComplete] = useState(false);
   const [duplicateDeviceInfo, setDuplicateDeviceInfo] = useState(null);
 
-  // Enhanced service state management
-  const [serviceLoading, setServiceLoading] = useState(true);
-  const [serviceReady, setServiceReady] = useState(false);
-  const [serviceInfo, setServiceInfo] = useState(null);
+  // FingerprintJS Pro specific states
+  const [fpjsReady, setFpjsReady] = useState(false);
+  const [fpjsError, setFpjsError] = useState(null);
+  const [initializingFpjs, setInitializingFpjs] = useState(true);
+  const [fpjsHealthInfo, setFpjsHealthInfo] = useState(null);
 
+  /**
+   * Initialize FingerprintJS Pro - No fallback allowed for family registration
+   */
   const initializeFingerprintService = async () => {
     try {
-      setServiceLoading(true);
+      setInitializingFpjs(true);
+      setFpjsError(null);
+
       console.log(
-        "🔄 Initializing FingerprintJS Pro for family registration..."
+        "🔄 Initializing FingerprintJS Pro for family QR registration..."
       );
 
+      // Initialize FingerprintJS Pro service
       await fingerprintService.initialize();
 
       // Get service health info
       const healthCheck = await fingerprintService.healthCheck();
-      setServiceInfo(healthCheck);
+      setFpjsHealthInfo(healthCheck);
 
-      console.log("✅ FingerprintJS Pro service loaded:", healthCheck);
+      if (healthCheck.status !== "healthy") {
+        throw new Error(
+          `FingerprintJS Pro health check failed: ${healthCheck.error}`
+        );
+      }
+
+      // ✅ REMOVED: testConsistency call since the method doesn't exist
+      // The health check already validates that the service is working properly
+
+      console.log("✅ FingerprintJS Pro ready for family registration:", {
+        testVisitorId: healthCheck.testVisitorId,
+        confidence: healthCheck.confidence,
+        service: healthCheck.service,
+        adblockerResistant: healthCheck.adblockerResistant,
+      });
 
       // Enhanced device auto-detection
       const detectedName = await autoDetectDeviceName();
       setDeviceName(detectedName);
 
-      setServiceReady(true);
-      console.log("✅ FingerprintJS Pro ready for family device registration");
+      setFpjsReady(true);
+      console.log(
+        "✅ FingerprintJS Pro service ready for family device registration"
+      );
     } catch (error) {
-      console.error("❌ Error initializing FingerprintJS Pro:", error);
-      toast.error("Failed to initialize device fingerprinting service");
-      setServiceReady(false);
+      console.error("❌ FingerprintJS Pro initialization failed:", error);
+      setFpjsError(error.message);
+      setFpjsReady(false);
+
+      // Check if it's an adblocker issue
+      const isAdblockerIssue =
+        error.message.toLowerCase().includes("blocked") ||
+        error.message.toLowerCase().includes("adblocker");
+
+      if (isAdblockerIssue) {
+        toast.error(
+          "FingerprintJS Pro is being blocked by your adblocker. Please whitelist api.fpjs.io domain or disable adblocker for this site.",
+          {
+            duration: 15000,
+            style: {
+              backgroundColor: "#FEF2F2",
+              color: "#DC2626",
+              border: "1px solid #FECACA",
+            },
+          }
+        );
+      } else {
+        toast.error(
+          "FingerprintJS Pro service failed to initialize. Please refresh the page and try again.",
+          {
+            duration: 10000,
+            style: {
+              backgroundColor: "#FEF2F2",
+              color: "#DC2626",
+              border: "1px solid #FECACA",
+            },
+          }
+        );
+      }
     } finally {
-      setServiceLoading(false);
+      setInitializingFpjs(false);
     }
   };
 
   const autoDetectDeviceName = async () => {
     try {
-      // Try FingerprintJS Pro detection first
+      // Use FingerprintJS Pro service for device detection
       const detectedName = fingerprintService.getDeviceName();
 
       if (detectedName && detectedName !== "Unknown Device") {
@@ -64,7 +118,7 @@ const QRDeviceRegistration = () => {
         return detectedName;
       }
 
-      // Enhanced fallback detection
+      // Enhanced fallback detection if FingerprintJS Pro doesn't provide device name
       const userAgent = navigator.userAgent;
       const isAndroid = /Android/i.test(userAgent);
       const isIPhone = /iPhone/i.test(userAgent);
@@ -75,14 +129,12 @@ const QRDeviceRegistration = () => {
       let fallbackName;
 
       if (isAndroid) {
-        // Enhanced Android device detection
         const modelMatch = userAgent.match(/Android.*?;\s*(.*?)\s*Build/);
         if (modelMatch && modelMatch[1]) {
           const model = modelMatch[1].trim();
-          // Clean up common Android model names
           const cleanModel = model
-            .replace(/^\w+\s/, "") // Remove manufacturer prefix
-            .replace(/Build.*$/, "") // Remove build info
+            .replace(/^\w+\s/, "")
+            .replace(/Build.*$/, "")
             .trim();
           fallbackName = cleanModel || "Android Device";
         } else {
@@ -110,7 +162,9 @@ const QRDeviceRegistration = () => {
 
   useEffect(() => {
     const initializeComponent = async () => {
-      console.log("🚀 Initializing Family QR Device Registration...");
+      console.log(
+        "🚀 Initializing Family QR Device Registration with FingerprintJS Pro..."
+      );
       await initializeFingerprintService();
       await checkQRStatus();
     };
@@ -148,9 +202,15 @@ const QRDeviceRegistration = () => {
     }
   };
 
+  /**
+   * Register family device using ONLY FingerprintJS Pro
+   */
   const registerDevice = async () => {
-    if (!serviceReady) {
-      toast.error("Device fingerprinting service not ready. Please wait...");
+    // Validate FingerprintJS Pro is ready
+    if (!fpjsReady) {
+      toast.error(
+        "FingerprintJS Pro service is not ready. Please wait or refresh the page."
+      );
       return;
     }
 
@@ -163,9 +223,11 @@ const QRDeviceRegistration = () => {
       setRegistering(true);
       setDuplicateDeviceInfo(null);
 
-      console.log("🔄 Generating family device fingerprint...");
+      console.log(
+        "🔄 Generating family device fingerprint with FingerprintJS Pro..."
+      );
 
-      // Generate device fingerprint for family registration
+      // Generate device fingerprint using ONLY FingerprintJS Pro
       const fingerprint = await fingerprintService.generateFingerprint({
         userAction: "family_qr_device_registration",
         qrToken: qrToken,
@@ -176,27 +238,77 @@ const QRDeviceRegistration = () => {
         registrationMethod: "qr_code",
       });
 
-      if (!fingerprint || !fingerprint.hash) {
-        throw new Error("Failed to generate valid device fingerprint");
+      // Validate the fingerprint response
+      if (!fingerprint || !fingerprint.visitorId || !fingerprint.requestId) {
+        throw new Error(
+          "Invalid FingerprintJS Pro response - missing visitorId or requestId"
+        );
       }
 
-      console.log("✅ Family device fingerprint generated:", {
-        visitorId: fingerprint.hash,
-        confidence: fingerprint.metadata?.confidenceScore,
-        method: fingerprint.metadata?.method,
-        service: fingerprint.metadata?.service,
-      });
+      console.log(
+        "✅ Family device fingerprint generated with FingerprintJS Pro:",
+        {
+          visitorId: fingerprint.visitorId,
+          requestId: fingerprint.requestId,
+          confidence: fingerprint.confidence,
+          method: fingerprint.metadata?.method,
+          service: fingerprint.metadata?.service,
+        }
+      );
 
-      console.log("🔄 Registering family device via QR...");
-      const response = await deviceAPI.registerDeviceViaQR(qrToken, {
-        deviceFingerprint: fingerprint,
+      // Verify confidence score
+      if (fingerprint.confidence < 0.5) {
+        console.warn(
+          "⚠️ Low confidence score from FingerprintJS Pro:",
+          fingerprint.confidence
+        );
+        toast.warn(
+          "Device identification confidence is lower than expected, but registration will proceed."
+        );
+      }
+
+      console.log(
+        "🔄 Registering family device via QR with FingerprintJS Pro..."
+      );
+
+      const backendPayload = {
+        deviceFingerprint: {
+          // Top-level properties that backend expects
+          visitorId: fingerprint.visitorId,
+          requestId: fingerprint.requestId,
+          confidenceScore: fingerprint.confidence, // ✅ Backend expects "confidenceScore", not "confidence"
+
+          // Keep all original data
+          hash: fingerprint.hash,
+          confidence: fingerprint.confidence, // Keep original for compatibility
+          details: fingerprint.details,
+          metadata: {
+            ...fingerprint.metadata,
+            confidenceScore: fingerprint.confidence, // Also keep in metadata
+          },
+        },
         deviceName: deviceName.trim(),
+        deviceType: "family", // ✅ Add deviceType as expected by backend
+      };
+
+      console.log("📤 Sending QR family device registration payload:", {
+        visitorId: backendPayload.deviceFingerprint.visitorId,
+        requestId: backendPayload.deviceFingerprint.requestId,
+        confidenceScore: backendPayload.deviceFingerprint.confidenceScore,
+        service: backendPayload.deviceFingerprint.metadata?.service,
+        deviceName: backendPayload.deviceName,
+        deviceType: backendPayload.deviceType,
+        qrToken: qrToken,
       });
+      const response = await deviceAPI.registerDeviceViaQR(
+        qrToken,
+        backendPayload
+      );
 
       if (response.data.success) {
         setRegistrationComplete(true);
         console.log(
-          "✅ Family device registered successfully:",
+          "✅ Family device registered successfully with FingerprintJS Pro:",
           response.data.device
         );
 
@@ -284,10 +396,8 @@ const QRDeviceRegistration = () => {
       }
     } else if (error.response?.data?.message) {
       toast.error(error.response.data.message);
-    } else if (error.name === "FingerprintJSError") {
-      toast.error(
-        "Device fingerprinting failed. Please refresh and try again."
-      );
+    } else if (error.message.includes("FingerprintJS Pro")) {
+      toast.error("FingerprintJS Pro service error: " + error.message);
     } else {
       toast.error("Failed to register family device. Please try again.");
     }
@@ -345,26 +455,99 @@ const QRDeviceRegistration = () => {
     }
   };
 
+  // FingerprintJS Pro Status Component
+  const FingerprintJSStatus = () => {
+    if (initializingFpjs) {
+      return (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
+            <div className="flex-1">
+              <h4 className="text-sm font-medium text-blue-800 mb-1">
+                Initializing FingerprintJS Pro
+              </h4>
+              <p className="text-sm text-blue-700">
+                Setting up advanced device fingerprinting for family
+                registration...
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (fpjsError) {
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="flex items-start space-x-3">
+            <div className="text-red-600 text-xl">❌</div>
+            <div className="flex-1">
+              <h4 className="text-sm font-medium text-red-800 mb-1">
+                FingerprintJS Pro Service Error
+              </h4>
+              <p className="text-sm text-red-700 mb-2">{fpjsError}</p>
+              <p className="text-xs text-red-600 mb-3">
+                Family device registration requires FingerprintJS Pro for
+                reliable device identification.
+              </p>
+              <button
+                onClick={initializeFingerprintService}
+                className="text-sm bg-red-100 text-red-800 px-3 py-1 rounded hover:bg-red-200"
+              >
+                Retry Initialization
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (fpjsReady && fpjsHealthInfo) {
+      return (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center space-x-3">
+            <span className="text-green-600">✅</span>
+            <div className="flex-1">
+              <h4 className="text-sm font-medium text-green-800 mb-1">
+                FingerprintJS Pro Ready
+              </h4>
+              <p className="text-sm text-green-700 mb-1">
+                Advanced device fingerprinting active for family registration
+              </p>
+              <div className="text-xs text-green-600">
+                Confidence: {Math.round((fpjsHealthInfo.confidence || 0) * 100)}
+                % • Visitor ID: {fpjsHealthInfo.visitorId?.substring(0, 8)}...
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   // Enhanced loading state
-  if (serviceLoading || loading) {
+  if (initializingFpjs || loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="max-w-md w-full mx-auto p-6">
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {serviceLoading
-                ? "Initializing Device Fingerprinting..."
+              {initializingFpjs
+                ? "Initializing FingerprintJS Pro..."
                 : "Verifying Family QR Code..."}
             </h3>
             <p className="text-sm text-gray-500">
-              {serviceLoading
-                ? "Setting up FingerprintJS Pro service for family device detection..."
+              {initializingFpjs
+                ? "Setting up advanced device fingerprinting service for reliable family device identification..."
                 : "Please wait while we verify your family registration QR code..."}
             </p>
-            {serviceInfo && (
+            {fpjsHealthInfo && (
               <p className="text-xs text-blue-600 mt-2">
-                Service: {serviceInfo.service || "FingerprintJS Pro"}
+                Service: FingerprintJS Pro • Confidence:{" "}
+                {Math.round((fpjsHealthInfo.confidence || 0) * 100)}%
               </p>
             )}
           </div>
@@ -443,7 +626,8 @@ const QRDeviceRegistration = () => {
           </h2>
           <p className="text-gray-600 mb-4">
             Your device has been successfully registered as a family device for
-            accessing {qrStatus.patientName}'s medical records.
+            accessing {qrStatus.patientName}'s medical records using
+            FingerprintJS Pro.
           </p>
           <p className="text-sm text-gray-500 mb-6">
             You will be redirected to the login page shortly, or you can close
@@ -484,20 +668,8 @@ const QRDeviceRegistration = () => {
           </p>
         </div>
 
-        {/* Service status indicator */}
-        {!serviceReady && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-            <div className="flex items-start space-x-3">
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-amber-600 border-t-transparent mt-0.5"></div>
-              <div className="text-sm text-amber-800">
-                <p className="font-medium mb-1">
-                  Initializing fingerprinting service...
-                </p>
-                <p>Please wait while we complete the setup process.</p>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* FingerprintJS Pro Status */}
+        <FingerprintJSStatus />
 
         {/* Duplicate device warning */}
         {duplicateDeviceInfo && (
@@ -511,8 +683,8 @@ const QRDeviceRegistration = () => {
                   </p>
                   <p className="mb-2">
                     This device is already registered as a family device for{" "}
-                    {qrStatus.patientName}
-                    with the name "{duplicateDeviceInfo.deviceName}".
+                    {qrStatus.patientName} with the name "
+                    {duplicateDeviceInfo.deviceName}".
                   </p>
                   <p className="text-xs text-red-600">
                     Device Type: {duplicateDeviceInfo.deviceType}
@@ -543,9 +715,9 @@ const QRDeviceRegistration = () => {
             <div className="text-sm text-blue-800">
               <p className="font-medium mb-1">Secure Family Access</p>
               <p>
-                This device will be registered using advanced fingerprinting
-                technology. All access will be logged for security and audit
-                purposes.
+                This device will be registered using FingerprintJS Pro advanced
+                fingerprinting technology. All access will be logged for
+                security and audit purposes.
               </p>
             </div>
           </div>
@@ -562,15 +734,16 @@ const QRDeviceRegistration = () => {
             onChange={(e) => setDeviceName(e.target.value)}
             placeholder="Enter a name for this family device"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            disabled={registering || !serviceReady}
+            disabled={registering || !fpjsReady}
           />
           <p className="text-xs text-gray-500 mt-1">
             Example: "Mom's Phone", "Dad's Laptop", "Sister's iPad", "Son's
             Android"
           </p>
-          {serviceReady && deviceName && (
+          {fpjsReady && deviceName && (
             <p className="text-xs text-green-600 mt-1">
-              ✅ Device automatically detected: {deviceName}
+              ✅ Device automatically detected with FingerprintJS Pro:{" "}
+              {deviceName}
             </p>
           )}
         </div>
@@ -583,8 +756,8 @@ const QRDeviceRegistration = () => {
               <p className="font-medium mb-1">Family Access Security</p>
               <p>
                 Only register devices used by trusted family members. Once
-                registered, this device will have authorized access to{" "}
-                {qrStatus.patientName}'s medical records.
+                registered with FingerprintJS Pro, this device will have
+                authorized access to {qrStatus.patientName}'s medical records.
               </p>
             </div>
           </div>
@@ -595,13 +768,13 @@ const QRDeviceRegistration = () => {
           onClick={registerDevice}
           disabled={
             registering ||
-            !serviceReady ||
+            !fpjsReady ||
             !deviceName.trim() ||
             duplicateDeviceInfo
           }
           className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors mb-4 ${
             registering ||
-            !serviceReady ||
+            !fpjsReady ||
             !deviceName.trim() ||
             duplicateDeviceInfo
               ? "bg-gray-400 cursor-not-allowed"
@@ -611,10 +784,10 @@ const QRDeviceRegistration = () => {
           {registering ? (
             <div className="flex items-center justify-center">
               <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-              Registering Family Device...
+              Registering with FingerprintJS Pro...
             </div>
-          ) : !serviceReady ? (
-            "Initializing fingerprinting service..."
+          ) : !fpjsReady ? (
+            "Initializing FingerprintJS Pro..."
           ) : duplicateDeviceInfo ? (
             "Family Device Already Registered"
           ) : (
