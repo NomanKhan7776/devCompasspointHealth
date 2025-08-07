@@ -737,14 +737,14 @@ const logTokenAccess = async (
 // PUBLIC ROUTES (No Authentication Required) - FINGERPRINTJS PRO ONLY
 // ============================================================================
 
-// Main verification endpoint - FingerprintJS Pro ONLY
+// FIXED: Main verification endpoint with SmartToken auto-registration using existing tokenStatus.ejs
 exports.verifySmartToken = async (req, res) => {
   try {
     const { id } = req.params;
     const { s: signature } = req.query;
 
     console.log(
-      `🔍 Starting FingerprintJS Pro-only SmartToken verification: ${id}`
+      `🔍 Starting SmartToken verification with auto-registration: ${id}`
     );
 
     // Validate input
@@ -756,7 +756,7 @@ exports.verifySmartToken = async (req, res) => {
       });
     }
 
-    // Check token status
+    // Check if token is revoked/disabled FIRST
     const tokenStatus = await checkTokenStatus(id);
     if (tokenStatus.isRevoked) {
       return res.status(403).render("tokenRevoked", {
@@ -767,14 +767,26 @@ exports.verifySmartToken = async (req, res) => {
         revokedAt: tokenStatus.revokedAt,
         revokeReason:
           tokenStatus.revokeReason || "Token reported lost or compromised",
+        instructions:
+          "Please contact the medical facility for a replacement token.",
       });
     }
 
-    // Validate signature with VivoKey API
-    let vivoKeyResponse;
-    try {
-      console.log(`🔑 Calling VivoKey API for signature validation...`);
+    // Validate signature format
+    if (!signature.match(/^[A-F0-9-]+$/i)) {
+      return res.status(400).render("error", {
+        title: "Invalid Signature",
+        message: "Invalid token signature format.",
+        errorCode: "INVALID_SIGNATURE",
+        instructions: "Please scan the SmartToken again or contact support.",
+      });
+    }
 
+    let vivoKeyResponse;
+
+    try {
+      // Call VivoKey Verify API
+      console.log(`🔑 Calling VivoKey API for signature validation...`);
       vivoKeyResponse = await axios.post(
         "https://auth.vivokey.com/validate",
         {
@@ -788,31 +800,33 @@ exports.verifySmartToken = async (req, res) => {
           timeout: 10000,
         }
       );
-
       console.log(`✅ VivoKey API Response: ${vivoKeyResponse.data.result}`);
     } catch (apiError) {
       console.log(`❌ VivoKey API Error: ${apiError.message}`);
+      // Handle network/API errors - fallback to offline mode
       return await handleOfflineMode(req, res, id);
     }
 
+    // Handle VivoKey API responses
     if (vivoKeyResponse.data.result === "success") {
       const jwtToken = vivoKeyResponse.data.token;
-      const decoded = jwt.decode(jwtToken);
 
+      // Decode JWT to get secure chip ID
+      const decoded = jwt.decode(jwtToken);
       if (!decoded || !decoded.sub) {
         return res.status(400).render("error", {
           title: "Token Error",
           message: "Invalid token response from verification service.",
           errorCode: "INVALID_JWT",
+          instructions: "Please try scanning the token again.",
         });
       }
 
       const secureChipId = decoded.sub;
       console.log(`🔐 Extracted secureChipId from JWT: ${secureChipId}`);
 
-      // Get token from database
+      // Check database for token
       await pool.connect();
-
       let tokenRecord = await pool
         .request()
         .input("smartTokenId", sql.NVarChar, id)
@@ -824,6 +838,8 @@ exports.verifySmartToken = async (req, res) => {
             st.folderName,
             st.patientDateOfBirth,
             st.status,
+            st.productCode,
+            st.devId,
             COALESCE(u.name, st.patientName) as patientName,
             COALESCE(st.patientUserId, u.userId) as patientUserId
           FROM SmartTokens st
@@ -831,86 +847,186 @@ exports.verifySmartToken = async (req, res) => {
           WHERE st.smartTokenId = @smartTokenId AND st.secureChipId = @secureChipId
         `);
 
+      // ✅ AUTO-REGISTRATION: Auto-enrollment for new tokens
       if (tokenRecord.recordset.length === 0) {
-        return res.status(404).render("error", {
-          title: "Token Not Found",
-          message: "SmartToken not found in the system.",
-          errorCode: "TOKEN_NOT_FOUND",
-        });
+        console.log(`🆕 NEW SMARTTOKEN DETECTED - Auto-registering: ${id}`);
+        console.log(`   - SmartToken ID: ${id}`);
+        console.log(`   - Secure Chip ID: ${secureChipId}`);
+
+        try {
+          const productCode = decoded.product
+            ? parseInt(decoded.product, 10)
+            : 7;
+          const devId = decoded.dev_id || decoded.iss || "unknown";
+          await pool
+            .request()
+            .input("smartTokenId", sql.NVarChar, id)
+            .input("secureChipId", sql.NVarChar, secureChipId)
+            .input("productCode", sql.Int, productCode)
+            .input("devId", sql.NVarChar, devId)
+            .input("status", sql.NVarChar, "unclaimed").query(`
+              INSERT INTO SmartTokens (smartTokenId, secureChipId, productCode, devId, status, createdAt)
+              VALUES (@smartTokenId, @secureChipId, @productCode, @devId, @status, GETDATE())
+            `);
+
+          console.log(
+            `✅ SmartToken auto-registered successfully as 'unclaimed'`
+          );
+
+          // ✅ Use existing tokenStatus.ejs template for newly registered tokens
+          return res.render("tokenStatus", {
+            title: "Token Registered",
+            message:
+              "SmartToken has been registered in the system but is not yet assigned to a patient.",
+            status: "unclaimed",
+            tokenId: id,
+            instructions:
+              "Please contact the medical facility to assign this token to a patient record.",
+          });
+        } catch (registrationError) {
+          console.error(
+            `❌ Failed to auto-register SmartToken:`,
+            registrationError
+          );
+          return res.status(500).render("error", {
+            title: "Registration Failed",
+            message: "Failed to register new SmartToken in the system.",
+            errorCode: "AUTO_REGISTRATION_FAILED",
+            instructions: "Please contact technical support.",
+          });
+        }
       }
 
       const token = tokenRecord.recordset[0];
+      console.log(`✅ Existing SmartToken found in database`);
 
-      if (token.status !== "assigned") {
-        return res.render("tokenStatus", {
-          title: "Token Not Assigned",
-          message: "This SmartToken is not assigned to a patient.",
-          status: token.status,
+      // Double-check token status from database
+      if (token.status === "revoked") {
+        return res.status(403).render("tokenRevoked", {
+          title: "Token Revoked",
+          message: "This SmartToken has been remotely disconnected.",
           tokenId: id,
+          revokedAt: token.revokedAt,
+          revokeReason:
+            token.revokeReason || "Token reported lost or compromised",
+          instructions: "Please contact the medical facility for assistance.",
         });
       }
 
-      console.log(
-        `✅ Token found and ready for FingerprintJS Pro verification:`
-      );
-      console.log(`   - Patient: ${token.patientName}`);
-      console.log(`   - PatientUserId: ${token.patientUserId}`);
+      // ✅ Handle unclaimed tokens (use existing template)
+      if (token.status === "unclaimed") {
+        console.log(`📋 SmartToken is unclaimed - showing status page`);
+        return res.render("tokenStatus", {
+          title: "Token Registered",
+          message:
+            "This SmartToken is registered but not yet assigned to a patient.",
+          status: "unclaimed",
+          tokenId: id,
+          instructions:
+            "Please contact the medical facility to assign this token to a patient record.",
+        });
+      }
 
-      // Perform FingerprintJS Pro device verification
-      const deviceVerification = await checkDeviceAndTriggerAlerts(
-        req,
-        id,
-        token.patientUserId,
-        token.patientName,
-        true
-      );
+      // Check if token is assigned to patient
+      if (
+        token.containerName &&
+        token.folderName &&
+        token.status === "assigned"
+      ) {
+        console.log(
+          `✅ SmartToken is assigned to patient: ${token.patientName}`
+        );
+        console.log(`   - Container: ${token.containerName}`);
+        console.log(`   - Folder: ${token.folderName}`);
 
-      console.log(`✅ FingerprintJS Pro verification completed:`);
-      console.log(
-        `   - Registered Device: ${deviceVerification.isRegisteredDevice}`
-      );
-      console.log(
-        `   - Alerts Triggered: ${deviceVerification.alertsTriggered}`
-      );
-      console.log(`   - Visitor ID: ${deviceVerification.visitorId}`);
+        // Perform device verification for assigned tokens
+        const deviceVerification = await checkDeviceAndTriggerAlerts(
+          req,
+          id,
+          token.patientUserId,
+          token.patientName,
+          true
+        );
 
-      // Get patient files
-      const patientFiles = await getPatientFilesFromAzure(
-        token.containerName,
-        token.folderName
-      );
-      const filesForDisplay = patientFiles.map((file) => ({
-        ...file,
-        emergencyAccess: true,
-      }));
+        console.log(`✅ Device verification completed:`);
+        console.log(
+          `   - Registered Device: ${deviceVerification.isRegisteredDevice}`
+        );
+        console.log(
+          `   - Alerts Triggered: ${deviceVerification.alertsTriggered}`
+        );
 
-      // Format date of birth
-      const formattedDOB = formatDateOfBirth(token.patientDateOfBirth);
+        // Get patient files from Azure
+        const patientFiles = await getPatientFilesFromAzure(
+          token.containerName,
+          token.folderName
+        );
 
-      // Render patient data page
-      return res.render("patientData", {
-        title: `Patient Data - ${token.patientName}`,
-        patientName: token.patientName,
-        patientDateOfBirth: formattedDOB,
-        containerName: token.containerName,
-        folderName: token.folderName,
-        files: filesForDisplay,
-        isEmergencyAccess: true,
-        accessTime: new Date().toISOString(),
-        tokenId: id,
-        formatFileSize: formatFileSize,
-        deviceInfo: deviceVerification.deviceInfo,
-        isRegisteredDevice: deviceVerification.isRegisteredDevice,
-        alertsTriggered: deviceVerification.alertsTriggered,
-        securityNotice: !deviceVerification.isRegisteredDevice
-          ? "Emergency contacts have been notified of this access from an unregistered device."
-          : null,
-        accessIP: getRealUserIP(req),
-      });
+        // Files will use view-only access through the emergency endpoint
+        const filesForDisplay = patientFiles.map((file) => ({
+          ...file,
+          // Add emergency access info
+          emergencyAccess: true,
+        }));
+
+        // Log access for audit with real user IP
+        await logTokenAccess(
+          id,
+          token.containerName,
+          token.folderName,
+          getRealUserIP(req),
+          "online"
+        );
+
+        // Format patient date of birth
+        const formattedDOB = formatDateOfBirth(token.patientDateOfBirth);
+
+        // Security notice
+        let securityNotice = null;
+        if (
+          !deviceVerification.isRegisteredDevice &&
+          deviceVerification.alertsTriggered
+        ) {
+          securityNotice =
+            "Emergency contacts have been notified of this access from an unregistered device.";
+        }
+
+        // Render patient data page with view-only access - Universal browser compatible
+        return res.render("patientData", {
+          title: `Patient Data - ${token.patientName || token.folderName}`,
+          patientName: token.patientName || token.folderName,
+          patientDateOfBirth: formattedDOB, // Add formatted DOB
+          containerName: token.containerName,
+          folderName: token.folderName,
+          files: filesForDisplay,
+          isEmergencyAccess: true,
+          accessTime: new Date().toISOString(),
+          tokenId: id,
+          formatFileSize: formatFileSize,
+          deviceInfo: deviceVerification.deviceInfo,
+          isRegisteredDevice: deviceVerification.isRegisteredDevice,
+          alertsTriggered: deviceVerification.alertsTriggered,
+          securityNotice: securityNotice,
+          accessIP: getRealUserIP(req),
+        });
+      } else {
+        // ✅ Use existing template for unassigned tokens
+        return res.render("tokenStatus", {
+          title: "Token Not Assigned",
+          message:
+            "This SmartToken is registered but not assigned to any patient.",
+          status: "unassigned",
+          tokenId: id,
+          instructions:
+            "Please contact the medical facility to assign this token to a patient record.",
+        });
+      }
     } else if (vivoKeyResponse.data.result === "expired") {
       return res.render("tokenExpired", {
         title: "Token Expired",
         message: "This SmartToken link has expired.",
+        instructions:
+          "Please scan the SmartToken again to generate a new link.",
         tokenId: id,
       });
     } else if (vivoKeyResponse.data.result === "invalid") {
@@ -918,12 +1034,15 @@ exports.verifySmartToken = async (req, res) => {
         title: "Invalid Token",
         message: "This SmartToken signature is invalid.",
         errorCode: "INVALID_TOKEN",
+        instructions:
+          "Please ensure you are scanning a valid SmartToken device.",
       });
     } else {
       return res.status(400).render("error", {
         title: "Unknown Response",
         message: "Received unknown response from verification service.",
         errorCode: "UNKNOWN_RESPONSE",
+        instructions: "Please try again or contact technical support.",
       });
     }
   } catch (error) {
@@ -932,6 +1051,7 @@ exports.verifySmartToken = async (req, res) => {
       title: "System Error",
       message: "An error occurred while verifying the SmartToken.",
       errorCode: "SYSTEM_ERROR",
+      instructions: "Please try again or contact technical support.",
     });
   }
 };
