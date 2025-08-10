@@ -276,8 +276,114 @@ exports.deleteUser = async (req, res) => {
 
       const userToDelete = userCheck.recordset[0];
 
-      // FIXED: Handle PatientRequests foreign key constraints properly
-      // Set foreign key references to NULL (preserves history)
+      // ✅ FIXED: Handle QRRegistrationTokens foreign key constraint
+      await new sql.Request(transaction)
+        .input("userId", req.params.id)
+        .query(
+          "DELETE FROM QRRegistrationTokens WHERE patientUserId = @userId"
+        );
+
+      // ✅ Handle Users created by PatientRequests from this user
+      // First, find any users that were created from patient requests made by this user
+      const createdUsersCheck = await new sql.Request(transaction).input(
+        "userId",
+        req.params.id
+      ).query(`
+          SELECT u.userId, u.name, u.username 
+          FROM Users u 
+          INNER JOIN PatientRequests pr ON u.createdByRequest = pr.requestId 
+          WHERE pr.doctorId = @userId
+        `);
+
+      // For each user created by this doctor's patient requests, we need to handle them
+      for (const createdUser of createdUsersCheck.recordset) {
+        console.log(
+          `Handling user created by patient request: ${createdUser.name} (${createdUser.userId})`
+        );
+
+        // Set createdByRequest to NULL for these users (preserves the users but removes the constraint)
+        await new sql.Request(transaction)
+          .input("createdUserId", createdUser.userId)
+          .query(
+            "UPDATE Users SET createdByRequest = NULL WHERE userId = @createdUserId"
+          );
+      }
+
+      // ✅ Handle SmartTokenEmergencyAlerts first (references enhancedLogId from EnhancedTokenAccessLog)
+      await new sql.Request(transaction).input("userId", req.params.id).query(`
+          DELETE FROM SmartTokenEmergencyAlerts 
+          WHERE enhancedLogId IN (
+            SELECT logId FROM EnhancedTokenAccessLog WHERE patientUserId = @userId
+          )
+        `);
+
+      // ✅ Handle SmartTokenEmergencyAlerts direct patientUserId foreign key constraint
+      await new sql.Request(transaction)
+        .input("userId", req.params.id)
+        .query(
+          "DELETE FROM SmartTokenEmergencyAlerts WHERE patientUserId = @userId"
+        );
+
+      // ✅ Handle EnhancedTokenAccessLog - this table exists and has foreign key constraints
+      await new sql.Request(transaction)
+        .input("userId", req.params.id)
+        .query(
+          "DELETE FROM EnhancedTokenAccessLog WHERE patientUserId = @userId"
+        );
+
+      // ✅ Handle any other potential logs that reference users
+      try {
+        await new sql.Request(transaction)
+          .input("userId", req.params.id)
+          .query("DELETE FROM DeviceAccessLogs WHERE userId = @userId");
+      } catch (logErr) {
+        console.log(
+          "DeviceAccessLogs cleanup - no userId column or table doesn't exist"
+        );
+      }
+
+      // ✅ FIXED: Handle PatientRequests properly
+      // Check if there are any PatientRequests referencing this user as doctor
+      const patientRequestsCheck = await new sql.Request(transaction)
+        .input("userId", req.params.id)
+        .query(
+          "SELECT COUNT(*) as count FROM PatientRequests WHERE doctorId = @userId"
+        );
+
+      if (patientRequestsCheck.recordset[0].count > 0) {
+        // Create a placeholder "deleted doctor" user for historical records
+        const deletedDoctorCheck = await new sql.Request(transaction).query(
+          "SELECT userId FROM Users WHERE username = 'deleted_doctor' AND role = 'doctor'"
+        );
+
+        let deletedDoctorId;
+        if (deletedDoctorCheck.recordset.length === 0) {
+          // Create a placeholder deleted doctor user
+          const createDeleted = await new sql.Request(transaction)
+            .input("name", "Deleted Doctor")
+            .input("username", "deleted_doctor")
+            .input("password", "N/A") // This account can't be logged into
+            .input("role", "doctor").query(`
+              INSERT INTO Users (name, username, password, role) 
+              OUTPUT INSERTED.userId
+              VALUES (@name, @username, @password, @role)
+            `);
+          deletedDoctorId = createDeleted.recordset[0].userId;
+        } else {
+          deletedDoctorId = deletedDoctorCheck.recordset[0].userId;
+        }
+
+        // Update PatientRequests to reference the deleted doctor placeholder
+        await new sql.Request(transaction)
+          .input("userId", req.params.id)
+          .input("deletedDoctorId", deletedDoctorId).query(`
+            UPDATE PatientRequests 
+            SET doctorId = @deletedDoctorId 
+            WHERE doctorId = @userId
+          `);
+      }
+
+      // Handle other PatientRequests fields that can be set to NULL
       await new sql.Request(transaction).input("userId", req.params.id).query(`
           UPDATE PatientRequests 
           SET createdPatientId = NULL 
@@ -286,20 +392,47 @@ exports.deleteUser = async (req, res) => {
 
       await new sql.Request(transaction).input("userId", req.params.id).query(`
           UPDATE PatientRequests 
-          SET doctorId = NULL 
-          WHERE doctorId = @userId
-        `);
-
-      await new sql.Request(transaction).input("userId", req.params.id).query(`
-          UPDATE PatientRequests 
           SET approvedBy = NULL 
           WHERE approvedBy = @userId
+        `);
+
+      // ✅ Handle SmartTokens that reference this user
+      await new sql.Request(transaction).input("userId", req.params.id).query(`
+          UPDATE SmartTokens 
+          SET patientUserId = NULL, doctorUserId = NULL 
+          WHERE patientUserId = @userId OR doctorUserId = @userId
         `);
 
       // Handle FileAudit records - delete them
       await new sql.Request(transaction)
         .input("userId", req.params.id)
         .query("DELETE FROM FileAudit WHERE userId = @userId");
+
+      // ✅ Handle EmergencyContacts if they exist
+      await new sql.Request(transaction)
+        .input("userId", req.params.id)
+        .query("DELETE FROM EmergencyContacts WHERE patientUserId = @userId");
+
+      // ✅ Handle EmergencyContactAlerts - check if table exists and handle appropriately
+      try {
+        await new sql.Request(transaction)
+          .input("userId", req.params.id)
+          .query(
+            "DELETE FROM EmergencyContactAlerts WHERE patientUserId = @userId"
+          );
+      } catch (alertsErr) {
+        // Try alternative column name if first attempt fails
+        try {
+          await new sql.Request(transaction)
+            .input("userId", req.params.id)
+            .query("DELETE FROM EmergencyContactAlerts WHERE userId = @userId");
+        } catch (tableErr) {
+          // Table might not exist or different structure, continue
+          console.log(
+            "EmergencyContactAlerts table not found or different structure, skipping..."
+          );
+        }
+      }
 
       // Delete user assignments
       await new sql.Request(transaction)
@@ -331,13 +464,17 @@ exports.deleteUser = async (req, res) => {
     } catch (err) {
       // Roll back the transaction if any operation fails
       await transaction.rollback();
+      console.error("Transaction rollback due to error:", err.message);
       throw err;
     }
   } catch (err) {
     console.error("Delete user error:", err.message);
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: err.message.includes("REFERENCE constraint")
+        ? "Cannot delete user due to existing references. Please contact administrator."
+        : "Server error occurred while deleting user",
+      error: err.message,
     });
   }
 };
