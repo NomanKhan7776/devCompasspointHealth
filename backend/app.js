@@ -715,38 +715,92 @@ app.post("/api/device-location", async (req, res) => {
   }
 });
 
-// ✅ NEW: IP Location Endpoint
+// ✅ ENHANCED: IP Location Endpoint with debugging
 app.get("/api/ip-location", async (req, res) => {
   try {
     const ipAddress = getRealUserIP(req);
-    console.log(`📍 IP location request from: ${ipAddress}`);
+    console.log(`🌐 IP location request from: ${ipAddress}`);
+
+    // ✅ DEBUG: Check environment variable
+    const apiKey = process.env.IPDATA_API_KEY;
+    console.log(
+      `🔑 API Key status:`,
+      apiKey ? `Present (${apiKey.substring(0, 8)}...)` : "MISSING"
+    );
 
     // ✅ Import location service
     const locationService = require("./services/locationService");
 
-    // ✅ Get IP location
+    // ✅ Get IP location with detailed logging
+    console.log(
+      `🔍 Calling locationService.getLocationFromIP for: ${ipAddress}`
+    );
     const locationData = await locationService.getLocationFromIP(ipAddress);
 
-    console.log("✅ IP location data:", {
+    console.log("✅ IP location data received:", {
       type: locationData.type,
       city: locationData.city,
       region: locationData.region,
       country: locationData.country,
+      coordinates:
+        locationData.latitude && locationData.longitude
+          ? `${locationData.latitude}, ${locationData.longitude}`
+          : "None",
       isPrivate: locationData.isPrivate,
+      source: locationData.source,
+      error: locationData.error,
     });
 
     // ✅ Return location data
     res.json({
       success: true,
       location: locationData,
-      timestamp: new Date().toISOString(),
+      debug: {
+        originalIP: ipAddress,
+        hasApiKey: !!apiKey,
+        timestamp: new Date().toISOString(),
+      },
     });
   } catch (error) {
-    console.error("❌ IP location error:", error);
+    console.error("❌ IP location endpoint error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to get IP location",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      debug: {
+        hasApiKey: !!process.env.IPDATA_API_KEY,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+});
+
+// ✅ DEBUG: Test IP geolocation endpoint
+app.get("/api/test-ip-location/:ip?", async (req, res) => {
+  try {
+    const testIP = req.params.ip || getRealUserIP(req);
+    console.log(`🧪 Testing IP geolocation for: ${testIP}`);
+
+    const locationService = require("./services/locationService");
+    const result = await locationService.getLocationFromIP(testIP);
+
+    res.json({
+      success: true,
+      testIP: testIP,
+      result: result,
+      apiKeyStatus: {
+        exists: !!process.env.IPDATA_API_KEY,
+        length: process.env.IPDATA_API_KEY
+          ? process.env.IPDATA_API_KEY.length
+          : 0,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 });

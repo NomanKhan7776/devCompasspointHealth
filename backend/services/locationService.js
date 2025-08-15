@@ -53,11 +53,20 @@ class LocationService {
   }
 
   /**
-   * ✅ FIXED: IP location lookup using ipdata.co API with proper fields
+   * ✅ FIXED: IP location lookup using ipdata.co API
    */
   async getLocationFromIP(ipAddress) {
     try {
-      console.log(`🌐 Getting location for IP: ${ipAddress}`);
+      console.log(`🌐 Starting IP geolocation for: ${ipAddress}`);
+
+      // ✅ FIXED: Properly define API key at the top
+      const apiKey =
+        process.env.IPDATA_API_KEY ||
+        "bb4b8713a73b240e458934834f0ce3674f84997a02f8681ef5f37671";
+      console.log(
+        `🔑 Using API key:`,
+        apiKey ? `${apiKey.substring(0, 8)}...` : "MISSING"
+      );
 
       // Check if IP is private/local
       if (this.isPrivateIP(ipAddress)) {
@@ -77,34 +86,45 @@ class LocationService {
         };
       }
 
-      // ✅ FIXED: Use ipdata.co API with specific fields
+      // ✅ FIXED: Use ipdata.co API with proper variable scope
       try {
-        console.log("🔍 Trying ipdata.co with optimized fields...");
+        console.log("🔍 Starting ipdata.co API call...");
 
-        const apiKey = process.env.IPDATA_API_KEY || "test";
         const fields =
           "ip,city,region,country_name,country_code,latitude,longitude,postal,timezone,organisation";
         const ipdataUrl = `https://api.ipdata.co/${ipAddress}?api-key=${apiKey}&fields=${fields}`;
 
         console.log(
-          "🌐 ipdata.co URL:",
+          "🌐 ipdata.co request URL:",
           ipdataUrl.replace(apiKey, "API_KEY_HIDDEN")
         );
 
         const response = await axios.get(ipdataUrl, {
-          timeout: 10000,
+          timeout: 15000,
           headers: {
             "User-Agent": "CompassPointHealth-PRMS/2.1.0",
             Accept: "application/json",
           },
+          validateStatus: function (status) {
+            return status < 500; // Don't throw for 4xx errors
+          },
         });
 
-        console.log("✅ ipdata.co response:", response.data);
+        console.log("📡 ipdata.co response:", {
+          status: response.status,
+          statusText: response.statusText,
+          data: response.data,
+        });
 
-        if (response.data && !response.data.message && !response.data.error) {
+        if (
+          response.status === 200 &&
+          response.data &&
+          !response.data.message &&
+          !response.data.error
+        ) {
           const data = response.data;
 
-          // ✅ IMPROVED: Better validation
+          // ✅ Validation
           const hasValidCity =
             data.city &&
             typeof data.city === "string" &&
@@ -158,31 +178,28 @@ class LocationService {
               timestamp: new Date().toISOString(),
             };
 
-            console.log("✅ ipdata.co location result:", locationResult);
+            console.log("✅ ipdata.co SUCCESS:", locationResult);
             return locationResult;
           } else {
-            console.log("⚠️ ipdata.co returned invalid location data");
+            console.log("❌ ipdata.co: All validation failed");
           }
         } else {
-          console.log(
-            "⚠️ ipdata.co returned error:",
-            response.data.message || response.data.error
-          );
+          console.log("❌ ipdata.co API error:", {
+            status: response.status,
+            error:
+              response.data?.message || response.data?.error || "Unknown error",
+          });
         }
       } catch (ipdataError) {
-        console.log("❌ ipdata.co failed:", ipdataError.message);
-
-        // Log more details about the error
-        if (ipdataError.response) {
-          console.log(
-            "❌ ipdata.co error status:",
-            ipdataError.response.status
-          );
-          console.log("❌ ipdata.co error data:", ipdataError.response.data);
-        }
+        console.log("❌ ipdata.co request failed:", {
+          message: ipdataError.message,
+          code: ipdataError.code,
+          status: ipdataError.response?.status,
+          responseData: ipdataError.response?.data,
+        });
       }
 
-      // ✅ FALLBACK: Try ip-api.com
+      // ✅ Fallback to ip-api.com
       try {
         console.log("🔍 Trying ip-api.com fallback...");
         const response = await axios.get(
@@ -209,7 +226,7 @@ class LocationService {
             data.regionName && data.regionName !== "undefined";
 
           if (hasValidCity || hasValidRegion) {
-            return {
+            const locationResult = {
               type: "ip",
               ipAddress: ipAddress,
               isPrivate: false,
@@ -227,13 +244,16 @@ class LocationService {
               source: "ip_api_fallback",
               timestamp: new Date().toISOString(),
             };
+
+            console.log("✅ ip-api.com SUCCESS:", locationResult);
+            return locationResult;
           }
         }
       } catch (fallbackError) {
         console.log("❌ ip-api.com fallback failed:", fallbackError.message);
       }
 
-      // ✅ FINAL FALLBACK
+      // ✅ Final fallback
       console.log("⚠️ All geolocation services failed");
       return {
         type: "ip",
