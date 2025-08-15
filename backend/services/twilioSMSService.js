@@ -1,4 +1,4 @@
-// services/twilioSMSService.js - Twilio SMS Service for Emergency Alerts
+// services/twilioSMSService.js - Enhanced Twilio SMS Service for Emergency Alerts
 const twilio = require("twilio");
 
 class TwilioSMSService {
@@ -19,7 +19,7 @@ class TwilioSMSService {
   }
 
   /**
-   * Send emergency alert SMS to emergency contact
+   * Send emergency alert SMS to emergency contact - ENHANCED with trial account handling
    * @param {string} phoneNumber - Recipient phone number
    * @param {string} message - Alert message
    * @param {string} contactName - Name of the contact (for logging)
@@ -81,6 +81,7 @@ class TwilioSMSService {
         phoneNumber: cleanPhoneNumber,
         contactName: contactName,
         sentAt: new Date().toISOString(),
+        isTrialAccount: isTrial,
       };
     } catch (error) {
       console.error(
@@ -88,12 +89,34 @@ class TwilioSMSService {
         error
       );
 
+      // ✅ Enhanced error handling for specific Twilio errors
+      let errorCode = error.code || "TWILIO_ERROR";
+      let errorMessage = error.message;
+      let isTrialUnverified = false;
+      let verificationUrl = null;
+
+      if (error.code === 21608) {
+        errorCode = "UNVERIFIED_NUMBER_TRIAL";
+        isTrialUnverified = true;
+        verificationUrl =
+          "https://console.twilio.com/us1/develop/phone-numbers/manage/verified";
+        errorMessage = `Phone number is not verified. Trial accounts can only send to verified numbers. Verify at: ${verificationUrl}`;
+
+        console.warn(
+          `⚠️ TRIAL ACCOUNT LIMITATION: Cannot send to unverified number ${cleanPhoneNumber}`
+        );
+      }
+
       return {
         success: false,
-        error: error.message,
-        errorCode: error.code || "TWILIO_ERROR",
+        error: errorMessage,
+        errorCode: errorCode,
         phoneNumber: phoneNumber,
         contactName: contactName,
+        isTrialUnverified: isTrialUnverified,
+        verificationUrl: verificationUrl,
+        twilioErrorCode: error.code,
+        isTrialAccount: await this.isTrialAccount().catch(() => true), // Default to trial on error
       };
     }
   }
@@ -132,7 +155,7 @@ class TwilioSMSService {
   }
 
   /**
-   * Send batch SMS alerts to multiple contacts
+   * Send batch SMS alerts to multiple contacts - ENHANCED with trial account handling
    * @param {Array} contacts - Array of contact objects with phoneNumber and name
    * @param {string} message - Alert message
    * @returns {Object} Results with success/failure counts and details
@@ -142,8 +165,17 @@ class TwilioSMSService {
       total: contacts.length,
       successful: 0,
       failed: 0,
+      trialUnverified: 0, // ✅ NEW: Track unverified numbers
       details: [],
     };
+
+    const isTrial = await this.isTrialAccount();
+
+    if (isTrial) {
+      console.log(
+        `⚠️ Trial account detected - checking number verification for ${contacts.length} contacts`
+      );
+    }
 
     // Send SMS to all contacts (with slight delay to avoid rate limits)
     for (let i = 0; i < contacts.length; i++) {
@@ -165,6 +197,11 @@ class TwilioSMSService {
           results.successful++;
         } else {
           results.failed++;
+
+          // ✅ Track trial unverified numbers separately
+          if (result.errorCode === "UNVERIFIED_NUMBER_TRIAL") {
+            results.trialUnverified++;
+          }
         }
 
         // Add small delay between messages to avoid rate limits
@@ -185,8 +222,12 @@ class TwilioSMSService {
     }
 
     console.log(
-      `📊 Batch SMS complete: ${results.successful}/${results.total} successful`
+      `📊 Batch SMS complete: ${results.successful}/${results.total} successful` +
+        (results.trialUnverified > 0
+          ? `, ${results.trialUnverified} unverified (trial)`
+          : "")
     );
+
     return results;
   }
 
@@ -273,13 +314,23 @@ class TwilioSMSService {
    * @param {Object} locationData - Location data (GPS or IP-based)
    * @returns {string} Formatted emergency message
    */
-  async createEmergencyMessage(patientName, deviceInfo, locationData) {
+  async createEmergencyMessage(
+    patientName,
+    deviceInfo,
+    locationData,
+    alertType = "unregistered_device"
+  ) {
     const isTrial = await this.isTrialAccount();
 
     if (isTrial) {
       // Short message for trial accounts (under 160 characters)
       const city = locationData?.city || "unknown location";
-      return `🚨 ALERT: ${patientName}'s SmartToken accessed from ${city} by unregistered device. Contact medical staff if unauthorized.`;
+
+      if (alertType === "timer_based_emergency_alert") {
+        return `🆘 EMERGENCY: ${patientName}'s SmartToken accessed from ${city}. Emergency access timer expired. Contact if unauthorized.`;
+      } else {
+        return `🚨 ALERT: ${patientName}'s SmartToken accessed from ${city} by unregistered device. Contact medical staff if unauthorized.`;
+      }
     }
 
     // Full message for paid accounts
@@ -298,7 +349,11 @@ class TwilioSMSService {
       locationStr = "from an unknown location";
     }
 
-    return `🚨 EMERGENCY ALERT: Someone ${locationStr} just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceDesc}${browserInfo}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
+    if (alertType === "timer_based_emergency_alert") {
+      return `🆘 EMERGENCY ACCESS: Someone ${locationStr} accessed ${patientName}'s medical SmartToken. Emergency access timer expired without cancellation${browserInfo}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
+    } else {
+      return `🚨 SECURITY ALERT: Someone ${locationStr} just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceDesc}${browserInfo}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
+    }
   }
 
   /**
@@ -319,7 +374,7 @@ class TwilioSMSService {
   }
 
   /**
-   * Get service status and configuration info
+   * Get service status and configuration info - ENHANCED with trial account info
    * @returns {Object} Service status information
    */
   getServiceStatus() {
@@ -329,6 +384,7 @@ class TwilioSMSService {
         ? this.fromNumber.substring(0, 6) + "***"
         : "Not configured",
       configured: !!(this.accountSid && this.authToken && this.fromNumber),
+      verificationRequired: "Trial accounts can only send to verified numbers",
     };
   }
 
@@ -338,13 +394,235 @@ class TwilioSMSService {
    * @param {Object} deviceInfo - Device information with ipLocation
    * @returns {string} Short emergency message for trial accounts
    */
-  async createTrialEmergencyMessage(patientName, deviceInfo) {
+  async createTrialEmergencyMessage(
+    patientName,
+    deviceInfo,
+    alertType = "unregistered_device"
+  ) {
     const location = deviceInfo.ipLocation?.city
       ? `${deviceInfo.ipLocation.city}, ${deviceInfo.ipLocation.country}`
       : "unknown location";
 
     // Keep under 160 characters for single segment
-    return `🚨 ${patientName}'s SmartToken accessed from ${location}. Contact medical staff if unauthorized.`;
+    if (alertType === "timer_based_emergency_alert") {
+      return `🆘 ${patientName}'s SmartToken emergency access from ${location}. Timer expired. Contact if unauthorized.`;
+    } else {
+      return `🚨 ${patientName}'s SmartToken accessed from ${location}. Contact medical staff if unauthorized.`;
+    }
+  }
+
+  /**
+   * ✅ NEW: Get verification instructions for trial accounts
+   */
+  getTrialVerificationInstructions() {
+    return {
+      message:
+        "To send SMS to this number, you need to verify it first (trial account limitation)",
+      steps: [
+        "1. Go to https://console.twilio.com/us1/develop/phone-numbers/manage/verified",
+        "2. Click 'Add a new number'",
+        "3. Enter the phone number you want to verify",
+        "4. Choose verification method (SMS or Voice call)",
+        "5. Enter the verification code you receive",
+        "6. The number will then be able to receive SMS from your trial account",
+      ],
+      upgradeOption:
+        "Or upgrade to a paid Twilio account to send to any number",
+      verificationUrl:
+        "https://console.twilio.com/us1/develop/phone-numbers/manage/verified",
+      upgradeUrl: "https://console.twilio.com/billing",
+    };
+  }
+
+  /**
+   * ✅ NEW: Check if phone number is verified (for trial accounts)
+   * Note: Twilio API doesn't provide direct verification check, so this simulates the check
+   */
+  async isPhoneNumberVerified(phoneNumber) {
+    if (!this.client) {
+      return { verified: false, error: "Service not available" };
+    }
+
+    try {
+      const cleanNumber = this.formatPhoneNumber(phoneNumber);
+
+      // For trial accounts, we can't actually check verification status via API
+      // This is more of a simulation - in reality, you'd need to attempt sending to verify
+
+      return {
+        verified: false, // Always return false since we can't check
+        phoneNumber: cleanNumber,
+        note: "Verification status cannot be checked via API - attempt sending to verify",
+      };
+    } catch (error) {
+      console.error("Error checking phone verification:", error);
+      return { verified: false, error: error.message };
+    }
+  }
+
+  /**
+   * ✅ NEW: Get trial account limitations summary
+   */
+  async getTrialAccountLimitations() {
+    const isTrial = await this.isTrialAccount();
+
+    if (!isTrial) {
+      return {
+        isTrialAccount: false,
+        limitations: null,
+        message: "No limitations - paid account",
+      };
+    }
+
+    return {
+      isTrialAccount: true,
+      limitations: {
+        unverifiedNumbers: "Cannot send SMS to unverified phone numbers",
+        messageLength: "Messages may be truncated to 140 characters",
+        rateLimits: "Lower rate limits may apply",
+        geographicRestrictions: "May have geographic sending restrictions",
+      },
+      solutions: {
+        verifyNumbers: "Verify emergency contact numbers at Twilio Console",
+        upgrade: "Upgrade to paid account to remove all restrictions",
+      },
+      verificationInstructions: this.getTrialVerificationInstructions(),
+    };
+  }
+
+  /**
+   * ✅ NEW: Test emergency contact with detailed feedback
+   */
+  async testEmergencyContactWithFeedback(phoneNumber, contactName = "") {
+    console.log(`📱 Testing emergency contact: ${contactName || phoneNumber}`);
+
+    const isTrial = await this.isTrialAccount();
+    const testResult = await this.sendTestAlert(phoneNumber);
+
+    return {
+      ...testResult,
+      testType: "emergency_contact_test",
+      contactName: contactName,
+      isTrialAccount: isTrial,
+      recommendations: testResult.success
+        ? ["Contact is working correctly"]
+        : testResult.errorCode === "UNVERIFIED_NUMBER_TRIAL"
+        ? [
+            "Verify this number in Twilio Console",
+            "Or upgrade to paid Twilio account",
+            "Emergency alerts will fail until number is verified",
+          ]
+        : ["Check phone number format and try again"],
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * ✅ NEW: Batch test multiple emergency contacts
+   */
+  async testAllEmergencyContacts(contacts) {
+    console.log(`📱 Testing ${contacts.length} emergency contacts...`);
+
+    const results = {
+      total: contacts.length,
+      successful: 0,
+      failed: 0,
+      unverified: 0,
+      details: [],
+    };
+
+    for (let i = 0; i < contacts.length; i++) {
+      const contact = contacts[i];
+
+      try {
+        const testResult = await this.testEmergencyContactWithFeedback(
+          contact.phoneNumber,
+          contact.contactName || contact.name
+        );
+
+        results.details.push({
+          contact: contact,
+          testResult: testResult,
+        });
+
+        if (testResult.success) {
+          results.successful++;
+        } else {
+          results.failed++;
+          if (testResult.errorCode === "UNVERIFIED_NUMBER_TRIAL") {
+            results.unverified++;
+          }
+        }
+
+        // Add delay between tests
+        if (i < contacts.length - 1) {
+          await this.delay(1000); // 1 second delay for tests
+        }
+      } catch (error) {
+        results.failed++;
+        results.details.push({
+          contact: contact,
+          testResult: {
+            success: false,
+            error: error.message,
+            errorCode: "TEST_ERROR",
+          },
+        });
+      }
+    }
+
+    console.log(
+      `📊 Emergency contact testing complete: ${results.successful}/${results.total} working` +
+        (results.unverified > 0
+          ? `, ${results.unverified} need verification`
+          : "")
+    );
+
+    return {
+      ...results,
+      summary: {
+        workingContacts: results.successful,
+        failedContacts: results.failed,
+        unverifiedContacts: results.unverified,
+        needsAttention: results.failed > 0,
+        trialAccountIssues: results.unverified > 0,
+      },
+      recommendations: this.getContactTestRecommendations(results),
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * ✅ NEW: Get recommendations based on contact test results
+   */
+  getContactTestRecommendations(testResults) {
+    const recommendations = [];
+
+    if (testResults.successful === testResults.total) {
+      recommendations.push("✅ All emergency contacts are working correctly");
+    } else {
+      if (testResults.unverified > 0) {
+        recommendations.push(
+          `⚠️ ${testResults.unverified} contacts need verification in Twilio Console`,
+          "🔗 Go to: https://console.twilio.com/us1/develop/phone-numbers/manage/verified"
+        );
+      }
+
+      if (testResults.failed > testResults.unverified) {
+        recommendations.push(
+          `❌ ${
+            testResults.failed - testResults.unverified
+          } contacts have other issues`,
+          "📞 Check phone number formats and network connectivity"
+        );
+      }
+
+      recommendations.push(
+        "💡 Consider upgrading to paid Twilio account to avoid verification requirements"
+      );
+    }
+
+    return recommendations;
   }
 }
 

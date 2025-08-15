@@ -401,17 +401,6 @@ const triggerEmergencyAlerts = async (
     }
 
     // Create alert message
-    const deviceDescription = `${deviceInfo.deviceName || "Unknown device"} (${
-      deviceInfo.browserName || "Unknown browser"
-    } on ${deviceInfo.osName || "Unknown OS"})`;
-    const locationText = deviceInfo.ipLocation
-      ? ` from ${deviceInfo.ipLocation.city || "Unknown City"}, ${
-          deviceInfo.ipLocation.region || "Unknown Region"
-        }, ${deviceInfo.ipLocation.country || "Unknown Country"} (IP: ${
-          deviceInfo.ipLocation.ipAddress
-        })`
-      : " from unknown location";
-    // Create trial-safe message
     const alertMessage = await twilioSMSService.createEmergencyMessage(
       patientName,
       deviceInfo,
@@ -427,7 +416,11 @@ const triggerEmergencyAlerts = async (
       .input("alertType", sql.NVarChar, "unregistered_device_fpjs")
       .input("alertMessage", sql.NVarChar, alertMessage)
       .input("deviceFingerprint", sql.NVarChar, JSON.stringify(deviceInfo))
-      .input("deviceInfo", sql.NVarChar, deviceDescription)
+      .input(
+        "deviceInfo",
+        sql.NVarChar,
+        `Device from ${deviceInfo.ipLocation?.city || "Unknown City"}`
+      )
       .input("deviceType", sql.NVarChar, deviceInfo.deviceType || "unknown")
       .input("ipAddress", sql.NVarChar, getRealUserIP(req))
       .input("severity", sql.NVarChar, "HIGH").query(`
@@ -444,55 +437,73 @@ const triggerEmergencyAlerts = async (
 
     const alertId = alertResult.recordset[0].alertId;
 
-    // Send SMS alerts
-    let successfulSMS = 0;
-    let failedSMS = 0;
-
+    // ✅ Enhanced SMS sending with trial account handling
     console.log(
-      `📤 Sending FingerprintJS Pro security alerts to ${emergencyContacts.length} contacts...`
+      `📤 Sending emergency alerts to ${emergencyContacts.length} contacts...`
     );
 
-    for (const contact of emergencyContacts) {
-      try {
-        const smsResult = await twilioSMSService.sendEmergencyAlert(
-          contact.phoneNumber,
-          alertMessage,
-          contact.contactName
-        );
+    const batchResult = await twilioSMSService.sendBatchEmergencyAlerts(
+      emergencyContacts,
+      alertMessage
+    );
 
-        if (smsResult.success) {
-          successfulSMS++;
-          console.log(
-            `   ✅ SMS sent to ${contact.contactName} (SID: ${smsResult.sid})`
-          );
-        } else {
-          failedSMS++;
-          console.log(
-            `   ❌ SMS failed to ${contact.contactName}: ${smsResult.error}`
-          );
-        }
+    // ✅ Enhanced response handling
+    const response = {
+      alertId: alertId,
+      contactsTotal: batchResult.total,
+      contactsSuccessful: batchResult.successful,
+      contactsFailed: batchResult.failed,
+      contactsUnverified: batchResult.trialUnverified || 0,
+      details: batchResult.details,
+    };
 
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      } catch (smsError) {
-        failedSMS++;
-        console.error(`   ❌ SMS error for ${contact.contactName}:`, smsError);
-      }
+    // ✅ Special handling for trial accounts with unverified numbers
+    if (batchResult.trialUnverified > 0) {
+      console.warn(
+        `⚠️ TRIAL ACCOUNT LIMITATION: ${batchResult.trialUnverified} contacts have unverified numbers`
+      );
+
+      // Log trial verification instructions
+      const verificationInstructions =
+        twilioSMSService.getTrialVerificationInstructions();
+      console.log("📋 To resolve unverified numbers:");
+      verificationInstructions.steps.forEach((step) =>
+        console.log(`   ${step}`)
+      );
+
+      response.trialAccountLimitation = true;
+      response.verificationInstructions = verificationInstructions;
+
+      // ✅ Track unverified contacts in the alert details
+      const unverifiedContacts = batchResult.details
+        .filter(
+          (detail) => detail.result.errorCode === "UNVERIFIED_NUMBER_TRIAL"
+        )
+        .map((detail) => ({
+          contactName: detail.contact.contactName,
+          phoneNumber: detail.contact.phoneNumber,
+          relationship: detail.contact.relationship,
+        }));
+
+      response.unverifiedContacts = unverifiedContacts;
     }
 
+    // Update alert delivery status
     const deliveryStatus =
-      successfulSMS > 0
-        ? failedSMS > 0
-          ? "PARTIAL_SUCCESS"
-          : "ALL_SENT"
-        : "ALL_FAILED";
+      batchResult.successful > 0
+        ? batchResult.failed > 0
+          ? "PARTIAL"
+          : "DELIVERED"
+        : "FAILED";
 
-    // Update alert record
     await pool
       .request()
       .input("alertId", sql.Int, alertId)
-      .input("smsAlertsSent", sql.Int, successfulSMS)
+      .input("smsAlertsSent", sql.Int, batchResult.successful)
       .input("emergencyContactsNotified", sql.Int, emergencyContacts.length)
-      .input("smsDeliveryStatus", sql.NVarChar, deliveryStatus).query(`
+      .input("smsDeliveryStatus", sql.NVarChar, deliveryStatus)
+      .input("trialUnverified", sql.Int, batchResult.trialUnverified || 0)
+      .query(`
         UPDATE SmartTokenEmergencyAlerts 
         SET smsAlertsSent = @smsAlertsSent,
             emergencyContactsNotified = @emergencyContactsNotified,
@@ -500,12 +511,16 @@ const triggerEmergencyAlerts = async (
         WHERE alertId = @alertId
       `);
 
-    console.log("🏁 FingerprintJS Pro EMERGENCY ALERT SUMMARY:");
+    console.log("📋 FingerprintJS Pro EMERGENCY ALERT SUMMARY:");
     console.log("   - Alert ID:", alertId);
     console.log("   - Service: FingerprintJS Pro");
     console.log("   - Visitor ID:", deviceInfo.visitorId);
     console.log("   - Contacts notified:", emergencyContacts.length);
-    console.log("   - SMS sent:", successfulSMS);
+    console.log("   - SMS sent:", batchResult.successful);
+    console.log("   - SMS failed:", batchResult.failed);
+    if (batchResult.trialUnverified > 0) {
+      console.log("   - Trial unverified:", batchResult.trialUnverified);
+    }
     console.log("   - Status:", deliveryStatus);
 
     return {
@@ -514,10 +529,13 @@ const triggerEmergencyAlerts = async (
       patientUserId: patientUserId,
       patientName: patientName,
       contactCount: emergencyContacts.length,
-      smsSuccessful: successfulSMS,
-      smsFailed: failedSMS,
+      smsSuccessful: batchResult.successful,
+      smsFailed: batchResult.failed,
+      smsUnverified: batchResult.trialUnverified || 0,
       deliveryStatus: deliveryStatus,
       service: "fingerprintjs_pro",
+      trialAccountLimitation: batchResult.trialUnverified > 0,
+      ...response,
     };
   } catch (error) {
     console.error(
@@ -991,11 +1009,13 @@ exports.verifySmartToken = async (req, res) => {
             "Emergency contacts have been notified of this access from an unregistered device.";
         }
 
-        // Render patient data page with view-only access - Universal browser compatible
-        return res.render("patientData", {
-          title: `Patient Data - ${token.patientName || token.folderName}`,
+        // Render timer screen FIRST (for ALL devices) - then patient data
+        return res.render("timerScreen", {
+          title: `Emergency Access Timer - ${
+            token.patientName || token.folderName
+          }`,
           patientName: token.patientName || token.folderName,
-          patientDateOfBirth: formattedDOB, // Add formatted DOB
+          patientDateOfBirth: formattedDOB,
           containerName: token.containerName,
           folderName: token.folderName,
           files: filesForDisplay,
@@ -1008,6 +1028,9 @@ exports.verifySmartToken = async (req, res) => {
           alertsTriggered: deviceVerification.alertsTriggered,
           securityNotice: securityNotice,
           accessIP: getRealUserIP(req),
+          // Timer-specific data
+          timerDuration: 10, // 10 seconds
+          emergencyContactsAvailable: true, // Will be used to show/hide timer based on contacts
         });
       } else {
         // ✅ Use existing template for unassigned tokens
@@ -1112,8 +1135,8 @@ const handleOfflineMode = async (req, res, tokenId) => {
         // Format patient date of birth
         const formattedDOB = formatDateOfBirth(token.patientDateOfBirth);
 
-        return res.render("patientData", {
-          title: `Patient Data - ${
+        return res.render("timerScreen", {
+          title: `Emergency Access Timer - ${
             token.patientName || token.folderName
           } (Limited Access)`,
           patientName: token.patientName || token.folderName,
@@ -1127,6 +1150,9 @@ const handleOfflineMode = async (req, res, tokenId) => {
           accessTime: new Date().toISOString(),
           tokenId: tokenId,
           formatFileSize: formatFileSize,
+          timerDuration: 10,
+          isOfflineMode: true,
+          emergencyContactsAvailable: true,
         });
       } else {
         return res.render("tokenStatus", {
@@ -2644,6 +2670,268 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
       message: "System error while sending emergency alert",
       error: error.message,
       critical: true,
+    });
+  }
+};
+
+// New endpoint: Handle timer expiration and send automatic alert
+exports.handleTimerExpiration = async (req, res) => {
+  try {
+    const { id } = req.params; // Token ID
+    const {
+      patientName,
+      deviceInfo,
+      locationData,
+      timerExpired = true,
+    } = req.body;
+
+    console.log(`⏰ TIMER-BASED EMERGENCY ALERT TRIGGERED:`);
+    console.log(`   - Token: ${id}`);
+    console.log(`   - Patient: ${patientName}`);
+    console.log(`   - Timer Expired: ${timerExpired}`);
+
+    // Get token information from database
+    await pool.connect();
+
+    const tokenResult = await pool
+      .request()
+      .input("smartTokenId", sql.NVarChar, id).query(`
+        SELECT 
+          st.smartTokenId,
+          st.patientUserId,
+          st.patientName,
+          st.containerName,
+          st.folderName,
+          st.status
+        FROM SmartTokens st
+        WHERE st.smartTokenId = @smartTokenId
+      `);
+
+    if (tokenResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "SmartToken not found",
+        error: "TOKEN_NOT_FOUND",
+      });
+    }
+
+    const token = tokenResult.recordset[0];
+
+    if (token.status !== "assigned") {
+      return res.status(400).json({
+        success: false,
+        message: "SmartToken is not assigned to a patient",
+        error: "TOKEN_NOT_ASSIGNED",
+      });
+    }
+
+    console.log(`✅ Token validated for timer-based emergency alert:`);
+    console.log(`   - Patient ID: ${token.patientUserId}`);
+    console.log(`   - Patient Name: ${token.patientName}`);
+
+    // Trigger the emergency alert system for timer expiration
+    const alertResult = await triggerEmergencyAlerts(
+      id,
+      token.patientUserId,
+      token.patientName || patientName,
+      null, // enhancedLogId - will be created in the function
+      {
+        ...deviceInfo,
+        alertType: "timer_based_emergency_alert",
+        triggerSource: "10_second_timer_expiration",
+        timerBased: true,
+        visitorId: deviceInfo.visitorId || "timer_trigger",
+        service: "timer_emergency_alert",
+        confidence: deviceInfo.confidence || 1.0,
+        timestamp: new Date().toISOString(),
+      },
+      locationData,
+      req
+    );
+
+    // Log the timer trigger event
+    try {
+      await pool
+        .request()
+        .input("tokenId", sql.NVarChar, id)
+        .input("patientUserId", sql.Int, token.patientUserId)
+        .input("patientName", sql.NVarChar, token.patientName)
+        .input("accessMode", sql.NVarChar, "timer_emergency_alert")
+        .input("ipAddress", sql.NVarChar, getRealUserIP(req))
+        .input("userAgent", sql.NVarChar, req.headers["user-agent"] || "")
+        .input("deviceInfo", sql.NVarChar, JSON.stringify(deviceInfo))
+        .input("locationData", sql.NVarChar, JSON.stringify(locationData))
+        .query(`
+          INSERT INTO EnhancedTokenAccessLog (
+            tokenId, patientUserId, accessMode, ipAddress, userAgent,
+            deviceFingerprint, visitorId, fingerprintService, 
+            isRegisteredDevice, accessTime
+          )
+          VALUES (
+            @tokenId, @patientUserId, @accessMode, @ipAddress, @userAgent,
+            @deviceInfo, 'timer_trigger', 'timer_emergency_alert',
+            1, GETDATE()
+          )
+        `);
+
+      console.log("📝 Timer-based emergency alert trigger logged");
+    } catch (logError) {
+      console.error("❌ Error logging timer emergency alert:", logError);
+      // Don't fail the request if logging fails
+    }
+
+    if (alertResult.success) {
+      console.log("✅ Timer-based emergency alert sent successfully");
+
+      res.json({
+        success: true,
+        message: "Timer-based emergency alert sent successfully",
+        alertId: alertResult.alertId,
+        patientName: token.patientName,
+        contactCount: alertResult.contactCount,
+        smsSuccessful: alertResult.smsSuccessful,
+        smsFailed: alertResult.smsFailed,
+        deliveryStatus: alertResult.deliveryStatus,
+        triggerSource: "10_second_timer_expiration",
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      console.error(
+        "❌ Timer-based emergency alert failed:",
+        alertResult.reason
+      );
+
+      res.status(500).json({
+        success: false,
+        message: "Failed to send timer-based emergency alert",
+        error: alertResult.reason || "Unknown error",
+        reason: alertResult.reason,
+        contactCount: alertResult.contactCount || 0,
+        patientUserId: token.patientUserId,
+      });
+    }
+  } catch (error) {
+    console.error("❌ CRITICAL ERROR in timer-based emergency alert:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "System error while sending timer-based emergency alert",
+      error: error.message,
+      critical: true,
+    });
+  }
+};
+
+// New endpoint: Get patient data after timer (cancelled or expired)
+exports.getPatientDataAfterTimer = async (req, res) => {
+  try {
+    const { id } = req.params; // Token ID
+    const { cancelled = false } = req.query;
+
+    console.log(`📄 PATIENT DATA ACCESS AFTER TIMER:`);
+    console.log(`   - Token: ${id}`);
+    console.log(`   - Timer Cancelled: ${cancelled}`);
+
+    // Get token information from database
+    await pool.connect();
+
+    const tokenResult = await pool
+      .request()
+      .input("smartTokenId", sql.NVarChar, id).query(`
+        SELECT 
+          st.smartTokenId,
+          st.secureChipId,
+          st.containerName,
+          st.folderName,
+          st.patientDateOfBirth,
+          st.status,
+          st.productCode,
+          st.devId,
+          COALESCE(u.name, st.patientName) as patientName,
+          COALESCE(st.patientUserId, u.userId) as patientUserId
+        FROM SmartTokens st
+        LEFT JOIN Users u ON st.patientUserId = u.userId
+        WHERE st.smartTokenId = @smartTokenId
+      `);
+
+    if (tokenResult.recordset.length === 0) {
+      return res.status(404).render("error", {
+        title: "Token Not Found",
+        message: "SmartToken not found",
+        errorCode: "TOKEN_NOT_FOUND",
+      });
+    }
+
+    const token = tokenResult.recordset[0];
+
+    if (
+      token.status !== "assigned" ||
+      !token.containerName ||
+      !token.folderName
+    ) {
+      return res.status(400).render("error", {
+        title: "Token Not Assigned",
+        message: "SmartToken is not properly assigned to a patient",
+        errorCode: "TOKEN_NOT_ASSIGNED",
+      });
+    }
+
+    // Get patient files from Azure
+    const patientFiles = await getPatientFilesFromAzure(
+      token.containerName,
+      token.folderName
+    );
+
+    // Files will use view-only access through the emergency endpoint
+    const filesForDisplay = patientFiles.map((file) => ({
+      ...file,
+      emergencyAccess: true,
+    }));
+
+    // Log access for audit with real user IP
+    await logTokenAccess(
+      id,
+      token.containerName,
+      token.folderName,
+      getRealUserIP(req),
+      cancelled ? "timer_cancelled" : "timer_completed"
+    );
+
+    // Format patient date of birth
+    const formattedDOB = formatDateOfBirth(token.patientDateOfBirth);
+
+    // Create security notice for timer-based access
+    let securityNotice = null;
+    if (cancelled) {
+      securityNotice = "Timer was cancelled - no emergency alert was sent.";
+    } else {
+      securityNotice =
+        "Emergency contacts have been automatically notified after 10-second timer.";
+    }
+
+    // Render patient data page WITHOUT manual alert button
+    return res.render("patientData", {
+      title: `Patient Data - ${token.patientName || token.folderName}`,
+      patientName: token.patientName || token.folderName,
+      patientDateOfBirth: formattedDOB,
+      containerName: token.containerName,
+      folderName: token.folderName,
+      files: filesForDisplay,
+      isEmergencyAccess: true,
+      accessTime: new Date().toISOString(),
+      tokenId: id,
+      formatFileSize: formatFileSize,
+      isTimerBasedAccess: true, // NEW FLAG - tells template to hide manual alert button
+      timerWasCancelled: cancelled,
+      securityNotice: securityNotice,
+      accessIP: getRealUserIP(req),
+    });
+  } catch (error) {
+    console.error("❌ Error getting patient data after timer:", error);
+    return res.status(500).render("error", {
+      title: "System Error",
+      message: "An error occurred while accessing patient data",
+      errorCode: "SYSTEM_ERROR",
     });
   }
 };

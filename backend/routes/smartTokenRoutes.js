@@ -283,6 +283,39 @@ router.post("/verify/:id", async (req, res) => {
 
 router.post("/trigger-emergency-alert/:id", triggerManualEmergencyAlert);
 
+// Timer-based emergency alert routes
+router.post("/timer-expired/:id", async (req, res) => {
+  try {
+    const {
+      handleTimerExpiration,
+    } = require("../controllers/consolidatedSmartTokenController");
+    return await handleTimerExpiration(req, res);
+  } catch (error) {
+    console.error("❌ Timer expiration route error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Timer expiration handling failed",
+      error: error.message,
+    });
+  }
+});
+
+router.get("/patient-data-after-timer/:id", async (req, res) => {
+  try {
+    const {
+      getPatientDataAfterTimer,
+    } = require("../controllers/consolidatedSmartTokenController");
+    return await getPatientDataAfterTimer(req, res);
+  } catch (error) {
+    console.error("❌ Patient data after timer route error:", error);
+    return res.status(500).render("error", {
+      title: "System Error",
+      message: "An error occurred while accessing patient data",
+      errorCode: "SYSTEM_ERROR",
+    });
+  }
+});
+
 // File access routes (no changes needed)
 router.get(
   "/file/:containerName/:folderName/:fileName/view",

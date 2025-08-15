@@ -303,13 +303,32 @@ exports.getProfileImage = async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
 
     // Log the profile image access
-    await logFileOperation(
-      0, // System access for emergency
-      containerName,
-      folderName,
-      PROFILE_IMAGE_CONFIG.standardName,
-      "PROFILE_VIEW_EMERGENCY"
-    );
+    // await logFileOperation(
+    //   0, // System access for emergency
+    //   containerName,
+    //   folderName,
+    //   PROFILE_IMAGE_CONFIG.standardName,
+    //   "PROFILE_VIEW_EMERGENCY"
+    // );
+
+    // Set headers for image display
+    res.setHeader("Content-Type", properties.contentType || "image/jpeg");
+    res.setHeader("Content-Disposition", "inline");
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    // 🔧 FIX: Add CORS headers for all environments
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    // 🔧 FIX: Skip database logging for emergency access to avoid foreign key constraint
+    console.log("📋 Emergency profile access:", {
+      container: containerName,
+      folder: folderName,
+      ip: req.ip,
+      timestamp: new Date().toISOString(),
+    });
 
     // Stream the image content
     downloadResponse.readableStreamBody.pipe(res);

@@ -221,19 +221,6 @@
           </div>
         </div>
 
-        <!-- Emergency Alert Button -->
-        <div class="mt-3 flex justify-center">
-          <button
-            id="emergency-alert-btn"
-            onclick="triggerEmergencyAlert()"
-            class="alert-button text-white font-bold py-3 px-6 rounded-lg flex items-center space-x-2 transition-all duration-300"
-            title="Send emergency alert to all emergency contacts"
-          >
-            <i class="fas fa-exclamation-triangle text-xl"></i>
-            <span class="text-lg">SEND EMERGENCY ALERT</span>
-          </button>
-        </div>
-
         <!-- Security Notice -->
         <div
           id="security-notice"
@@ -523,53 +510,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Emergency Alert Status Modal -->
-      <div
-        id="alert-status-modal"
-        class="fixed inset-0 z-50 hidden overflow-y-auto bg-black bg-opacity-75"
-      >
-        <div
-          class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center"
-        >
-          <div
-            class="bg-white rounded-xl shadow-2xl transform transition-all max-w-md w-full p-8"
-          >
-            <div
-              id="alert-modal-icon"
-              class="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center"
-            >
-              <i class="fas fa-exclamation-triangle text-red-600 text-2xl"></i>
-            </div>
-            <h2
-              id="alert-modal-title"
-              class="text-2xl font-bold text-gray-800 mb-4"
-            >
-              Sending Emergency Alert
-            </h2>
-            <p id="alert-modal-message" class="text-gray-600 mb-6">
-              Please wait while we send emergency alerts to all emergency
-              contacts...
-            </p>
-            <div
-              id="alert-modal-details"
-              class="bg-gray-50 rounded-lg p-4 mb-6 hidden"
-            >
-              <p class="text-sm text-gray-800">
-                <span id="alert-details-text"></span>
-              </p>
-            </div>
-            <button
-              id="alert-modal-close-btn"
-              onclick="closeAlertModal()"
-              class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
-              style="display: none"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <script>
@@ -639,7 +579,7 @@
        */
       function extractFingerprintJSIPLocation(fpjsResponse) {
         console.log(
-          "🌍 Extracting IP location from FingerprintJS Pro response..."
+          "🌐 Extracting IP location from FingerprintJS Pro response..."
         );
 
         const ipInfo = fpjsResponse.ipInfo?.data?.v4;
@@ -1051,7 +991,7 @@
        */
       async function loadFingerprintJSBrowserService() {
         console.log(
-          "📥 Smart FingerprintJS Pro loading with location support..."
+          "🔥 Smart FingerprintJS Pro loading with location support..."
         );
 
         const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(
@@ -1423,188 +1363,6 @@
         }
       }
 
-      /**
-       * Trigger Emergency Alert
-       */
-      async function triggerEmergencyAlert() {
-        try {
-          const alertBtn = document.getElementById("emergency-alert-btn");
-          const alertModal = document.getElementById("alert-status-modal");
-          const alertModalTitle = document.getElementById("alert-modal-title");
-          const alertModalMessage = document.getElementById(
-            "alert-modal-message"
-          );
-          const alertModalDetails = document.getElementById(
-            "alert-modal-details"
-          );
-          const alertDetailsText =
-            document.getElementById("alert-details-text");
-          const alertModalCloseBtn = document.getElementById(
-            "alert-modal-close-btn"
-          );
-          const alertModalIcon = document.getElementById("alert-modal-icon");
-
-          // Disable button and show loading state
-          alertBtn.disabled = true;
-          alertBtn.classList.add("alert-sending");
-          alertBtn.innerHTML = `
-            <i class="fas fa-spinner fa-spin text-xl"></i>
-            <span class="text-lg">SENDING ALERT...</span>
-          `;
-
-          // Show modal with loading state
-          alertModal.classList.remove("hidden");
-          alertModalTitle.textContent = "Sending Emergency Alert";
-          alertModalMessage.textContent =
-            "Please wait while we send emergency alerts to all emergency contacts...";
-          alertModalDetails.classList.add("hidden");
-          alertModalCloseBtn.style.display = "none";
-          alertModalIcon.innerHTML =
-            '<i class="fas fa-spinner fa-spin text-red-600 text-2xl"></i>';
-
-          // Get current location for the alert
-          const currentLocation = locationData.gps ||
-            locationData.fingerprintjsIP || {
-              city: "Unknown Location",
-              region: "Unknown Region",
-              country: "Unknown Country",
-            };
-
-          // Prepare alert data
-          const alertData = {
-            tokenId: TOKEN_ID,
-            patientName: PATIENT_NAME,
-            alertType: "manual_emergency_alert",
-            deviceInfo: {
-              userAgent: navigator.userAgent,
-              deviceName: getDeviceName(),
-              browserName: getBrowserName(),
-              osName: getOSName(),
-              deviceType: getDeviceType(),
-              ipLocation: currentLocation,
-            },
-            locationData: currentLocation,
-            triggerSource: "patient_emergency_button",
-            timestamp: new Date().toISOString(),
-          };
-
-          console.log("🚨 Triggering manual emergency alert...", alertData);
-
-          // Send alert to server
-          const response = await fetch(
-            `${API_CONFIG.baseURL}/patients/trigger-emergency-alert/${TOKEN_ID}`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(alertData),
-            }
-          );
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-
-          const result = await response.json();
-
-          console.log("✅ Emergency alert response:", result);
-
-          // Update modal with success/failure
-          if (result.success) {
-            alertModalIcon.innerHTML =
-              '<i class="fas fa-check-circle text-green-600 text-2xl"></i>';
-            alertModalTitle.textContent = "Emergency Alert Sent Successfully";
-            alertModalMessage.textContent = `Emergency alerts have been sent to ${
-              result.contactCount || 0
-            } emergency contacts.`;
-
-            if (result.smsSuccessful > 0) {
-              alertModalDetails.classList.remove("hidden");
-              alertDetailsText.innerHTML = `
-                <i class="fas fa-check-circle text-green-600 mr-1"></i>
-                ${result.smsSuccessful} SMS alerts delivered successfully
-                ${
-                  result.smsFailed > 0
-                    ? `<br><i class="fas fa-exclamation-triangle text-yellow-600 mr-1"></i>${result.smsFailed} SMS alerts failed to deliver`
-                    : ""
-                }
-                <br><small class="text-gray-600">Alert ID: ${
-                  result.alertId || "N/A"
-                }</small>
-              `;
-            }
-          } else {
-            alertModalIcon.innerHTML =
-              '<i class="fas fa-exclamation-triangle text-red-600 text-2xl"></i>';
-            alertModalTitle.textContent = "Emergency Alert Failed";
-            alertModalMessage.textContent =
-              result.message ||
-              "Failed to send emergency alerts. Please try again or contact emergency services directly.";
-
-            alertModalDetails.classList.remove("hidden");
-            alertDetailsText.innerHTML = `
-              <i class="fas fa-exclamation-triangle text-red-600 mr-1"></i>
-              ${result.error || "Unknown error occurred"}
-              <br><small class="text-gray-600">You may need to contact emergency services directly at 911</small>
-            `;
-          }
-
-          alertModalCloseBtn.style.display = "block";
-        } catch (error) {
-          console.error("❌ Emergency alert failed:", error);
-
-          // Update modal with error
-          const alertModalIcon = document.getElementById("alert-modal-icon");
-          const alertModalTitle = document.getElementById("alert-modal-title");
-          const alertModalMessage = document.getElementById(
-            "alert-modal-message"
-          );
-          const alertModalDetails = document.getElementById(
-            "alert-modal-details"
-          );
-          const alertDetailsText =
-            document.getElementById("alert-details-text");
-          const alertModalCloseBtn = document.getElementById(
-            "alert-modal-close-btn"
-          );
-
-          alertModalIcon.innerHTML =
-            '<i class="fas fa-exclamation-triangle text-red-600 text-2xl"></i>';
-          alertModalTitle.textContent = "Emergency Alert System Error";
-          alertModalMessage.textContent =
-            "An error occurred while trying to send emergency alerts.";
-
-          alertModalDetails.classList.remove("hidden");
-          alertDetailsText.innerHTML = `
-            <i class="fas fa-exclamation-triangle text-red-600 mr-1"></i>
-            ${error.message || "Network or system error"}
-            <br><small class="text-gray-600">Please contact emergency services directly at 911 if this is a medical emergency</small>
-          `;
-
-          alertModalCloseBtn.style.display = "block";
-        } finally {
-          // Reset button state
-          setTimeout(() => {
-            const alertBtn = document.getElementById("emergency-alert-btn");
-            alertBtn.disabled = false;
-            alertBtn.classList.remove("alert-sending");
-            alertBtn.innerHTML = `
-              <i class="fas fa-exclamation-triangle text-xl"></i>
-              <span class="text-lg">SEND EMERGENCY ALERT</span>
-            `;
-          }, 2000);
-        }
-      }
-
-      /**
-       * Close alert modal
-       */
-      function closeAlertModal() {
-        const alertModal = document.getElementById("alert-status-modal");
-        alertModal.classList.add("hidden");
-      }
-
       // Helper functions
       function getDeviceName() {
         const ua = navigator.userAgent;
@@ -1640,26 +1398,55 @@
           : "desktop";
       }
 
-      function loadProfileImage() {
+      /**
+       * 🔧 ENHANCED: Profile Image Loading Function with CORS Support
+       */
+      async function loadProfileImage() {
         const profileImageContainer = document.getElementById(
           "profile-image-container"
         );
         const profileImageUrl = `${API_CONFIG.baseURL}/api/blobs/${CONTAINER_NAME}/${FOLDER_NAME}/profile-image`;
 
-        const img = document.createElement("img");
-        img.className = "profile-image";
-        img.alt = `${PATIENT_NAME} - Profile Photo`;
+        console.log("🖼️ Loading profile image from:", profileImageUrl);
 
-        img.onload = function () {
-          profileImageContainer.innerHTML = "";
-          profileImageContainer.appendChild(img);
-        };
+        try {
+          // First try to fetch the image to check if it exists
+          const response = await fetch(profileImageUrl, {
+            method: "HEAD",
+            mode: "cors",
+            cache: "no-cache",
+          });
 
-        img.onerror = function () {
-          // Keep the initials placeholder
-        };
+          if (!response.ok) {
+            console.warn(
+              `❌ Profile image not available: ${response.status} ${response.statusText}`
+            );
+            return; // Keep initials placeholder
+          }
 
-        img.src = profileImageUrl;
+          console.log("✅ Profile image endpoint available, loading image...");
+
+          // If HEAD request succeeds, load the actual image
+          const img = document.createElement("img");
+          img.className = "profile-image";
+          img.alt = `${PATIENT_NAME} - Profile Photo`;
+          img.crossOrigin = "anonymous"; // Add CORS support
+
+          img.onload = function () {
+            console.log("✅ Profile image loaded successfully");
+            profileImageContainer.innerHTML = "";
+            profileImageContainer.appendChild(img);
+          };
+
+          img.onerror = function (error) {
+            console.warn("❌ Profile image failed to load:", error);
+            console.warn("🔍 Attempted URL:", profileImageUrl);
+          };
+
+          img.src = profileImageUrl + "?t=" + Date.now(); // Add cache buster
+        } catch (error) {
+          console.error("❌ Error checking profile image:", error);
+        }
       }
 
       function startSessionTimer() {
@@ -1749,17 +1536,17 @@
         }
       }
 
-      // ENHANCED: Initialize everything with FingerprintJS Pro location
+      // 🚀 ENHANCED: Initialize everything with FingerprintJS Pro location + Profile Image Testing
       document.addEventListener("DOMContentLoaded", async function () {
         console.log(
-          "🚀 Initializing SmartToken page with enhanced security verification + Location..."
+          "🚀 Initializing SmartToken page with enhanced security verification + Location + Profile Image..."
         );
 
         // Load profile image
         loadProfileImage();
 
         // Start location detection immediately
-        console.log("🌍 Starting location detection process...");
+        console.log("🌐 Starting location detection process...");
         updateLocationDisplay(); // Show initial loading state
 
         // Get GPS location first (non-blocking)
