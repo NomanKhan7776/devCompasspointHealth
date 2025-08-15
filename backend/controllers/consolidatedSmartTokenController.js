@@ -135,6 +135,12 @@ const checkDeviceAndTriggerAlerts = async (
     console.log(`   - Confidence: ${deviceFingerprint.confidence}`);
     console.log(`   - Patient ID: ${patientUserId}`);
 
+    // ✅ NEW: Get IP location separately
+    const ipLocation = await getIPLocationForDevice(getRealUserIP(req));
+    console.log(
+      `🌐 IP Location:`,
+      ipLocation ? `${ipLocation.city}, ${ipLocation.country}` : "Not available"
+    );
     await pool.connect();
 
     // ✅ Check if this FingerprintJS Pro visitorId is registered for this patient
@@ -207,6 +213,8 @@ const checkDeviceAndTriggerAlerts = async (
     return {
       isRegisteredDevice: isRegistered,
       deviceInfo: extractDeviceInfo(deviceFingerprint),
+      ipLocation: ipLocation,
+      hasLocation: !!ipLocation,
       enhancedLogId,
       alertsTriggered,
       service: "fingerprintjs_pro",
@@ -246,30 +254,14 @@ const checkDeviceAndTriggerAlerts = async (
 };
 
 /**
- * Extract device information from FingerprintJS Pro fingerprint
+ * Extract device information from FingerprintJS Pro fingerprint (WITHOUT IP location)
  */
 const extractDeviceInfo = (fingerprint) => {
   const metadata = fingerprint.metadata || {};
   const details = fingerprint.details || {};
 
-  // Extract IP location from FingerprintJS Pro ipInfo
-  let ipLocation = null;
-  if (fingerprint.ipInfo?.data?.v4?.geolocation) {
-    const geo = fingerprint.ipInfo.data.v4.geolocation;
-    ipLocation = {
-      latitude: geo.latitude,
-      longitude: geo.longitude,
-      city: geo.city?.name,
-      region: geo.subdivisions?.[0]?.name,
-      country: geo.country?.name,
-      countryCode: geo.country?.code,
-      postalCode: geo.postalCode,
-      timezone: geo.timezone,
-      accuracyRadius: geo.accuracyRadius,
-      ipAddress: fingerprint.ipInfo.data.v4.address,
-      asn: fingerprint.ipInfo.data.v4.asn?.name,
-    };
-  }
+  // ✅ REMOVED: FingerprintJS Pro IP location extraction
+  // Will use separate IP geolocation service instead
 
   return {
     visitorId: fingerprint.visitorId,
@@ -287,8 +279,7 @@ const extractDeviceInfo = (fingerprint) => {
       metadata.deviceType ||
       getDeviceTypeFromUserAgent(details.userAgent || ""),
     userAgent: details.userAgent || "",
-    ipLocation: ipLocation,
-    hasLocation: !!ipLocation,
+    hasLocation: false, // Will be set separately
     timestamp: new Date().toISOString(),
   };
 };
@@ -625,6 +616,16 @@ const getDeviceTypeFromUserAgent = (userAgent) => {
   )
     ? "mobile"
     : "desktop";
+};
+
+const getIPLocationForDevice = async (ipAddress) => {
+  try {
+    const locationResult = await locationService.getLocationFromIP(ipAddress);
+    return locationResult;
+  } catch (error) {
+    console.error("❌ Error getting IP location:", error);
+    return null;
+  }
 };
 
 // Helper function to check if token is revoked/disabled

@@ -57,7 +57,7 @@ class LocationService {
    */
   async getLocationFromIP(ipAddress) {
     try {
-      console.log(`🌍 Getting location for IP: ${ipAddress}`);
+      console.log(`🌐 Getting location for IP: ${ipAddress}`);
 
       // Check if IP is private/local
       if (this.isPrivateIP(ipAddress)) {
@@ -69,112 +69,73 @@ class LocationService {
           city: "Local Network",
           region: "Private Network",
           country: "Unknown",
+          latitude: null,
+          longitude: null,
           accuracy: "low",
           source: "ip_private",
           timestamp: new Date().toISOString(),
         };
       }
 
-      // ✅ FIXED: Try IPInfo.io first with better lite account handling
+      // ✅ NEW: Use ipdata.co API
       try {
-        console.log("🔍 Trying IPInfo.io...");
-        const ipinfoUrl = this.ipinfoToken
-          ? `https://ipinfo.io/${ipAddress}?token=${this.ipinfoToken}`
-          : `https://ipinfo.io/${ipAddress}/json`;
+        console.log("🔍 Trying ipdata.co...");
+        const ipdataUrl = `https://api.ipdata.co/${ipAddress}?api-key=${
+          process.env.IPDATA_API_KEY || "test"
+        }`;
 
-        const response = await axios.get(ipinfoUrl, {
-          timeout: 8000, // Increased timeout for lite accounts
+        const response = await axios.get(ipdataUrl, {
+          timeout: 8000,
           headers: {
             "User-Agent": "CompassPointHealth-PRMS/2.1.0",
             Accept: "application/json",
           },
         });
 
-        console.log("✅ IPInfo.io raw response:", response.data);
+        console.log("✅ ipdata.co response:", response.data);
 
-        if (response.data && typeof response.data === "object") {
-          // ✅ BETTER: Handle IPInfo lite account responses
+        if (response.data && !response.data.message) {
           const data = response.data;
 
-          // Check for error responses from IPInfo
-          if (data.error || data.message) {
-            console.log(
-              "⚠️ IPInfo error response:",
-              data.error || data.message
-            );
-            throw new Error(data.error || data.message);
-          }
-
-          // ✅ FIXED: Better validation for IPInfo lite data
           const hasValidCity =
             data.city &&
             data.city !== "undefined" &&
             data.city !== "" &&
-            data.city.toLowerCase() !== "null" &&
             !data.city.includes("N/A");
 
           const hasValidRegion =
-            data.region &&
-            data.region !== "undefined" &&
-            data.region !== "" &&
-            data.region.toLowerCase() !== "null";
+            data.region && data.region !== "undefined" && data.region !== "";
 
-          const hasValidCountry =
-            data.country && data.country !== "undefined" && data.country !== "";
-
-          console.log("🔍 IPInfo data validation:", {
-            hasValidCity,
-            hasValidRegion,
-            hasValidCountry,
-            cityValue: `"${data.city}"`,
-            regionValue: `"${data.region}"`,
-            countryValue: `"${data.country}"`,
-          });
-
-          if (hasValidCity || hasValidRegion || hasValidCountry) {
-            const [lat, lon] = (data.loc || "0,0").split(",");
-
+          if (hasValidCity || hasValidRegion || data.country_name) {
             const locationResult = {
               type: "ip",
               ipAddress: ipAddress,
               isPrivate: false,
               city: hasValidCity ? data.city : "Unknown",
               region: hasValidRegion ? data.region : "Unknown",
-              country: hasValidCountry ? data.country : "Unknown",
-              latitude: parseFloat(lat) || null,
-              longitude: parseFloat(lon) || null,
-              org: data.org,
+              country: data.country_name || "Unknown",
+              countryCode: data.country_code,
+              latitude: data.latitude,
+              longitude: data.longitude,
+              timezone: data.time_zone?.name,
+              org: data.organisation,
               postal: data.postal,
-              timezone: data.timezone,
-              accuracy: "medium",
-              source: this.ipinfoToken ? "ipinfo_paid" : "ipinfo_free",
+              accuracy: "high",
+              source: "ipdata_co",
               timestamp: new Date().toISOString(),
             };
 
-            console.log("✅ IPInfo location result:", locationResult);
+            console.log("✅ ipdata.co location result:", locationResult);
             return locationResult;
-          } else {
-            console.log("⚠️ IPInfo returned invalid location data");
-            throw new Error("Invalid location data from IPInfo");
           }
-        } else {
-          console.log("⚠️ IPInfo returned invalid response format");
-          throw new Error("Invalid response format from IPInfo");
         }
-      } catch (ipinfoError) {
-        console.log("❌ IPInfo.io failed:", ipinfoError.message);
-
-        // ✅ Check if it's a rate limit or quota issue
-        if (ipinfoError.response?.status === 429) {
-          console.log("⚠️ IPInfo rate limit exceeded");
-        } else if (ipinfoError.response?.status === 403) {
-          console.log("⚠️ IPInfo quota exceeded or invalid token");
-        }
+      } catch (ipdataError) {
+        console.log("❌ ipdata.co failed:", ipdataError.message);
       }
 
-      // ✅ IMPROVED: Try ip-api.com (free, good accuracy)
+      // Fallback to ip-api.com if ipdata.co fails
       try {
-        console.log("🔍 Trying ip-api.com...");
+        console.log("🔍 Trying ip-api.com fallback...");
         const response = await axios.get(
           `http://ip-api.com/json/${ipAddress}`,
           {
@@ -189,24 +150,15 @@ class LocationService {
           }
         );
 
-        console.log("✅ ip-api.com response:", response.data);
-
         if (response.data.status === "success") {
           const data = response.data;
-
           const hasValidCity =
-            data.city &&
-            data.city !== "undefined" &&
-            data.city !== "" &&
-            !data.city.includes("N/A");
-
+            data.city && data.city !== "undefined" && data.city !== "";
           const hasValidRegion =
-            data.regionName &&
-            data.regionName !== "undefined" &&
-            data.regionName !== "";
+            data.regionName && data.regionName !== "undefined";
 
           if (hasValidCity || hasValidRegion) {
-            const locationResult = {
+            return {
               type: "ip",
               ipAddress: ipAddress,
               isPrivate: false,
@@ -219,93 +171,18 @@ class LocationService {
               latitude: data.lat,
               longitude: data.lon,
               timezone: data.timezone,
-              isp: data.isp,
+              org: data.isp,
               accuracy: "medium",
-              source: "ip_api",
+              source: "ip_api_fallback",
               timestamp: new Date().toISOString(),
             };
-
-            console.log("✅ ip-api location result:", locationResult);
-            return locationResult;
-          }
-        } else {
-          console.log("❌ ip-api.com failed:", response.data.message);
-        }
-      } catch (error) {
-        console.log("❌ ip-api.com failed:", error.message);
-      }
-
-      // ✅ IMPROVED: Try ipapi.co as another fallback
-      try {
-        console.log("🔍 Trying ipapi.co...");
-        const response = await axios.get(
-          `https://ipapi.co/${ipAddress}/json/`,
-          {
-            timeout: 8000,
-            headers: {
-              "User-Agent": "CompassPointHealth-PRMS/2.1.0",
-            },
-          }
-        );
-
-        console.log("✅ ipapi.co response:", response.data);
-
-        if (response.data && !response.data.error) {
-          const data = response.data;
-
-          const hasValidCity =
-            data.city &&
-            data.city !== "undefined" &&
-            data.city !== "" &&
-            !data.city.includes("N/A");
-
-          const hasValidRegion =
-            data.region && data.region !== "undefined" && data.region !== "";
-
-          if (hasValidCity || hasValidRegion) {
-            const locationResult = {
-              type: "ip",
-              ipAddress: ipAddress,
-              isPrivate: false,
-              city: hasValidCity ? data.city : "Unknown",
-              region: hasValidRegion ? data.region : "Unknown",
-              country: data.country_name || "Unknown",
-              countryCode: data.country_code,
-              latitude: data.latitude,
-              longitude: data.longitude,
-              timezone: data.timezone,
-              org: data.org,
-              accuracy: "medium",
-              source: "ipapi_co",
-              timestamp: new Date().toISOString(),
-            };
-
-            console.log("✅ ipapi.co location result:", locationResult);
-            return locationResult;
           }
         }
-      } catch (error) {
-        console.log("❌ ipapi.co failed:", error.message);
+      } catch (fallbackError) {
+        console.log("❌ ip-api.com fallback failed:", fallbackError.message);
       }
 
-      // ✅ IMPROVED: Final fallback with ISP info if available
-      console.log(
-        "⚠️ All geolocation services failed, using enhanced fallback"
-      );
-
-      // Try to get at least ISP info from a simple service
-      let ispInfo = null;
-      try {
-        const response = await axios.get(`https://httpbin.org/ip`, {
-          timeout: 3000,
-        });
-        if (response.data?.origin) {
-          ispInfo = `Connection from ${response.data.origin}`;
-        }
-      } catch (error) {
-        console.log("ISP lookup also failed");
-      }
-
+      // Final fallback
       return {
         type: "ip",
         ipAddress: ipAddress,
@@ -313,10 +190,11 @@ class LocationService {
         city: "Location Unavailable",
         region: "Unknown Region",
         country: "Unknown Country",
+        latitude: null,
+        longitude: null,
         accuracy: "low",
         source: "fallback",
         error: "All geolocation services failed",
-        isp: ispInfo,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
@@ -327,6 +205,8 @@ class LocationService {
         city: "Location Error",
         region: "Unknown",
         country: "Unknown",
+        latitude: null,
+        longitude: null,
         accuracy: "low",
         error: "Location service unavailable",
         source: "error",
@@ -452,7 +332,6 @@ class LocationService {
       if (locationData.isPrivate) {
         return `🚨 SECURITY ALERT: Someone on a local network just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately.`;
       } else {
-        // ✅ IMPROVED: Better location message formatting
         const hasSpecificCity =
           locationData.city &&
           locationData.city !== "Unknown" &&
@@ -464,19 +343,30 @@ class LocationService {
           locationData.region !== "Unknown" &&
           locationData.region !== "Unknown Region";
 
-        if (hasSpecificCity && hasSpecificRegion) {
-          return `🚨 SECURITY ALERT: Someone in the ${locationData.city}, ${locationData.region} area just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. Location determined from internet connection. If this was not authorized, please contact medical staff immediately.`;
-        } else if (hasSpecificCity) {
-          return `🚨 SECURITY ALERT: Someone in the ${locationData.city} area just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. Location determined from internet connection. If this was not authorized, please contact medical staff immediately.`;
-        } else {
-          return `🚨 SECURITY ALERT: Someone just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. Location could not be determined from internet connection. If this was not authorized, please contact medical staff immediately.`;
+        let locationText = "";
+        let coordsText = "";
+
+        // Add coordinates if available
+        if (locationData.latitude && locationData.longitude) {
+          coordsText = ` (Coordinates: ${locationData.latitude.toFixed(
+            4
+          )}, ${locationData.longitude.toFixed(4)})`;
         }
+
+        if (hasSpecificCity && hasSpecificRegion) {
+          locationText = `in the ${locationData.city}, ${locationData.region} area${coordsText}`;
+        } else if (hasSpecificCity) {
+          locationText = `in the ${locationData.city} area${coordsText}`;
+        } else {
+          locationText = `from an unknown location${coordsText}`;
+        }
+
+        return `🚨 SECURITY ALERT: Someone ${locationText} just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. Location determined from internet connection. If this was not authorized, please contact medical staff immediately.`;
       }
     }
 
     return `🚨 SECURITY ALERT: Someone just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately.`;
   }
-
   /**
    * Extract IP address from request object
    */

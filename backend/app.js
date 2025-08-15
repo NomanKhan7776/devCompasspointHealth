@@ -93,6 +93,7 @@ app.use(
           // ✅ NEW: Location and SMS services
           "https://maps.googleapis.com",
           "https://api.twilio.com",
+          "https://api.ipdata.co",
           "http://ip-api.com",
           "https://ipinfo.io",
           "https://nominatim.openstreetmap.org",

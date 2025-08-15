@@ -522,10 +522,10 @@
       // Location tracking variables
       let locationData = {
         gps: null,
-        fingerprintjsIP: null,
+        ipLocation: null,
         best: null,
         hasGPS: false,
-        hasFPJSLocation: false,
+        hasIPLocation: false,
       };
 
       // API Configuration
@@ -575,49 +575,6 @@
       }
 
       /**
-       * Extract IP location from FingerprintJS Pro response
-       */
-      function extractFingerprintJSIPLocation(fpjsResponse) {
-        console.log(
-          "🌐 Extracting IP location from FingerprintJS Pro response..."
-        );
-
-        const ipInfo = fpjsResponse.ipInfo?.data?.v4;
-        const geolocation = ipInfo?.geolocation;
-
-        if (!geolocation) {
-          console.log(
-            "⚠️ No IP geolocation data found in FingerprintJS Pro response"
-          );
-          return null;
-        }
-
-        const locationInfo = {
-          type: "fingerprintjs_ip",
-          source: "fingerprintjs_pro",
-          ipAddress: ipInfo.address,
-          latitude: geolocation.latitude,
-          longitude: geolocation.longitude,
-          city: geolocation.city?.name,
-          region: geolocation.subdivisions?.[0]?.name,
-          country: geolocation.country?.name,
-          countryCode: geolocation.country?.code,
-          postalCode: geolocation.postalCode,
-          timezone: geolocation.timezone,
-          accuracyRadius: geolocation.accuracyRadius,
-          asn: ipInfo.asn?.name,
-          confidence: "high",
-          timestamp: new Date().toISOString(),
-        };
-
-        console.log(
-          "✅ FingerprintJS Pro IP location extracted:",
-          locationInfo
-        );
-        return locationInfo;
-      }
-
-      /**
        * Get GPS location if available
        */
       async function getGPSLocation() {
@@ -661,7 +618,7 @@
         const networkInfoDiv = document.getElementById("network-info");
         const accuracyDiv = document.getElementById("location-accuracy");
 
-        let primaryLocation = locationData.gps || locationData.fingerprintjsIP;
+        let primaryLocation = locationData.gps || locationData.ipLocation;
         let statusClass = "";
         let mainLocationText = "";
         let iconClass = "";
@@ -673,13 +630,11 @@
           )}m)`;
           iconClass = "fa-satellite text-green-400";
           statusClass = "location-success";
-        } else if (locationData.fingerprintjsIP) {
+        } else if (locationData.ipLocation) {
           // IP location
-          const city = locationData.fingerprintjsIP.city || "Unknown City";
-          const region =
-            locationData.fingerprintjsIP.region || "Unknown Region";
-          const country =
-            locationData.fingerprintjsIP.country || "Unknown Country";
+          const city = locationData.ipLocation.city || "Unknown City";
+          const region = locationData.ipLocation.region || "Unknown Region";
+          const country = locationData.ipLocation.country || "Unknown Country";
 
           mainLocationText = `${city}, ${region}, ${country}`;
           iconClass = "fa-globe text-blue-400";
@@ -702,7 +657,7 @@
               ${
                 locationData.gps
                   ? "Device GPS"
-                  : locationData.fingerprintjsIP
+                  : locationData.ipLocation
                   ? "IP Location Service"
                   : "No location data"
               } •
@@ -736,8 +691,8 @@
           `;
         }
 
-        if (locationData.fingerprintjsIP) {
-          const loc = locationData.fingerprintjsIP;
+        if (locationData.ipLocation) {
+          const loc = locationData.ipLocation;
           ipLocationDiv.innerHTML = `
             <i class="fas fa-globe mr-1 text-blue-300"></i>
             <span>IP Location: ${loc.city}, ${loc.region}, ${loc.country} (±${loc.accuracyRadius}km)</span>
@@ -852,15 +807,38 @@
                     ),
                   ]);
 
-                  // Extract IP location if available
-                  const ipLocationData = extractFingerprintJSIPLocation(result);
-                  if (ipLocationData) {
-                    locationData.fingerprintjsIP = ipLocationData;
-                    locationData.hasFPJSLocation = true;
-                    console.log(
-                      "✅ IP location extracted from FingerprintJS Pro"
+                  // ✅ NEW: Get IP location from server after fingerprint is generated
+                  console.log("🌐 Requesting IP location from server...");
+                  try {
+                    const ipLocationResponse = await fetch(
+                      `${API_CONFIG.baseURL}/api/ip-location`,
+                      {
+                        method: "GET",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                      }
+                    );
+
+                    if (ipLocationResponse.ok) {
+                      const ipLocationResult = await ipLocationResponse.json();
+                      if (
+                        ipLocationResult.success &&
+                        ipLocationResult.location
+                      ) {
+                        locationData.ipLocation = ipLocationResult.location;
+                        locationData.hasIPLocation = true;
+                        console.log("✅ IP location obtained from server");
+                        updateLocationDisplay();
+                      }
+                    }
+                  } catch (ipError) {
+                    console.warn(
+                      "⚠️ Failed to get IP location from server:",
+                      ipError.message
                     );
                   }
+
                   if (!result || !result.visitorId) {
                     throw new Error(
                       "Invalid fingerprint result - no visitor ID"
@@ -1187,15 +1165,13 @@
             deviceFingerprint: fingerprint,
             locationData: {
               gps: locationData.gps,
-              fingerprintjsIP: locationData.fingerprintjsIP,
-              best: locationData.gps || locationData.fingerprintjsIP,
+              ipLocation: locationData.ipLocation,
+              best: locationData.gps || locationData.ipLocation,
             },
-            hasLocationData: !!(
-              locationData.gps || locationData.fingerprintjsIP
-            ),
+            hasLocationData: !!(locationData.gps || locationData.ipLocation),
             locationSources: {
               gps: locationData.hasGPS,
-              fingerprintjsIP: locationData.hasFPJSLocation,
+              ipLocation: locationData.hasIPLocation,
             },
             extendedData: {
               ipInfo: fingerprint.ipInfo,
