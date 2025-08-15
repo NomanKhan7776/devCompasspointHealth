@@ -857,25 +857,16 @@
                   });
 
                   // Extract IP location if available
-                  const ipLocation = extractFingerprintJSIPLocation(result);
-                  if (ipLocation) {
-                    locationData.fingerprintjsIP = ipLocation;
-                    locationData.hasFPJSLocation = true;
-                    console.log(
-                      "✅ IP location extracted from FingerprintJS Pro"
-                    );
-                  }
 
                   return {
                     hash: result.visitorId,
                     visitorId: result.visitorId,
                     requestId: result.requestId,
                     confidence: result.confidence?.score || 0,
-                    // Include extended FingerprintJS Pro data
+                    // Include extended FingerprintJS Pro data (WITHOUT IP location)
                     ipInfo: result.ipInfo,
                     botd: result.botd,
                     vpn: result.vpn,
-                    location: ipLocation,
                     details: {
                       visitorId: result.visitorId,
                       requestId: result.requestId,
@@ -902,7 +893,6 @@
                         ),
                       timestamp: Date.now(),
                       fullResult: result,
-                      ipLocation: ipLocation,
                     },
                     metadata: {
                       deviceName: getDeviceName(),
@@ -919,8 +909,6 @@
                       fpjsRequestId: result.requestId,
                       region: "us",
                       publicKey: this.publicKey.substring(0, 8) + "...",
-                      hasIPLocation: !!ipLocation,
-                      locationSource: ipLocation ? "fingerprintjs_pro" : "none",
                     },
                   };
                 } catch (error) {
@@ -1150,6 +1138,40 @@
             tag: "emergency_smarttoken_access",
             linkedId: TOKEN_ID,
           });
+
+          console.log("✅ Enhanced fingerprint generated");
+
+          // ✅ NEW: Get IP location from server after fingerprint is generated
+          console.log("🌐 Requesting IP location from server...");
+          try {
+            const ipLocationResponse = await fetch(
+              `${API_CONFIG.baseURL}/api/ip-location`,
+              {
+                method: "GET",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+              }
+            );
+
+            if (ipLocationResponse.ok) {
+              const ipLocationResult = await ipLocationResponse.json();
+              if (ipLocationResult.success && ipLocationResult.location) {
+                locationData.ipLocation = ipLocationResult.location;
+                locationData.hasIPLocation = true;
+                console.log("✅ IP location obtained from server");
+                updateLocationDisplay();
+              }
+            }
+          } catch (ipError) {
+            console.warn(
+              "⚠️ Failed to get IP location from server:",
+              ipError.message
+            );
+          }
+
+          // Update location display
+          updateLocationDisplay();
 
           if (!fingerprint || !fingerprint.visitorId) {
             throw new Error("Invalid fingerprint - no visitor ID generated");
