@@ -693,22 +693,25 @@
 
         if (locationData.ipLocation) {
           const loc = locationData.ipLocation;
+          const coordsDisplay =
+            loc.latitude && loc.longitude
+              ? ` (${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)})`
+              : "";
+
           ipLocationDiv.innerHTML = `
-            <i class="fas fa-globe mr-1 text-blue-300"></i>
-            <span>IP Location: ${loc.city}, ${loc.region}, ${loc.country} (±${loc.accuracyRadius}km)</span>
-          `;
+    <i class="fas fa-globe mr-1 text-blue-300"></i>
+    <span>IP Location: ${loc.city}, ${loc.region}, ${loc.country}${coordsDisplay}</span>
+  `;
 
           networkInfoDiv.innerHTML = `
-            <i class="fas fa-network-wired mr-1"></i>
-            <span>ISP: ${loc.asn?.name || "Unknown"} • IP: ${
-            loc.ipAddress
-          }</span>
-          `;
+    <i class="fas fa-network-wired mr-1"></i>
+    <span>ISP: ${loc.org || "Unknown"} • IP: ${loc.ipAddress}</span>
+  `;
 
           accuracyDiv.innerHTML = `
-            <i class="fas fa-crosshairs mr-1"></i>
-            <span>Timezone: ${loc.timezone} • Source: IP Intelligence Service</span>
-          `;
+    <i class="fas fa-crosshairs mr-1"></i>
+    <span>Timezone: ${loc.timezone || "Unknown"} • Source: ${loc.source}</span>
+  `;
         } else {
           ipLocationDiv.innerHTML = `
             <i class="fas fa-globe mr-1"></i>

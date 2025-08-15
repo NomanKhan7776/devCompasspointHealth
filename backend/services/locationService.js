@@ -53,7 +53,7 @@ class LocationService {
   }
 
   /**
-   * ✅ FIXED: Enhanced IP location lookup with better IPInfo lite handling
+   * ✅ FIXED: IP location lookup using ipdata.co API with proper fields
    */
   async getLocationFromIP(ipAddress) {
     try {
@@ -77,15 +77,22 @@ class LocationService {
         };
       }
 
-      // ✅ NEW: Use ipdata.co API
+      // ✅ FIXED: Use ipdata.co API with specific fields
       try {
-        console.log("🔍 Trying ipdata.co...");
-        const ipdataUrl = `https://api.ipdata.co/${ipAddress}?api-key=${
-          process.env.IPDATA_API_KEY || "test"
-        }`;
+        console.log("🔍 Trying ipdata.co with optimized fields...");
+
+        const apiKey = process.env.IPDATA_API_KEY || "test";
+        const fields =
+          "ip,city,region,country_name,country_code,latitude,longitude,postal,timezone,organisation";
+        const ipdataUrl = `https://api.ipdata.co/${ipAddress}?api-key=${apiKey}&fields=${fields}`;
+
+        console.log(
+          "🌐 ipdata.co URL:",
+          ipdataUrl.replace(apiKey, "API_KEY_HIDDEN")
+        );
 
         const response = await axios.get(ipdataUrl, {
-          timeout: 8000,
+          timeout: 10000,
           headers: {
             "User-Agent": "CompassPointHealth-PRMS/2.1.0",
             Accept: "application/json",
@@ -94,46 +101,88 @@ class LocationService {
 
         console.log("✅ ipdata.co response:", response.data);
 
-        if (response.data && !response.data.message) {
+        if (response.data && !response.data.message && !response.data.error) {
           const data = response.data;
 
+          // ✅ IMPROVED: Better validation
           const hasValidCity =
             data.city &&
-            data.city !== "undefined" &&
-            data.city !== "" &&
-            !data.city.includes("N/A");
+            typeof data.city === "string" &&
+            data.city.trim() !== "" &&
+            data.city !== "null" &&
+            !data.city.toLowerCase().includes("unknown");
 
           const hasValidRegion =
-            data.region && data.region !== "undefined" && data.region !== "";
+            data.region &&
+            typeof data.region === "string" &&
+            data.region.trim() !== "" &&
+            data.region !== "null";
 
-          if (hasValidCity || hasValidRegion || data.country_name) {
+          const hasValidCountry =
+            data.country_name &&
+            typeof data.country_name === "string" &&
+            data.country_name.trim() !== "";
+
+          const hasValidCoordinates =
+            typeof data.latitude === "number" &&
+            typeof data.longitude === "number" &&
+            !isNaN(data.latitude) &&
+            !isNaN(data.longitude);
+
+          console.log("🔍 ipdata.co validation:", {
+            hasValidCity,
+            hasValidRegion,
+            hasValidCountry,
+            hasValidCoordinates,
+            city: data.city,
+            latitude: data.latitude,
+            longitude: data.longitude,
+          });
+
+          if (hasValidCity || hasValidRegion || hasValidCountry) {
             const locationResult = {
               type: "ip",
               ipAddress: ipAddress,
               isPrivate: false,
-              city: hasValidCity ? data.city : "Unknown",
-              region: hasValidRegion ? data.region : "Unknown",
-              country: data.country_name || "Unknown",
+              city: hasValidCity ? data.city.trim() : "Unknown",
+              region: hasValidRegion ? data.region.trim() : "Unknown",
+              country: hasValidCountry ? data.country_name.trim() : "Unknown",
               countryCode: data.country_code,
-              latitude: data.latitude,
-              longitude: data.longitude,
-              timezone: data.time_zone?.name,
+              latitude: hasValidCoordinates ? data.latitude : null,
+              longitude: hasValidCoordinates ? data.longitude : null,
+              timezone: data.timezone,
               org: data.organisation,
               postal: data.postal,
-              accuracy: "high",
+              accuracy: hasValidCoordinates ? "high" : "medium",
               source: "ipdata_co",
               timestamp: new Date().toISOString(),
             };
 
             console.log("✅ ipdata.co location result:", locationResult);
             return locationResult;
+          } else {
+            console.log("⚠️ ipdata.co returned invalid location data");
           }
+        } else {
+          console.log(
+            "⚠️ ipdata.co returned error:",
+            response.data.message || response.data.error
+          );
         }
       } catch (ipdataError) {
         console.log("❌ ipdata.co failed:", ipdataError.message);
+
+        // Log more details about the error
+        if (ipdataError.response) {
+          console.log(
+            "❌ ipdata.co error status:",
+            ipdataError.response.status
+          );
+          console.log("❌ ipdata.co error data:", ipdataError.response.data);
+        }
       }
 
-      // Fallback to ip-api.com if ipdata.co fails
+      // ✅ FALLBACK: Try ip-api.com
       try {
         console.log("🔍 Trying ip-api.com fallback...");
         const response = await axios.get(
@@ -149,6 +198,8 @@ class LocationService {
             },
           }
         );
+
+        console.log("✅ ip-api.com response:", response.data);
 
         if (response.data.status === "success") {
           const data = response.data;
@@ -168,8 +219,8 @@ class LocationService {
                 : data.region || "Unknown",
               country: data.country || "Unknown",
               countryCode: data.countryCode,
-              latitude: data.lat,
-              longitude: data.lon,
+              latitude: typeof data.lat === "number" ? data.lat : null,
+              longitude: typeof data.lon === "number" ? data.lon : null,
               timezone: data.timezone,
               org: data.isp,
               accuracy: "medium",
@@ -182,7 +233,8 @@ class LocationService {
         console.log("❌ ip-api.com fallback failed:", fallbackError.message);
       }
 
-      // Final fallback
+      // ✅ FINAL FALLBACK
+      console.log("⚠️ All geolocation services failed");
       return {
         type: "ip",
         ipAddress: ipAddress,
@@ -313,7 +365,7 @@ class LocationService {
   }
 
   /**
-   * ✅ IMPROVED: Format location for SMS alert message
+   * ✅ FIXED: Format location for SMS alert message with coordinates
    */
   formatLocationForAlert(locationData, patientName, deviceType = "device") {
     if (locationData.type === "gps") {
@@ -346,8 +398,13 @@ class LocationService {
         let locationText = "";
         let coordsText = "";
 
-        // Add coordinates if available
-        if (locationData.latitude && locationData.longitude) {
+        // ✅ FIXED: Add coordinates if available from IP geolocation
+        if (
+          locationData.latitude &&
+          locationData.longitude &&
+          typeof locationData.latitude === "number" &&
+          typeof locationData.longitude === "number"
+        ) {
           coordsText = ` (Coordinates: ${locationData.latitude.toFixed(
             4
           )}, ${locationData.longitude.toFixed(4)})`;
@@ -357,6 +414,8 @@ class LocationService {
           locationText = `in the ${locationData.city}, ${locationData.region} area${coordsText}`;
         } else if (hasSpecificCity) {
           locationText = `in the ${locationData.city} area${coordsText}`;
+        } else if (hasSpecificRegion) {
+          locationText = `in the ${locationData.region} region${coordsText}`;
         } else {
           locationText = `from an unknown location${coordsText}`;
         }
