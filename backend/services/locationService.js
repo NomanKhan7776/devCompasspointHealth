@@ -57,9 +57,33 @@ class LocationService {
    */
   async getLocationFromIP(ipAddress) {
     try {
-      console.log(`🌐 Starting IP geolocation for: ${ipAddress}`);
+      let cleanIP = ipAddress;
+
+      if (cleanIP && cleanIP !== "unknown") {
+        // Strip port from IPv4 (e.g., "192.168.1.1:8080" -> "192.168.1.1")
+        if (cleanIP.includes(":") && !cleanIP.includes("::")) {
+          const parts = cleanIP.split(":");
+          if (parts.length === 2 && /^\d+$/.test(parts[1])) {
+            cleanIP = parts[0];
+            console.log(`🔧 Cleaned IPv4 from ${ipAddress} to ${cleanIP}`);
+          }
+        }
+
+        // Strip port from IPv6 (e.g., "[2001:db8::1]:8080" -> "2001:db8::1")
+        if (cleanIP.startsWith("[") && cleanIP.includes("]:")) {
+          cleanIP = cleanIP.substring(1, cleanIP.indexOf("]:"));
+          console.log(`🔧 Cleaned IPv6 from ${ipAddress} to ${cleanIP}`);
+        }
+
+        // Remove IPv6 prefix (::ffff:192.168.1.1 -> 192.168.1.1)
+        cleanIP = cleanIP.replace(/^::ffff:/, "");
+      }
+      console.log(
+        `🌐 Starting IP geolocation for: ${cleanIP} (original: ${ipAddress})`
+      );
 
       // ✅ FIXED: Properly define API key at the top
+      // ✅ Use cleaned IP for the rest of the function
       const apiKey =
         process.env.IPDATA_API_KEY ||
         "bb4b8713a73b240e458934834f0ce3674f84997a02f8681ef5f37671";
@@ -69,11 +93,11 @@ class LocationService {
       );
 
       // Check if IP is private/local
-      if (this.isPrivateIP(ipAddress)) {
-        console.log(`🏠 Private IP detected: ${ipAddress}`);
+      if (this.isPrivateIP(cleanIP)) {
+        console.log(`🏠 Private IP detected: ${cleanIP}`);
         return {
           type: "ip",
-          ipAddress: ipAddress,
+          ipAddress: cleanIP, // ✅ Use cleaned IP
           isPrivate: true,
           city: "Local Network",
           region: "Private Network",
@@ -92,7 +116,7 @@ class LocationService {
 
         const fields =
           "ip,city,region,country_name,country_code,latitude,longitude,postal,timezone,organisation";
-        const ipdataUrl = `https://api.ipdata.co/${ipAddress}?api-key=${apiKey}&fields=${fields}`;
+        const ipdataUrl = `https://api.ipdata.co/${cleanIP}?api-key=${apiKey}&fields=${fields}`; // ✅ Use cleanIP
 
         console.log(
           "🌐 ipdata.co request URL:",

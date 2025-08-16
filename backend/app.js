@@ -1109,19 +1109,44 @@ function getRealUserIP(req) {
   const realIP = req.headers["x-real-ip"];
   const cfConnectingIP = req.headers["cf-connecting-ip"];
 
+  let ip;
+
   if (forwardedFor) {
     const ips = forwardedFor.split(",").map((ip) => ip.trim());
-    return ips[0];
+    ip = ips[0];
+  } else {
+    ip =
+      realIP ||
+      cfConnectingIP ||
+      req.connection?.remoteAddress ||
+      req.socket?.remoteAddress ||
+      req.ip ||
+      "unknown";
   }
 
-  return (
-    realIP ||
-    cfConnectingIP ||
-    req.connection?.remoteAddress ||
-    req.socket?.remoteAddress ||
-    req.ip ||
-    "unknown"
-  );
+  // ✅ CRITICAL FIX: Strip port number if present
+  if (ip && ip !== "unknown") {
+    // Handle IPv4 with port (e.g., "192.168.1.1:8080")
+    if (ip.includes(":") && !ip.includes("::")) {
+      // Check if it's IPv4 with port (not IPv6)
+      const parts = ip.split(":");
+      if (parts.length === 2 && /^\d+$/.test(parts[1])) {
+        ip = parts[0]; // Keep only the IP part
+        console.log(`🔧 Stripped port from IPv4: ${ip}`);
+      }
+    }
+
+    // Handle IPv6 with port (e.g., "[2001:db8::1]:8080")
+    if (ip.startsWith("[") && ip.includes("]:")) {
+      ip = ip.substring(1, ip.indexOf("]:"));
+      console.log(`🔧 Stripped port from IPv6: ${ip}`);
+    }
+
+    // Remove IPv6 prefix if present (::ffff:192.168.1.1)
+    ip = ip.replace(/^::ffff:/, "");
+  }
+
+  return ip;
 }
 
 /**
