@@ -61,7 +61,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "missing_fpjs",
           visitorId: "unknown",
         },
-        null,
+        ipLocation,
         req
       );
 
@@ -193,8 +193,12 @@ const checkDeviceAndTriggerAlerts = async (
         patientUserId,
         patientName,
         enhancedLogId,
-        extractDeviceInfo(deviceFingerprint),
-        null,
+        {
+          ...extractDeviceInfo(deviceFingerprint),
+          ipLocation: ipLocation,
+          hasLocation: !!ipLocation,
+        },
+        ipLocation, // ✅ Include IP location
         req
       );
 
@@ -237,7 +241,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "fingerprintjs_pro_error",
           visitorId: "error",
         },
-        null,
+        ipLocation,
         req
       );
     } catch (alertError) {
@@ -395,7 +399,7 @@ const triggerEmergencyAlerts = async (
     const alertMessage = await twilioSMSService.createEmergencyMessage(
       patientName,
       deviceInfo,
-      deviceInfo.ipLocation || {}
+      locationData || deviceInfo.ipLocation || {}
     );
 
     // Create alert record
