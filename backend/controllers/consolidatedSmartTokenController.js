@@ -2628,7 +2628,17 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
     console.log(`✅ Token validated for manual emergency alert:`);
     console.log(`   - Patient ID: ${token.patientUserId}`);
     console.log(`   - Patient Name: ${token.patientName}`);
-
+    let finalLocationData = locationData;
+    if (!finalLocationData || !finalLocationData.city) {
+      console.log(`🌐 Getting IP location for manual alert...`);
+      finalLocationData = await getIPLocationForDevice(getRealUserIP(req));
+      console.log(
+        `🌐 Manual alert IP Location:`,
+        finalLocationData
+          ? `${finalLocationData.city}, ${finalLocationData.country}`
+          : "Not available"
+      );
+    }
     // Trigger the emergency alert system
     const alertResult = await triggerEmergencyAlerts(
       id,
@@ -2644,8 +2654,10 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
         service: "manual_emergency_alert",
         confidence: 1.0,
         timestamp: new Date().toISOString(),
+        ipLocation: finalLocationData, // ✅ Include IP location
+        hasLocation: !!finalLocationData,
       },
-      locationData,
+      finalLocationData,
       req
     );
 
@@ -2774,6 +2786,15 @@ exports.handleTimerExpiration = async (req, res) => {
     console.log(`   - Patient ID: ${token.patientUserId}`);
     console.log(`   - Patient Name: ${token.patientName}`);
 
+    console.log(`🌐 Getting IP location for timer-based alert...`);
+    const ipLocation = await getIPLocationForDevice(getRealUserIP(req));
+    console.log(
+      `🌐 Timer alert IP Location:`,
+      ipLocation
+        ? `${ipLocation.city}, ${ipLocation.country} (${ipLocation.latitude}, ${ipLocation.longitude})`
+        : "Not available"
+    );
+
     // Trigger the emergency alert system for timer expiration
     const alertResult = await triggerEmergencyAlerts(
       id,
@@ -2789,8 +2810,10 @@ exports.handleTimerExpiration = async (req, res) => {
         service: "timer_emergency_alert",
         confidence: deviceInfo.confidence || 1.0,
         timestamp: new Date().toISOString(),
+        ipLocation: ipLocation, // ✅ Include IP location in device info
+        hasLocation: !!ipLocation,
       },
-      locationData,
+      ipLocation,
       req
     );
 
