@@ -61,7 +61,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "missing_fpjs",
           visitorId: "unknown",
         },
-        ipLocation,
+        primaryLocation,
         req
       );
 
@@ -90,7 +90,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "invalid_fpjs",
           visitorId: "missing",
         },
-        null,
+        primaryLocation,
         req
       );
 
@@ -117,7 +117,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: service || "unknown",
           visitorId: visitorId,
         },
-        null,
+        primaryLocation,
         req
       );
 
@@ -135,19 +135,20 @@ const checkDeviceAndTriggerAlerts = async (
     console.log(`   - Confidence: ${deviceFingerprint.confidence}`);
     console.log(`   - Patient ID: ${patientUserId}`);
 
-    // ✅ NEW: Get IP location separately
-    const ipLocation = await getIPLocationForDevice(getRealUserIP(req));
-    console.log(`🌐 IP Location result:`, JSON.stringify(ipLocation, null, 2));
-    console.log(
-      `🌐 IP Location summary:`,
-      ipLocation
-        ? `${ipLocation.city}, ${ipLocation.country} (${ipLocation.latitude}, ${ipLocation.longitude})`
-        : "Not available"
-    );
-    console.log(
-      `🌐 IP Location:`,
-      ipLocation ? `${ipLocation.city}, ${ipLocation.country}` : "Not available"
-    );
+    // ✅ ENHANCED: Get combined GPS + IP location data
+    const combinedLocationData = await getCombinedLocationData(req);
+    const primaryLocation = combinedLocationData.primaryLocation;
+
+    console.log(`🌐 Combined location result:`, {
+      hasGPS: combinedLocationData.hasGPS,
+      hasIP: combinedLocationData.hasIP,
+      primaryType: primaryLocation?.type,
+      city: primaryLocation?.city || primaryLocation?.address || "Unknown",
+      coordinates:
+        primaryLocation?.latitude && primaryLocation?.longitude
+          ? `${primaryLocation.latitude}, ${primaryLocation.longitude}`
+          : "None",
+    });
     await pool.connect();
 
     // ✅ Check if this FingerprintJS Pro visitorId is registered for this patient
@@ -195,12 +196,14 @@ const checkDeviceAndTriggerAlerts = async (
       console.log("   - Request ID:", deviceFingerprint.requestId);
 
       console.log(`🚨 About to trigger emergency alerts with location:`, {
-        hasIPLocation: !!ipLocation,
-        locationCity: ipLocation?.city,
-        locationCountry: ipLocation?.country,
+        hasGPS: combinedLocationData.hasGPS,
+        hasIP: combinedLocationData.hasIP,
+        primaryType: primaryLocation?.type,
+        locationCity: primaryLocation?.city,
+        locationCountry: primaryLocation?.country,
         locationCoordinates:
-          ipLocation?.latitude && ipLocation?.longitude
-            ? `${ipLocation.latitude}, ${ipLocation.longitude}`
+          primaryLocation?.latitude && primaryLocation?.longitude
+            ? `${primaryLocation.latitude}, ${primaryLocation.longitude}`
             : "None",
       });
 
@@ -212,10 +215,13 @@ const checkDeviceAndTriggerAlerts = async (
         enhancedLogId,
         {
           ...extractDeviceInfo(deviceFingerprint),
-          ipLocation: ipLocation,
-          hasLocation: !!ipLocation,
+          combinedLocation: combinedLocationData, // ✅ Include full location data
+          ipLocation: combinedLocationData.ipLocation,
+          gpsLocation: combinedLocationData.gpsLocation,
+          hasLocation:
+            combinedLocationData.hasGPS || combinedLocationData.hasIP,
         },
-        ipLocation, // ✅ Include IP location
+        primaryLocation, // ✅ Include IP location
         req
       );
 
@@ -258,7 +264,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "fingerprintjs_pro_error",
           visitorId: "error",
         },
-        ipLocation,
+        primaryLocation,
         req
       );
     } catch (alertError) {
@@ -793,6 +799,97 @@ const logTokenAccess = async (
     if (process.env.NODE_ENV === "development") {
       console.error("Error logging token access:", error);
     }
+  }
+};
+
+/**
+ * ✅ NEW: Combine GPS and IP location data for comprehensive location info
+ */
+const getCombinedLocationData = async (req) => {
+  try {
+    // Get IP location
+    const ipLocation = await getIPLocationForDevice(getRealUserIP(req));
+
+    // Check for GPS coordinates from frontend
+    const gpsCoordinates =
+      req.body?.gpsCoordinates || req.body?.deviceFingerprint?.gpsCoordinates;
+
+    let combinedLocation = {
+      hasGPS: false,
+      hasIP: !!ipLocation,
+      ipLocation: ipLocation,
+      gpsLocation: null,
+      primaryLocation: ipLocation, // Default to IP
+      timestamp: new Date().toISOString(),
+    };
+
+    // If GPS coordinates are provided, use them as primary
+    if (gpsCoordinates && gpsCoordinates.latitude && gpsCoordinates.longitude) {
+      console.log(`📍 GPS coordinates received:`, {
+        latitude: gpsCoordinates.latitude,
+        longitude: gpsCoordinates.longitude,
+        accuracy: gpsCoordinates.accuracy,
+      });
+
+      // Create GPS location object
+      const gpsLocation = {
+        type: "gps",
+        latitude: parseFloat(gpsCoordinates.latitude),
+        longitude: parseFloat(gpsCoordinates.longitude),
+        accuracy: gpsCoordinates.accuracy || "unknown",
+        timestamp: gpsCoordinates.timestamp || new Date().toISOString(),
+        source: "device_gps",
+      };
+
+      // Try to get address from GPS coordinates
+      try {
+        const locationService = require("../services/locationService");
+        const gpsLocationWithAddress = await locationService.getLocationFromGPS(
+          gpsLocation.latitude,
+          gpsLocation.longitude
+        );
+
+        if (gpsLocationWithAddress && gpsLocationWithAddress.address) {
+          gpsLocation.address = gpsLocationWithAddress.address;
+          gpsLocation.city = gpsLocationWithAddress.city;
+          gpsLocation.region = gpsLocationWithAddress.region;
+          gpsLocation.country = gpsLocationWithAddress.country;
+        }
+      } catch (gpsError) {
+        console.warn(
+          "⚠️ Could not get address from GPS coordinates:",
+          gpsError.message
+        );
+      }
+
+      combinedLocation.hasGPS = true;
+      combinedLocation.gpsLocation = gpsLocation;
+      combinedLocation.primaryLocation = gpsLocation; // GPS takes priority
+    }
+
+    console.log(`🌐 Combined location data:`, {
+      hasGPS: combinedLocation.hasGPS,
+      hasIP: combinedLocation.hasIP,
+      primaryType: combinedLocation.primaryLocation?.type,
+      coordinates:
+        combinedLocation.primaryLocation?.latitude &&
+        combinedLocation.primaryLocation?.longitude
+          ? `${combinedLocation.primaryLocation.latitude}, ${combinedLocation.primaryLocation.longitude}`
+          : "None",
+    });
+
+    return combinedLocation;
+  } catch (error) {
+    console.error("❌ Error getting combined location:", error);
+    return {
+      hasGPS: false,
+      hasIP: false,
+      ipLocation: null,
+      gpsLocation: null,
+      primaryLocation: null,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    };
   }
 };
 
@@ -2786,12 +2883,17 @@ exports.handleTimerExpiration = async (req, res) => {
     console.log(`   - Patient ID: ${token.patientUserId}`);
     console.log(`   - Patient Name: ${token.patientName}`);
 
-    console.log(`🌐 Getting IP location for timer-based alert...`);
-    const ipLocation = await getIPLocationForDevice(getRealUserIP(req));
+    console.log(`🌐 Getting combined location for timer-based alert...`);
+    const combinedLocationData = await getCombinedLocationData(req);
+    const primaryLocation = combinedLocationData.primaryLocation;
     console.log(
-      `🌐 Timer alert IP Location:`,
-      ipLocation
-        ? `${ipLocation.city}, ${ipLocation.country} (${ipLocation.latitude}, ${ipLocation.longitude})`
+      `🌐 Timer alert combined location:`,
+      primaryLocation
+        ? `${primaryLocation.city || "Unknown"}, ${
+            primaryLocation.country || "Unknown"
+          } (${primaryLocation.latitude || "N/A"}, ${
+            primaryLocation.longitude || "N/A"
+          }) [${primaryLocation.type}]`
         : "Not available"
     );
 
@@ -2810,10 +2912,12 @@ exports.handleTimerExpiration = async (req, res) => {
         service: "timer_emergency_alert",
         confidence: deviceInfo.confidence || 1.0,
         timestamp: new Date().toISOString(),
-        ipLocation: ipLocation, // ✅ Include IP location in device info
-        hasLocation: !!ipLocation,
+        combinedLocation: combinedLocationData, // ✅ Include full location data
+        ipLocation: combinedLocationData.ipLocation,
+        gpsLocation: combinedLocationData.gpsLocation,
+        hasLocation: combinedLocationData.hasGPS || combinedLocationData.hasIP,
       },
-      ipLocation,
+      primaryLocation, // ✅ Updated
       req
     );
 
@@ -2942,6 +3046,108 @@ exports.getPatientDataAfterTimer = async (req, res) => {
         message: "SmartToken is not properly assigned to a patient",
         errorCode: "TOKEN_NOT_ASSIGNED",
       });
+    }
+
+    if (cancelled === "true" || cancelled === true) {
+      console.log(
+        `⏰ Timer was CANCELLED - checking if unregistered device alert needed`
+      );
+
+      // Get the most recent device verification for this token
+      const recentVerification = await pool
+        .request()
+        .input("tokenId", sql.NVarChar, id)
+        .input(
+          "timeWindow",
+          sql.DateTime,
+          new Date(Date.now() - 10 * 60 * 1000)
+        ) // Last 10 minutes
+        .query(`
+      SELECT TOP 1
+        isRegisteredDevice,
+        deviceName,
+        accessTime,
+        deviceType,
+        visitorId
+      FROM EnhancedTokenAccessLog
+      WHERE tokenId = @tokenId
+        AND accessTime > @timeWindow
+      ORDER BY accessTime DESC
+    `);
+
+      const wasUnregisteredDevice =
+        recentVerification.recordset.length > 0 &&
+        !recentVerification.recordset[0].isRegisteredDevice;
+
+      if (wasUnregisteredDevice) {
+        console.log(
+          `🚨 CANCELLED TIMER + UNREGISTERED DEVICE - Triggering alert`
+        );
+
+        // ✅ Get combined location for the alert
+        const combinedLocationData = await getCombinedLocationData(req);
+        const primaryLocation = combinedLocationData.primaryLocation;
+
+        console.log(
+          `🌐 Cancelled timer combined location:`,
+          primaryLocation
+            ? `${primaryLocation.city || "Unknown"}, ${
+                primaryLocation.country || "Unknown"
+              } [${primaryLocation.type}]`
+            : "Not available"
+        );
+
+        // Trigger emergency alert for unregistered device (timer was cancelled)
+        try {
+          const alertResult = await triggerEmergencyAlerts(
+            id,
+            token.patientUserId,
+            token.patientName,
+            null, // enhancedLogId - will be created in the function
+            {
+              type: "desktop", // Can be determined from user agent if needed
+              deviceType: "desktop",
+              alertType: "unregistered_device_timer_cancelled",
+              triggerSource: "timer_cancelled_unregistered_device",
+              timerCancelled: true,
+              visitorId:
+                recentVerification.recordset[0].visitorId || "cancelled_timer",
+              service: "timer_cancelled_alert",
+              confidence: 1.0,
+              timestamp: new Date().toISOString(),
+              combinedLocation: combinedLocationData,
+              ipLocation: combinedLocationData.ipLocation,
+              gpsLocation: combinedLocationData.gpsLocation,
+              hasLocation:
+                combinedLocationData.hasGPS || combinedLocationData.hasIP,
+            },
+            primaryLocation, // ✅ Pass combined location data
+            req
+          );
+
+          if (alertResult.success) {
+            console.log(`✅ Cancelled timer alert sent successfully`);
+          } else {
+            console.error(
+              `❌ Cancelled timer alert failed:`,
+              alertResult.reason
+            );
+          }
+        } catch (alertError) {
+          console.error(
+            "❌ Error triggering cancelled timer alert:",
+            alertError
+          );
+        }
+      } else {
+        console.log(
+          `✅ Timer cancelled but device was registered - no alert needed`
+        );
+      }
+    } else {
+      console.log(
+        `⏰ Timer EXPIRED - alert was already sent in timer-expired endpoint`
+      );
     }
 
     // Get patient files from Azure
