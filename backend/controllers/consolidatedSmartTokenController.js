@@ -137,6 +137,13 @@ const checkDeviceAndTriggerAlerts = async (
 
     // ✅ NEW: Get IP location separately
     const ipLocation = await getIPLocationForDevice(getRealUserIP(req));
+    console.log(`🌐 IP Location result:`, JSON.stringify(ipLocation, null, 2));
+    console.log(
+      `🌐 IP Location summary:`,
+      ipLocation
+        ? `${ipLocation.city}, ${ipLocation.country} (${ipLocation.latitude}, ${ipLocation.longitude})`
+        : "Not available"
+    );
     console.log(
       `🌐 IP Location:`,
       ipLocation ? `${ipLocation.city}, ${ipLocation.country}` : "Not available"
@@ -186,6 +193,16 @@ const checkDeviceAndTriggerAlerts = async (
       console.log("   - Visitor ID:", visitorId);
       console.log("   - Confidence:", deviceFingerprint.confidence);
       console.log("   - Request ID:", deviceFingerprint.requestId);
+
+      console.log(`🚨 About to trigger emergency alerts with location:`, {
+        hasIPLocation: !!ipLocation,
+        locationCity: ipLocation?.city,
+        locationCountry: ipLocation?.country,
+        locationCoordinates:
+          ipLocation?.latitude && ipLocation?.longitude
+            ? `${ipLocation.latitude}, ${ipLocation.longitude}`
+            : "None",
+      });
 
       // Trigger emergency alerts for unregistered device
       const alertResult = await triggerEmergencyAlerts(
@@ -395,12 +412,35 @@ const triggerEmergencyAlerts = async (
       };
     }
 
-    // Create alert message
+    // ✅ ENHANCED: Create alert message with proper location data
+    console.log(`📝 Creating alert message with:`, {
+      patientName,
+      deviceInfo: {
+        type: deviceInfo.type || deviceInfo.deviceType,
+        hasLocation: deviceInfo.hasLocation,
+        ipLocationCity: deviceInfo.ipLocation?.city,
+      },
+      locationData: {
+        city: locationData?.city,
+        country: locationData?.country,
+        coordinates:
+          locationData?.latitude && locationData?.longitude
+            ? `${locationData.latitude}, ${locationData.longitude}`
+            : "None",
+      },
+    });
+
+    // Use locationData parameter first, then fallback to deviceInfo.ipLocation
+    const finalLocationData = locationData || deviceInfo.ipLocation || {};
+    console.log(`📍 Final location data for alert:`, finalLocationData);
+
     const alertMessage = await twilioSMSService.createEmergencyMessage(
       patientName,
       deviceInfo,
-      locationData || deviceInfo.ipLocation || {}
+      finalLocationData
     );
+
+    console.log(`📨 Generated alert message:`, alertMessage);
 
     // Create alert record
     const alertResult = await pool

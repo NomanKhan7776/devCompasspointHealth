@@ -805,6 +805,40 @@ app.get("/api/test-ip-location/:ip?", async (req, res) => {
   }
 });
 
+// ✅ DEBUG: Test alert message creation
+app.get("/api/test-alert-message", async (req, res) => {
+  try {
+    const locationService = require("./services/locationService");
+    const twilioSMSService = require("./services/twilioSMSService");
+
+    // Test with a known public IP
+    const testIP = "137.59.220.236";
+    console.log(`🧪 Testing alert message for IP: ${testIP}`);
+
+    const locationData = await locationService.getLocationFromIP(testIP);
+    console.log(`📍 Location data:`, locationData);
+
+    const alertMessage = await twilioSMSService.createEmergencyMessage(
+      "Test Patient",
+      { type: "mobile", deviceType: "mobile" },
+      locationData
+    );
+
+    res.json({
+      success: true,
+      testIP,
+      locationData,
+      alertMessage,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // ✅ FIXED: Enhanced Device Fingerprint Verification Endpoint - NO MORE FALSE ALERTS
 // app.post("/patients/verify/:id", async (req, res) => {
 //   try {

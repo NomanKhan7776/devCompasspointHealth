@@ -308,7 +308,7 @@ class TwilioSMSService {
   }
 
   /**
-   * Create location-aware emergency message
+   * Create location-aware emergency message with coordinates
    * @param {string} patientName - Patient name
    * @param {Object} deviceInfo - Device information
    * @param {Object} locationData - Location data (GPS or IP-based)
@@ -320,39 +320,126 @@ class TwilioSMSService {
     locationData,
     alertType = "unregistered_device"
   ) {
+    // ✅ ENHANCED: Add debugging to see what we receive
+    console.log(`📝 Creating emergency message with:`, {
+      patientName,
+      deviceType: deviceInfo?.type || deviceInfo?.deviceType || "device",
+      hasLocationData: !!locationData,
+      locationData: {
+        type: locationData?.type,
+        city: locationData?.city,
+        country: locationData?.country,
+        hasCoordinates: !!(locationData?.latitude && locationData?.longitude),
+        coordinates:
+          locationData?.latitude && locationData?.longitude
+            ? `${locationData.latitude}, ${locationData.longitude}`
+            : "None",
+      },
+    });
+
     const isTrial = await this.isTrialAccount();
+    const deviceDesc =
+      deviceInfo?.type === "mobile" || deviceInfo?.deviceType === "mobile"
+        ? "mobile device"
+        : "device";
 
     if (isTrial) {
-      // Short message for trial accounts (under 160 characters)
-      const city = locationData?.city || "unknown location";
+      // ✅ ENHANCED: Include coordinates even in trial messages when available
+      let locationStr = "";
+
+      if (locationData?.latitude && locationData?.longitude) {
+        locationStr = `${
+          locationData.city || "unknown location"
+        } (${locationData.latitude.toFixed(
+          4
+        )}, ${locationData.longitude.toFixed(4)})`;
+      } else {
+        locationStr = locationData?.city || "unknown location";
+      }
 
       if (alertType === "timer_based_emergency_alert") {
-        return `🆘 EMERGENCY: ${patientName}'s SmartToken accessed from ${city}. Emergency access timer expired. Contact if unauthorized.`;
+        return `🆘 EMERGENCY: ${patientName}'s SmartToken accessed from ${locationStr}. Timer expired. Contact if unauthorized.`;
       } else {
-        return `🚨 ALERT: ${patientName}'s SmartToken accessed from ${city} by unregistered device. Contact medical staff if unauthorized.`;
+        return `🚨 ALERT: ${patientName}'s SmartToken accessed from ${locationStr} by unregistered device. Contact medical staff if unauthorized.`;
       }
     }
 
-    // Full message for paid accounts
-    const deviceDesc =
-      deviceInfo.type === "mobile" ? "mobile device" : "device";
-    const browserInfo = deviceInfo.browser ? ` (${deviceInfo.browser})` : "";
+    // ✅ ENHANCED: Full message for paid accounts with proper coordinate handling
+    const browserInfo = deviceInfo?.browser ? ` (${deviceInfo.browser})` : "";
 
     let locationStr = "";
-    if (locationData.type === "gps" && locationData.address) {
-      locationStr = `at GPS location ${locationData.address} (${locationData.latitude}, ${locationData.longitude})`;
-    } else if (locationData.type === "gps") {
-      locationStr = `at GPS coordinates ${locationData.latitude}, ${locationData.longitude}`;
-    } else if (locationData.type === "ip" && locationData.city !== "Unknown") {
-      locationStr = `in the ${locationData.city}, ${locationData.region} area (determined from internet connection)`;
+
+    if (locationData?.type === "gps") {
+      // GPS location with coordinates
+      if (
+        locationData.address &&
+        !locationData.address.includes("GPS coordinates")
+      ) {
+        locationStr = `at GPS location ${
+          locationData.address
+        } (Coordinates: ${locationData.latitude.toFixed(
+          6
+        )}, ${locationData.longitude.toFixed(6)})`;
+      } else {
+        locationStr = `at GPS coordinates ${locationData.latitude.toFixed(
+          6
+        )}, ${locationData.longitude.toFixed(6)}`;
+      }
+    } else if (locationData?.type === "ip") {
+      // ✅ FIXED: IP location with coordinates when available
+      const hasValidCity =
+        locationData.city &&
+        locationData.city !== "Unknown" &&
+        locationData.city !== "Location Unavailable" &&
+        locationData.city !== "Location Error";
+
+      const hasValidRegion =
+        locationData.region &&
+        locationData.region !== "Unknown" &&
+        locationData.region !== "Unknown Region";
+
+      // Build location description
+      let locationDesc = "";
+      if (hasValidCity && hasValidRegion) {
+        locationDesc = `in the ${locationData.city}, ${locationData.region} area`;
+      } else if (hasValidCity) {
+        locationDesc = `in the ${locationData.city} area`;
+      } else if (hasValidRegion) {
+        locationDesc = `in the ${locationData.region} region`;
+      } else {
+        locationDesc = "from an unknown location";
+      }
+
+      // ✅ CRITICAL: Add coordinates if available from IP geolocation
+      if (
+        locationData.latitude &&
+        locationData.longitude &&
+        typeof locationData.latitude === "number" &&
+        typeof locationData.longitude === "number"
+      ) {
+        locationStr = `${locationDesc} (Coordinates: ${locationData.latitude.toFixed(
+          4
+        )}, ${locationData.longitude.toFixed(
+          4
+        )}, determined from internet connection)`;
+      } else {
+        locationStr = `${locationDesc} (determined from internet connection)`;
+      }
     } else {
+      // Fallback for no location data
       locationStr = "from an unknown location";
     }
 
+    console.log(`📍 Generated location string: "${locationStr}"`);
+
     if (alertType === "timer_based_emergency_alert") {
-      return `🆘 EMERGENCY ACCESS: Someone ${locationStr} accessed ${patientName}'s medical SmartToken. Emergency access timer expired without cancellation${browserInfo}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
+      const message = `🆘 EMERGENCY ACCESS: Someone ${locationStr} accessed ${patientName}'s medical SmartToken. Emergency access timer expired without cancellation${browserInfo}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
+      console.log(`📨 Final emergency message: "${message}"`);
+      return message;
     } else {
-      return `🚨 SECURITY ALERT: Someone ${locationStr} just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceDesc}${browserInfo}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
+      const message = `🚨 SECURITY ALERT: Someone ${locationStr} just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceDesc}${browserInfo}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
+      console.log(`📨 Final alert message: "${message}"`);
+      return message;
     }
   }
 
