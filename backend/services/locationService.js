@@ -18,7 +18,7 @@ class LocationService {
   }
 
   /**
-   * Get location from GPS coordinates with Google Maps reverse geocoding
+   * Get location from GPS coordinates with English language
    */
   async getLocationFromGPS(latitude, longitude) {
     try {
@@ -26,26 +26,36 @@ class LocationService {
         throw new Error("Invalid GPS coordinates");
       }
 
-      const address = await this.reverseGeocode(latitude, longitude);
+      console.log(`🌍 Reverse geocoding GPS: ${latitude}, ${longitude}`);
+
+      // ✅ Get English address using updated reverseGeocode
+      const addressData = await this.reverseGeocodeEnglish(latitude, longitude);
 
       return {
         type: "gps",
-        latitude: latitude,
-        longitude: longitude,
-        address: address,
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+        address: addressData.formattedAddress,
+        city: addressData.city,
+        region: addressData.region,
+        country: addressData.country,
+        postcode: addressData.postcode,
         accuracy: "high",
-        source: "gps_device",
+        source: addressData.source,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
       console.error("GPS location lookup error:", error);
       return {
         type: "gps",
-        latitude: latitude,
-        longitude: longitude,
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
         address: `GPS coordinates ${latitude}, ${longitude}`,
-        accuracy: "medium",
-        source: "gps_device",
+        city: "Unknown Location",
+        region: "Unknown Region",
+        country: "Unknown Country",
+        accuracy: "coordinates_only",
+        source: "gps_error_fallback",
         error: error.message,
         timestamp: new Date().toISOString(),
       };
@@ -409,24 +419,33 @@ class LocationService {
   }
 
   /**
-   * ✅ FIXED: Format location for SMS alert message with coordinates
+   * ✅ ENHANCED: Format location for SMS alert message with coordinates and English language
    */
   formatLocationForAlert(locationData, patientName, deviceType = "device") {
+    console.log("📝 Formatting location for alert:", {
+      type: locationData.type,
+      city: locationData.city,
+      country: locationData.country,
+      hasCoords: !!(locationData.latitude && locationData.longitude),
+    });
+
     if (locationData.type === "gps") {
       const coords = `${locationData.latitude.toFixed(
-        6
-      )}, ${locationData.longitude.toFixed(6)}`;
+        4
+      )}, ${locationData.longitude.toFixed(4)}`;
+
       if (
         locationData.address &&
         !locationData.address.includes("GPS coordinates")
       ) {
-        return `🚨 SECURITY ALERT: Someone at GPS coordinates ${coords} (${locationData.address}) just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately.`;
+        // ✅ Use structured address data
+        return `🚨 SECURITY ALERT: Someone at GPS location ${locationData.address} (Coordinates: ${coords}) just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
       } else {
-        return `🚨 SECURITY ALERT: Someone at GPS coordinates ${coords} just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately.`;
+        return `🚨 SECURITY ALERT: Someone at GPS coordinates ${coords} just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
       }
     } else if (locationData.type === "ip") {
       if (locationData.isPrivate) {
-        return `🚨 SECURITY ALERT: Someone on a local network just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately.`;
+        return `🚨 SECURITY ALERT: Someone on a local network just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
       } else {
         const hasSpecificCity =
           locationData.city &&
@@ -442,7 +461,7 @@ class LocationService {
         let locationText = "";
         let coordsText = "";
 
-        // ✅ FIXED: Add coordinates if available from IP geolocation
+        // ✅ Add coordinates if available from IP geolocation
         if (
           locationData.latitude &&
           locationData.longitude &&
@@ -451,7 +470,9 @@ class LocationService {
         ) {
           coordsText = ` (Coordinates: ${locationData.latitude.toFixed(
             4
-          )}, ${locationData.longitude.toFixed(4)})`;
+          )}, ${locationData.longitude.toFixed(
+            4
+          )}, determined from internet connection)`;
         }
 
         if (hasSpecificCity && hasSpecificRegion) {
@@ -464,11 +485,11 @@ class LocationService {
           locationText = `from an unknown location${coordsText}`;
         }
 
-        return `🚨 SECURITY ALERT: Someone ${locationText} just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. Location determined from internet connection. If this was not authorized, please contact medical staff immediately.`;
+        return `🚨 SECURITY ALERT: Someone ${locationText} just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
       }
     }
 
-    return `🚨 SECURITY ALERT: Someone just accessed ${patientName}'s SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately.`;
+    return `🚨 SECURITY ALERT: Someone just accessed ${patientName}'s medical SmartToken with an unregistered ${deviceType}. If this was not authorized, please contact medical staff immediately. CompassPoint Health PRMS`;
   }
   /**
    * Extract IP address from request object
@@ -527,19 +548,22 @@ class LocationService {
   }
 
   /**
-   * Reverse geocode GPS coordinates to human-readable address
+   * ✅ NEW: Reverse geocode GPS coordinates to human-readable address (ENGLISH ONLY)
    */
-  async reverseGeocode(latitude, longitude) {
-    // Try Google Maps API first (most accurate)
+  async reverseGeocodeEnglish(latitude, longitude) {
+    // Try Google Maps API first (most accurate) with English language
     if (this.googleMapsApiKey) {
       try {
+        console.log("🗺️ Trying Google Maps API for reverse geocoding...");
         const response = await axios.get(
           "https://maps.googleapis.com/maps/api/geocode/json",
           {
             params: {
               latlng: `${latitude},${longitude}`,
               key: this.googleMapsApiKey,
-              result_type: "street_address|route|neighborhood|locality",
+              language: "en", // ✅ Force English
+              result_type:
+                "street_address|route|neighborhood|locality|political",
             },
             timeout: 8000,
           }
@@ -547,42 +571,129 @@ class LocationService {
 
         if (response.data.status === "OK" && response.data.results.length > 0) {
           const result = response.data.results[0];
-          return result.formatted_address;
+          const components = result.address_components || [];
+
+          // Extract structured data
+          const addressData = {
+            formattedAddress: result.formatted_address,
+            city: this.extractComponent(components, [
+              "locality",
+              "administrative_area_level_2",
+            ]),
+            region: this.extractComponent(components, [
+              "administrative_area_level_1",
+            ]),
+            country: this.extractComponent(components, ["country"]),
+            postcode: this.extractComponent(components, ["postal_code"]),
+            source: "google_maps_en",
+          };
+
+          console.log(
+            "✅ Google Maps geocoding success (English):",
+            addressData
+          );
+          return addressData;
         }
       } catch (error) {
         console.error("Google Maps geocoding error:", error.message);
       }
     }
 
-    // Fallback to OpenStreetMap Nominatim (free service)
+    // Fallback to OpenStreetMap Nominatim (free service) with English language
     try {
-      const response = await axios.get(
-        "https://nominatim.openstreetmap.org/reverse",
-        {
-          params: {
-            lat: latitude,
-            lon: longitude,
-            format: "json",
-            addressdetails: 1,
-          },
-          headers: {
-            "User-Agent": "CompassPointHealth-PRMS/2.1.0",
-          },
-          timeout: 8000,
-        }
-      );
+      console.log("🗺️ Trying Nominatim for reverse geocoding...");
 
-      if (response.data && response.data.display_name) {
-        return response.data.display_name;
+      // ✅ FIX: Add language parameter to force English results
+      const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=en`;
+
+      const response = await axios.get(nominatimUrl, {
+        timeout: 10000,
+        headers: {
+          "User-Agent": "CompassPointHealth-PRMS/2.1.0",
+          "Accept-Language": "en-US,en;q=0.9", // ✅ Force English
+        },
+      });
+
+      if (response.data && response.data.address) {
+        const address = response.data.address;
+
+        console.log("🔍 Nominatim address components:", address);
+
+        // ✅ Build English address components prioritizing English names
+        const addressComponents = [];
+
+        // Add specific location details in order of specificity
+        if (address.house_number) addressComponents.push(address.house_number);
+        if (address.road) addressComponents.push(address.road);
+        if (address.neighbourhood)
+          addressComponents.push(address.neighbourhood);
+        if (address.suburb) addressComponents.push(address.suburb);
+        if (address.city_district)
+          addressComponents.push(address.city_district);
+        if (address.city || address.town || address.village) {
+          addressComponents.push(
+            address.city || address.town || address.village
+          );
+        }
+        if (address.state || address.province) {
+          addressComponents.push(address.state || address.province);
+        }
+        if (address.postcode) addressComponents.push(address.postcode);
+        if (address.country) addressComponents.push(address.country);
+
+        const formattedAddress = addressComponents.join(", ");
+
+        const addressData = {
+          formattedAddress: formattedAddress,
+          city:
+            address.city || address.town || address.village || "Unknown City",
+          region: address.state || address.province || "Unknown Region",
+          country: address.country || "Unknown Country",
+          postcode: address.postcode || null,
+          source: "nominatim_en",
+        };
+
+        console.log("✅ Nominatim geocoding success (English):", addressData);
+        return addressData;
+      } else {
+        console.warn("⚠️ No address data from Nominatim");
       }
     } catch (error) {
       console.error("Nominatim geocoding error:", error.message);
     }
 
-    // Final fallback - return coordinates
-    return `GPS coordinates ${latitude}, ${longitude}`;
+    // Final fallback - return coordinates only
+    console.log("⚠️ All geocoding services failed, using coordinates only");
+    return {
+      formattedAddress: `GPS coordinates ${latitude}, ${longitude}`,
+      city: "Location Unavailable",
+      region: "Unknown Region",
+      country: "Unknown Country",
+      postcode: null,
+      source: "coordinates_only",
+    };
   }
 
+  /**
+   * ✅ Helper function to extract address components from Google Maps response
+   */
+  extractComponent(components, types) {
+    for (const type of types) {
+      const component = components.find((comp) => comp.types.includes(type));
+      if (component) {
+        return component.long_name;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * ✅ LEGACY: Keep original reverseGeocode for backward compatibility
+   */
+  async reverseGeocode(latitude, longitude) {
+    const result = await this.reverseGeocodeEnglish(latitude, longitude);
+    return result.formattedAddress;
+  }
   /**
    * Calculate distance between two GPS coordinates (Haversine formula)
    */

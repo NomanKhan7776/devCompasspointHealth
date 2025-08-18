@@ -3356,5 +3356,5 @@ exports.getPatientDataAfterTimer = async (req, res) => {
 
 // Export the trigger function for use in other parts of the app
 exports.triggerEmergencyAlerts = triggerEmergencyAlerts;
-
+exports.getCombinedLocationData = getCombinedLocationData; 
 module.exports = exports;

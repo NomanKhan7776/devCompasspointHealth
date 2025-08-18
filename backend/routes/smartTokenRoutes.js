@@ -51,7 +51,7 @@ router.get("/verify/:id", verifySmartToken);
 router.post("/verify/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { deviceFingerprint } = req.body;
+    const { deviceFingerprint, gpsCoordinates, locationData } = req.body; // ✅ Add location data
 
     console.log(`📱 FingerprintJS Pro SmartToken verification: ${id}`);
 
@@ -117,6 +117,77 @@ router.post("/verify/:id", async (req, res) => {
       });
     }
 
+    // ✅ NEW: Check for recent timer-based alerts to prevent duplicates
+    const recentTimerAlert = await pool
+      .request()
+      .input("tokenId", sql.NVarChar, id)
+      .input("patientUserId", sql.Int, token.patientUserId)
+      .input("timeWindow", sql.DateTime, new Date(Date.now() - 2 * 60 * 1000)) // Last 2 minutes
+      .query(`
+        SELECT TOP 1 alertId, alertType, triggeredAt
+        FROM SmartTokenEmergencyAlerts
+        WHERE tokenId = @tokenId 
+          AND patientUserId = @patientUserId
+          AND (alertType LIKE '%timer%' OR alertType LIKE '%cancelled%')
+          AND triggeredAt > @timeWindow
+        ORDER BY triggeredAt DESC
+      `);
+
+    if (recentTimerAlert.recordset.length > 0) {
+      console.log(
+        "⏰ Recent timer alert found, skipping device verification alert to prevent duplicates"
+      );
+
+      // Still log the access but don't trigger alerts
+      await pool
+        .request()
+        .input("tokenId", sql.NVarChar, id)
+        .input("patientUserId", sql.Int, token.patientUserId)
+        .input(
+          "accessMode",
+          sql.NVarChar,
+          "smarttoken_fpjs_verification_skipped"
+        )
+        .input("ipAddress", sql.NVarChar, getRealUserIP(req))
+        .input("userAgent", sql.NVarChar, req.headers["user-agent"] || "")
+        .input(
+          "deviceFingerprint",
+          sql.NVarChar,
+          JSON.stringify(deviceFingerprint)
+        )
+        .input("visitorId", sql.NVarChar, visitorId)
+        .input("confidenceScore", sql.Float, deviceFingerprint.confidence)
+        .input("fingerprintService", sql.NVarChar, "fingerprintjs_pro")
+        .input("isRegisteredDevice", sql.Bit, 0) // Assume unregistered since timer alert was sent
+        .query(`
+          INSERT INTO EnhancedTokenAccessLog (
+            tokenId, patientUserId, accessMode, 
+            ipAddress, userAgent, deviceFingerprint, 
+            visitorId, confidenceScore, fingerprintService, 
+            isRegisteredDevice, accessTime
+          )
+          VALUES (
+            @tokenId, @patientUserId, @accessMode,
+            @ipAddress, @userAgent, @deviceFingerprint,
+            @visitorId, @confidenceScore, @fingerprintService,
+            @isRegisteredDevice, GETDATE()
+          )
+        `);
+
+      return res.json({
+        success: true,
+        message: "Device verification skipped - recent timer alert sent",
+        tokenId: id,
+        visitorId: visitorId,
+        isRegisteredDevice: false,
+        alertsTriggered: false,
+        securityStatus: "timer_alert_sent",
+        service: "fingerprintjs_pro",
+        skipReason: "Recent timer alert prevents duplicate",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     // Check if FingerprintJS Pro visitorId is registered for this patient
     console.log(`🔍 Checking FingerprintJS Pro device registration:`, {
       visitorId: visitorId,
@@ -137,7 +208,6 @@ router.post("/verify/:id", async (req, res) => {
       .request()
       .input("tokenId", sql.NVarChar, id)
       .input("patientUserId", sql.Int, token.patientUserId)
-      // .input("patientName", sql.NVarChar, token.patientName)
       .input("accessMode", sql.NVarChar, "smarttoken_fpjs_verification")
       .input("ipAddress", sql.NVarChar, getRealUserIP(req))
       .input("userAgent", sql.NVarChar, req.headers["user-agent"] || "")
@@ -151,19 +221,19 @@ router.post("/verify/:id", async (req, res) => {
       .input("fingerprintService", sql.NVarChar, "fingerprintjs_pro")
       .input("isRegisteredDevice", sql.Bit, isRegistered ? 1 : 0).query(`
         INSERT INTO EnhancedTokenAccessLog (
-    tokenId, patientUserId, accessMode, 
-    ipAddress, userAgent, deviceFingerprint, 
-    visitorId, confidenceScore, fingerprintService, 
-    isRegisteredDevice, accessTime
-  )
-  OUTPUT INSERTED.logId
-  VALUES (
-    @tokenId, @patientUserId, @accessMode,
-    @ipAddress, @userAgent, @deviceFingerprint,
-    @visitorId, @confidenceScore, @fingerprintService,
-    @isRegisteredDevice, GETDATE()
-  )
-`);
+          tokenId, patientUserId, accessMode, 
+          ipAddress, userAgent, deviceFingerprint, 
+          visitorId, confidenceScore, fingerprintService, 
+          isRegisteredDevice, accessTime
+        )
+        OUTPUT INSERTED.logId
+        VALUES (
+          @tokenId, @patientUserId, @accessMode,
+          @ipAddress, @userAgent, @deviceFingerprint,
+          @visitorId, @confidenceScore, @fingerprintService,
+          @isRegisteredDevice, GETDATE()
+        )
+      `);
 
     const logId = logResult?.recordset[0]?.logId || null;
 
@@ -179,7 +249,23 @@ router.post("/verify/:id", async (req, res) => {
         // Import emergency alert function
         const {
           triggerEmergencyAlerts,
+          getCombinedLocationData, // ✅ Import location function
         } = require("../controllers/consolidatedSmartTokenController");
+
+        // ✅ Get comprehensive location data with GPS priority
+        const combinedLocationData = await getCombinedLocationData(req);
+        const primaryLocation = combinedLocationData.primaryLocation;
+
+        console.log("🌍 Device verification location data:", {
+          hasGPS: combinedLocationData.hasGPS,
+          hasIP: combinedLocationData.hasIP,
+          primaryType: primaryLocation?.type,
+          city: primaryLocation?.city,
+          coordinates:
+            primaryLocation?.latitude && primaryLocation?.longitude
+              ? `${primaryLocation.latitude}, ${primaryLocation.longitude}`
+              : "None",
+        });
 
         // Create device info from FingerprintJS Pro data
         const deviceInfo = {
@@ -201,15 +287,22 @@ router.post("/verify/:id", async (req, res) => {
             getDeviceTypeFromUserAgent(req.headers["user-agent"]),
           userAgent: req.headers["user-agent"] || "",
           timestamp: new Date().toISOString(),
+          // ✅ Include location info in device info
+          combinedLocation: combinedLocationData,
+          ipLocation: combinedLocationData.ipLocation,
+          gpsLocation: combinedLocationData.gpsLocation,
+          hasLocation:
+            combinedLocationData.hasGPS || combinedLocationData.hasIP,
         };
 
+        // ✅ Pass location data to emergency alerts
         const alertResult = await triggerEmergencyAlerts(
           id,
           token.patientUserId,
           token.patientName,
           logId,
           deviceInfo,
-          null, // location data
+          primaryLocation, // ✅ Pass primary location
           req
         );
 
