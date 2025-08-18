@@ -621,11 +621,11 @@ const triggerEmergencyAlerts = async (
     //   })),
     // };
 
-    console.log(`✅ [SIMULATED] Batch SMS result:`, {
-      successful: batchResult.successful,
-      failed: batchResult.failed,
-      total: batchResult.total,
-    });
+    // console.log(`✅ [SIMULATED] Batch SMS result:`, {
+    //   successful: batchResult.successful,
+    //   failed: batchResult.failed,
+    //   total: batchResult.total,
+    // });
     const batchResult = await twilioSMSService.sendBatchEmergencyAlerts(
       emergencyContacts,
       alertMessage
