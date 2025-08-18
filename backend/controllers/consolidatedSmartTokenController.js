@@ -36,10 +36,10 @@ const checkDeviceAndTriggerAlerts = async (
     if (!req.body?.deviceFingerprint) {
       console.warn("⚠️ No FingerprintJS Pro fingerprint provided");
 
-      // ✅ FIX: Don't trigger alerts on GET requests - only on POST with actual fingerprint data
+      // ✅ FIX: Don't trigger alerts on GET requests OR if we already sent cancelled timer alert
       if (req.method === "GET") {
         console.log(
-          "📝 GET request - skipping alerts, waiting for FingerprintJS Pro data"
+          "📍 GET request - skipping alerts, waiting for FingerprintJS Pro data"
         );
         return {
           isRegisteredDevice: false,
@@ -47,6 +47,34 @@ const checkDeviceAndTriggerAlerts = async (
           error:
             "Missing FingerprintJS Pro fingerprint - waiting for client data",
           service: "fingerprintjs_pro_required",
+        };
+      }
+      await pool.connect();
+      // ✅ NEW: Check if we already sent a cancelled timer alert recently
+      const recentTimerAlert = await pool
+        .request()
+        .input("tokenId", sql.NVarChar, tokenId)
+        .input("patientUserId", sql.Int, patientUserId)
+        .input("timeWindow", sql.DateTime, new Date(Date.now() - 5 * 60 * 1000)) // Last 5 minutes
+        .query(`
+    SELECT TOP 1 alertId, alertType, triggeredAt
+    FROM SmartTokenEmergencyAlerts
+    WHERE tokenId = @tokenId 
+      AND patientUserId = @patientUserId
+      AND alertType LIKE '%timer%'
+      AND triggeredAt > @timeWindow
+    ORDER BY triggeredAt DESC
+  `);
+
+      if (recentTimerAlert.recordset.length > 0) {
+        console.log(
+          "⏰ Recent timer alert already sent, skipping device verification alert"
+        );
+        return {
+          isRegisteredDevice: false,
+          alertsTriggered: false,
+          error: "Recent timer alert already processed",
+          service: "fingerprintjs_pro_timer_handled",
         };
       }
 
@@ -224,6 +252,22 @@ const checkDeviceAndTriggerAlerts = async (
       });
 
       // Trigger emergency alerts for unregistered device
+      // ✅ Get fresh combined location data for main alert
+      const mainAlertLocationData = await getCombinedLocationData(req);
+      const mainPrimaryLocation = mainAlertLocationData.primaryLocation;
+
+      console.log(`🌐 Main alert location data:`, {
+        hasGPS: mainAlertLocationData.hasGPS,
+        hasIP: mainAlertLocationData.hasIP,
+        primaryType: mainPrimaryLocation?.type,
+        city: mainPrimaryLocation?.city,
+        coordinates:
+          mainPrimaryLocation?.latitude && mainPrimaryLocation?.longitude
+            ? `${mainPrimaryLocation.latitude}, ${mainPrimaryLocation.longitude}`
+            : "None",
+      });
+
+      // Trigger emergency alerts for unregistered device
       const alertResult = await triggerEmergencyAlerts(
         tokenId,
         patientUserId,
@@ -231,13 +275,13 @@ const checkDeviceAndTriggerAlerts = async (
         enhancedLogId,
         {
           ...extractDeviceInfo(deviceFingerprint),
-          combinedLocation: combinedLocationData, // ✅ Include full location data
-          ipLocation: combinedLocationData.ipLocation,
-          gpsLocation: combinedLocationData.gpsLocation,
+          combinedLocation: mainAlertLocationData, // ✅ Fresh location data
+          ipLocation: mainAlertLocationData.ipLocation,
+          gpsLocation: mainAlertLocationData.gpsLocation,
           hasLocation:
-            combinedLocationData.hasGPS || combinedLocationData.hasIP,
+            mainAlertLocationData.hasGPS || mainAlertLocationData.hasIP,
         },
-        primaryLocation, // ✅ Include IP location
+        mainPrimaryLocation, // ✅ Fresh primary location
         req
       );
 
@@ -513,11 +557,45 @@ const triggerEmergencyAlerts = async (
     console.log(
       `📤 Sending emergency alerts to ${emergencyContacts.length} contacts...`
     );
+    // 🚫 DEVELOPMENT: Comment out Twilio API calls to avoid costs
+    console.log(`🚫 [DEVELOPMENT MODE] Twilio API disabled`);
+    console.log(`📱 Would send SMS to ${emergencyContacts.length} contacts:`);
+    emergencyContacts.forEach((contact, index) => {
+      console.log(
+        `   ${index + 1}. ${contact.contactName} (${contact.phoneNumber}): ${
+          contact.relationship
+        }`
+      );
+    });
+    console.log(`📨 Alert message would be: "${alertMessage}"`);
 
-    const batchResult = await twilioSMSService.sendBatchEmergencyAlerts(
-      emergencyContacts,
-      alertMessage
-    );
+    // Simulate successful batch result for development
+    const batchResult = {
+      total: emergencyContacts.length,
+      successful: emergencyContacts.length, // Simulate all successful
+      failed: 0,
+      trialUnverified: 0,
+      details: emergencyContacts.map((contact) => ({
+        contact: contact,
+        result: {
+          success: true,
+          messageId: `DEV_${Date.now()}_${Math.random()
+            .toString(36)
+            .substr(2, 9)}`,
+          status: "simulated",
+        },
+      })),
+    };
+
+    console.log(`✅ [SIMULATED] Batch SMS result:`, {
+      successful: batchResult.successful,
+      failed: batchResult.failed,
+      total: batchResult.total,
+    });
+    // const batchResult = await twilioSMSService.sendBatchEmergencyAlerts(
+    //   emergencyContacts,
+    //   alertMessage
+    // );
 
     // ✅ Enhanced response handling
     const response = {
