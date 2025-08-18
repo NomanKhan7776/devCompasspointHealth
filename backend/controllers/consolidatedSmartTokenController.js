@@ -3232,7 +3232,7 @@ exports.getPatientDataAfterTimer = async (req, res) => {
         const primaryLocation = combinedLocationData.primaryLocation;
 
         console.log(
-          `🌐 Cancelled timer combined location:`,
+          `🌍 Cancelled timer combined location:`,
           primaryLocation
             ? `${primaryLocation.city || "Unknown"}, ${
                 primaryLocation.country || "Unknown"
@@ -3326,7 +3326,7 @@ exports.getPatientDataAfterTimer = async (req, res) => {
         "Emergency contacts have been automatically notified after 10-second timer.";
     }
 
-    // Render patient data page WITHOUT manual alert button
+    // ✅ Render patient data page allowing device verification (for second alert)
     return res.render("patientData", {
       title: `Patient Data - ${token.patientName || token.folderName}`,
       patientName: token.patientName || token.folderName,
@@ -3342,6 +3342,7 @@ exports.getPatientDataAfterTimer = async (req, res) => {
       timerWasCancelled: cancelled,
       securityNotice: securityNotice,
       accessIP: getRealUserIP(req),
+      // ✅ REMOVED: skipDeviceAlerts flag - allow device verification for second alert
     });
   } catch (error) {
     console.error("❌ Error getting patient data after timer:", error);

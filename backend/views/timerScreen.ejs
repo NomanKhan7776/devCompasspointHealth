@@ -281,7 +281,7 @@
       }
 
       /**
-       * Timer expired - trigger automatic emergency alert
+       * Timer expired - trigger automatic emergency alert with GPS
        */
       async function triggerEmergencyAlert() {
         const countdownNumber = document.getElementById("countdown-number");
@@ -294,14 +294,18 @@
 
         cancelBtn.disabled = true;
         cancelBtn.innerHTML = `
-          <i class="fas fa-paper-plane text-2xl"></i>
-          <span>SENDING ALERT...</span>
-        `;
+    <i class="fas fa-paper-plane text-2xl"></i>
+    <span>SENDING ALERT...</span>
+  `;
 
         try {
           console.log(
-            "🚨 Timer expired - triggering automatic emergency alert"
+            "🚨 Timer expired - triggering automatic emergency alert with GPS"
           );
+
+          // ✅ Get GPS coordinates first
+          const gpsCoordinates = await getGPSLocation();
+          console.log("📍 GPS for timer alert:", gpsCoordinates);
 
           // Get device and location info
           const deviceInfo = {
@@ -313,7 +317,7 @@
             timestamp: new Date().toISOString(),
           };
 
-          // Call timer expiration endpoint
+          // Call timer expiration endpoint with GPS coordinates
           const response = await fetch(
             `${API_CONFIG.baseURL}/patients/timer-expired/${TOKEN_ID}`,
             {
@@ -324,7 +328,8 @@
               body: JSON.stringify({
                 patientName: PATIENT_NAME,
                 deviceInfo: deviceInfo,
-                locationData: null, // Will be handled by server
+                gpsCoordinates: gpsCoordinates, // ✅ Include GPS coordinates
+                locationData: gpsCoordinates, // ✅ Also include in locationData
                 timerExpired: true,
                 timerDuration: COUNTDOWN_DURATION,
                 completedAt: new Date().toISOString(),
@@ -338,9 +343,9 @@
 
             // Update UI to show success
             cancelBtn.innerHTML = `
-              <i class="fas fa-check-circle text-2xl"></i>
-              <span>ALERT SENT</span>
-            `;
+        <i class="fas fa-check-circle text-2xl"></i>
+        <span>ALERT SENT</span>
+      `;
 
             // Redirect to patient data after short delay (no alert popup)
             setTimeout(() => {
@@ -359,9 +364,9 @@
 
           // Update UI to show error
           cancelBtn.innerHTML = `
-            <i class="fas fa-exclamation-triangle text-2xl"></i>
-            <span>ALERT ERROR</span>
-          `;
+      <i class="fas fa-exclamation-triangle text-2xl"></i>
+      <span>ALERT ERROR</span>
+    `;
 
           // Redirect after error (no alert popup)
           setTimeout(() => {
@@ -371,6 +376,49 @@
             window.location.href = `${API_CONFIG.baseURL}/patients/patient-data-after-timer/${TOKEN_ID}?cancelled=false`;
           }, 2000);
         }
+      }
+
+      /**
+       * ✅ Add GPS location function to timer screen
+       */
+      async function getGPSLocation() {
+        return new Promise((resolve) => {
+          if (!navigator.geolocation) {
+            console.log("📍 GPS not available in this browser");
+            resolve(null);
+            return;
+          }
+
+          const options = {
+            enableHighAccuracy: true,
+            timeout: 8000, // Shorter timeout for timer screen
+            maximumAge: 300000, // 5 minutes
+          };
+
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const gpsData = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                timestamp: new Date().toISOString(),
+                source: "device_gps",
+                type: "gps",
+              };
+              console.log("📍 GPS coordinates obtained for timer:", {
+                lat: gpsData.latitude.toFixed(6),
+                lng: gpsData.longitude.toFixed(6),
+                accuracy: Math.round(gpsData.accuracy) + "m",
+              });
+              resolve(gpsData);
+            },
+            (error) => {
+              console.warn("GPS error on timer screen:", error.message);
+              resolve(null);
+            },
+            options
+          );
+        });
       }
 
       // Helper functions for device detection

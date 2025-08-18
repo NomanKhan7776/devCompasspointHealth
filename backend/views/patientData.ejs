@@ -1133,7 +1133,7 @@
       }
 
       /**
-       * ✅ Enhanced Device Fingerprint with GPS coordinates
+       * ✅ Enhanced Device Fingerprint with GPS coordinates and location priority
        */
       async function sendDeviceFingerprint() {
         try {
@@ -1142,15 +1142,19 @@
           );
 
           // ✅ FIRST: Get GPS coordinates before fingerprint
-          console.log("📍 Requesting GPS coordinates...");
+          console.log(
+            "📍 Requesting GPS coordinates for device verification..."
+          );
           const gpsCoordinates = await getGPSLocation();
 
           if (gpsCoordinates) {
             locationData.gps = gpsCoordinates;
             locationData.hasGPS = true;
-            console.log("✅ GPS coordinates obtained for verification");
+            console.log("✅ GPS coordinates obtained for device verification");
           } else {
-            console.log("⚠️ GPS coordinates not available");
+            console.log(
+              "⚠️ GPS coordinates not available for device verification"
+            );
           }
 
           if (!fpjsInitialized || !fpService) {
@@ -1172,7 +1176,7 @@
           console.log("✅ Enhanced fingerprint generated");
 
           // ✅ Get IP location from server
-          console.log("🌐 Requesting IP location from server...");
+          console.log("🌍 Requesting IP location from server...");
           try {
             const ipLocationResponse = await fetch(
               `${API_CONFIG.baseURL}/api/ip-location`,
@@ -1202,14 +1206,16 @@
           // Update location display
           updateLocationDisplay();
 
-          // ✅ CRITICAL: Include GPS coordinates in the payload
+          // ✅ CRITICAL: Include BOTH GPS coordinates and location data in the payload
           const verificationPayload = {
             deviceFingerprint: fingerprint,
-            gpsCoordinates: gpsCoordinates, // ✅ This is the key addition
+            gpsCoordinates: gpsCoordinates, // ✅ GPS coordinates
             locationData: {
               gps: locationData.gps,
               ipLocation: locationData.ipLocation,
-              best: locationData.gps || locationData.ipLocation,
+              best: locationData.gps || locationData.ipLocation, // GPS priority
+              hasGPS: locationData.hasGPS,
+              hasIP: locationData.hasIPLocation,
             },
             hasLocationData: !!(locationData.gps || locationData.ipLocation),
             locationSources: {
@@ -1224,13 +1230,14 @@
           };
 
           console.log(
-            "📤 Sending enhanced verification with GPS to server...",
+            "📤 Sending enhanced verification with location to server...",
             {
               visitorId: fingerprint.visitorId,
               confidence: fingerprint.confidence,
               hasGPS: !!gpsCoordinates,
               hasLocation: verificationPayload.hasLocationData,
               gpsAccuracy: gpsCoordinates?.accuracy,
+              primaryLocation: locationData.gps ? "GPS" : "IP",
             }
           );
 
@@ -1255,6 +1262,7 @@
               isRegistered: result.isRegisteredDevice,
               alertsTriggered: result.alertsTriggered,
               confidence: result.confidence,
+              locationIncluded: !!(gpsCoordinates || locationData.ipLocation),
             });
 
             updateDeviceStatus(fingerprint, result);
