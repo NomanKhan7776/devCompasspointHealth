@@ -232,60 +232,93 @@ const checkDeviceAndTriggerAlerts = async (
       req,
       isRegistered
     );
-
     if (!isRegistered) {
       console.log("🚨 UNREGISTERED DEVICE DETECTED - FingerprintJS Pro");
       console.log("   - Visitor ID:", visitorId);
       console.log("   - Confidence:", deviceFingerprint.confidence);
       console.log("   - Request ID:", deviceFingerprint.requestId);
 
-      console.log(`🚨 About to trigger emergency alerts with location:`, {
-        hasGPS: combinedLocationData.hasGPS,
-        hasIP: combinedLocationData.hasIP,
-        primaryType: primaryLocation?.type,
-        locationCity: primaryLocation?.city,
-        locationCountry: primaryLocation?.country,
-        locationCoordinates:
-          primaryLocation?.latitude && primaryLocation?.longitude
-            ? `${primaryLocation.latitude}, ${primaryLocation.longitude}`
-            : "None",
-      });
+      // ✅ NEW: Check if we already sent a recent timer alert to prevent duplicates
+      const recentTimerAlertCheck = await pool
+        .request()
+        .input("tokenId", sql.NVarChar, tokenId)
+        .input("patientUserId", sql.Int, patientUserId)
+        .input("timeWindow", sql.DateTime, new Date(Date.now() - 5 * 60 * 1000)) // Last 5 minutes
+        .query(`
+      SELECT TOP 1 alertId, alertType, triggeredAt
+      FROM SmartTokenEmergencyAlerts
+      WHERE tokenId = @tokenId 
+        AND patientUserId = @patientUserId
+        AND (alertType LIKE '%timer%' OR alertType LIKE '%cancelled%')
+        AND triggeredAt > @timeWindow
+      ORDER BY triggeredAt DESC
+    `);
 
-      // Trigger emergency alerts for unregistered device
-      // ✅ Get fresh combined location data for main alert
-      const mainAlertLocationData = await getCombinedLocationData(req);
-      const mainPrimaryLocation = mainAlertLocationData.primaryLocation;
+      if (recentTimerAlertCheck.recordset.length > 0) {
+        console.log(
+          "⏰ Recent timer/cancelled alert already sent, skipping duplicate FingerprintJS alert"
+        );
+        alertsTriggered = false;
+      } else {
+        console.log(`🚨 About to trigger emergency alerts with location:`, {
+          hasGPS: combinedLocationData.hasGPS,
+          hasIP: combinedLocationData.hasIP,
+          primaryType: primaryLocation?.type,
+          locationCity: primaryLocation?.city,
+          locationCountry: primaryLocation?.country,
+          locationCoordinates:
+            primaryLocation?.latitude && primaryLocation?.longitude
+              ? `${primaryLocation.latitude}, ${primaryLocation.longitude}`
+              : "None",
+        });
 
-      console.log(`🌐 Main alert location data:`, {
-        hasGPS: mainAlertLocationData.hasGPS,
-        hasIP: mainAlertLocationData.hasIP,
-        primaryType: mainPrimaryLocation?.type,
-        city: mainPrimaryLocation?.city,
-        coordinates:
-          mainPrimaryLocation?.latitude && mainPrimaryLocation?.longitude
-            ? `${mainPrimaryLocation.latitude}, ${mainPrimaryLocation.longitude}`
-            : "None",
-      });
+        // ✅ Get FRESH combined location data for main alert
+        const alertLocationData = await getCombinedLocationData(req);
+        const alertPrimaryLocation = alertLocationData.primaryLocation;
 
-      // Trigger emergency alerts for unregistered device
-      const alertResult = await triggerEmergencyAlerts(
-        tokenId,
-        patientUserId,
-        patientName,
-        enhancedLogId,
-        {
+        console.log(`🌐 FRESH alert location data:`, {
+          hasGPS: alertLocationData.hasGPS,
+          hasIP: alertLocationData.hasIP,
+          primaryType: alertPrimaryLocation?.type,
+          city: alertPrimaryLocation?.city,
+          coordinates:
+            alertPrimaryLocation?.latitude && alertPrimaryLocation?.longitude
+              ? `${alertPrimaryLocation.latitude}, ${alertPrimaryLocation.longitude}`
+              : "None",
+        });
+
+        // ✅ Enhanced device info with location
+        const enhancedDeviceInfo = {
           ...extractDeviceInfo(deviceFingerprint),
-          combinedLocation: mainAlertLocationData, // ✅ Fresh location data
-          ipLocation: mainAlertLocationData.ipLocation,
-          gpsLocation: mainAlertLocationData.gpsLocation,
-          hasLocation:
-            mainAlertLocationData.hasGPS || mainAlertLocationData.hasIP,
-        },
-        mainPrimaryLocation, // ✅ Fresh primary location
-        req
-      );
+          combinedLocation: alertLocationData,
+          ipLocation: alertLocationData.ipLocation,
+          gpsLocation: alertLocationData.gpsLocation,
+          hasLocation: alertLocationData.hasGPS || alertLocationData.hasIP,
+          // ✅ Explicitly set location properties for alert message
+          type: extractDeviceInfo(deviceFingerprint).deviceType,
+          deviceType: extractDeviceInfo(deviceFingerprint).deviceType,
+        };
 
-      alertsTriggered = alertResult.success;
+        console.log(`📝 Enhanced device info for alert:`, {
+          hasLocation: enhancedDeviceInfo.hasLocation,
+          ipLocationCity: enhancedDeviceInfo.ipLocation?.city,
+          type: enhancedDeviceInfo.type,
+          deviceType: enhancedDeviceInfo.deviceType,
+        });
+
+        // Trigger emergency alerts for unregistered device
+        const alertResult = await triggerEmergencyAlerts(
+          tokenId,
+          patientUserId,
+          patientName,
+          enhancedLogId,
+          enhancedDeviceInfo,
+          alertPrimaryLocation, // ✅ Pass fresh primary location
+          req
+        );
+
+        alertsTriggered = alertResult.success;
+      }
     } else {
       console.log(
         "✅ REGISTERED DEVICE - No alerts needed (FingerprintJS Pro)"
@@ -417,19 +450,20 @@ const logSmartTokenAccess = async (
       .input("confidenceScore", sql.Float, deviceFingerprint.confidence)
       .input("fingerprintService", sql.NVarChar, "fingerprintjs_pro")
       .input("isRegisteredDevice", sql.Bit, isRegistered ? 1 : 0).query(`
-       INSERT INTO EnhancedTokenAccessLog (
-          tokenId, patientUserId, accessMode,
-          ipAddress, userAgent, deviceFingerprint,
-          visitorId, confidenceScore, fingerprintService,
-          isRegisteredDevice, accessTime
-        )
-        VALUES (
-          @tokenId, @patientUserId, @accessMode,
-          @ipAddress, @userAgent, @deviceFingerprint,
-          @visitorId, @confidenceScore, @fingerprintService,
-          @isRegisteredDevice, GETDATE()
-        )
-     `);
+   INSERT INTO EnhancedTokenAccessLog (
+      tokenId, patientUserId, accessMode,
+      ipAddress, userAgent, deviceFingerprint,
+      visitorId, confidenceScore, fingerprintService,
+      isRegisteredDevice, accessTime
+    )
+    OUTPUT INSERTED.logId
+    VALUES (
+      @tokenId, @patientUserId, @accessMode,
+      @ipAddress, @userAgent, @deviceFingerprint,
+      @visitorId, @confidenceScore, @fingerprintService,
+      @isRegisteredDevice, GETDATE()
+    )
+ `);
 
     const logId = result.recordset[0].logId;
 

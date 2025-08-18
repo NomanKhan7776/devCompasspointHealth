@@ -575,34 +575,45 @@
       }
 
       /**
-       * Get GPS location if available
+       * ✅ Enhanced GPS location function with better error handling
        */
       async function getGPSLocation() {
         return new Promise((resolve) => {
           if (!navigator.geolocation) {
-            console.log("📍 GPS not available");
+            console.log("📍 GPS not available in this browser");
             resolve(null);
             return;
           }
 
+          const options = {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 300000, // 5 minutes
+          };
+
           navigator.geolocation.getCurrentPosition(
             (position) => {
-              console.log("✅ GPS coordinates obtained");
-              const gpsLocation = {
-                type: "gps",
-                source: "device_gps",
+              const gpsData = {
                 latitude: position.coords.latitude,
                 longitude: position.coords.longitude,
                 accuracy: position.coords.accuracy,
                 timestamp: new Date().toISOString(),
+                source: "device_gps",
+                type: "gps",
               };
-              resolve(gpsLocation);
+              console.log("📍 GPS coordinates obtained:", {
+                lat: gpsData.latitude.toFixed(6),
+                lng: gpsData.longitude.toFixed(6),
+                accuracy: Math.round(gpsData.accuracy) + "m",
+              });
+              resolve(gpsData);
             },
             (error) => {
-              console.log("❌ GPS error:", error.message);
+              console.warn("GPS error:", error.message);
+              console.warn("GPS error code:", error.code);
               resolve(null);
             },
-            { timeout: 8000, enableHighAccuracy: true, maximumAge: 300000 }
+            options
           );
         });
       }
@@ -1122,13 +1133,25 @@
       }
 
       /**
-       * Send Enhanced Device Fingerprint with Location
+       * ✅ Enhanced Device Fingerprint with GPS coordinates
        */
       async function sendDeviceFingerprint() {
         try {
           console.log(
-            "🚀 Starting enhanced FingerprintJS Pro device verification with location..."
+            "🚀 Starting enhanced FingerprintJS Pro device verification with GPS..."
           );
+
+          // ✅ FIRST: Get GPS coordinates before fingerprint
+          console.log("📍 Requesting GPS coordinates...");
+          const gpsCoordinates = await getGPSLocation();
+
+          if (gpsCoordinates) {
+            locationData.gps = gpsCoordinates;
+            locationData.hasGPS = true;
+            console.log("✅ GPS coordinates obtained for verification");
+          } else {
+            console.log("⚠️ GPS coordinates not available");
+          }
 
           if (!fpjsInitialized || !fpService) {
             throw new Error("FingerprintJS Pro service not ready");
@@ -1142,9 +1165,13 @@
             linkedId: TOKEN_ID,
           });
 
+          if (!fingerprint || !fingerprint.visitorId) {
+            throw new Error("Invalid fingerprint - no visitor ID generated");
+          }
+
           console.log("✅ Enhanced fingerprint generated");
 
-          // ✅ NEW: Get IP location from server after fingerprint is generated
+          // ✅ Get IP location from server
           console.log("🌐 Requesting IP location from server...");
           try {
             const ipLocationResponse = await fetch(
@@ -1163,7 +1190,6 @@
                 locationData.ipLocation = ipLocationResult.location;
                 locationData.hasIPLocation = true;
                 console.log("✅ IP location obtained from server");
-                updateLocationDisplay();
               }
             }
           } catch (ipError) {
@@ -1176,18 +1202,10 @@
           // Update location display
           updateLocationDisplay();
 
-          if (!fingerprint || !fingerprint.visitorId) {
-            throw new Error("Invalid fingerprint - no visitor ID generated");
-          }
-
-          console.log("✅ Enhanced fingerprint generated with location data");
-
-          // Update location display
-          updateLocationDisplay();
-
-          // Include comprehensive verification payload
+          // ✅ CRITICAL: Include GPS coordinates in the payload
           const verificationPayload = {
             deviceFingerprint: fingerprint,
+            gpsCoordinates: gpsCoordinates, // ✅ This is the key addition
             locationData: {
               gps: locationData.gps,
               ipLocation: locationData.ipLocation,
@@ -1205,12 +1223,16 @@
             },
           };
 
-          console.log("📤 Sending enhanced verification to server...", {
-            visitorId: fingerprint.visitorId,
-            confidence: fingerprint.confidence,
-            hasLocation: verificationPayload.hasLocationData,
-            hasIPInfo: !!fingerprint.ipInfo,
-          });
+          console.log(
+            "📤 Sending enhanced verification with GPS to server...",
+            {
+              visitorId: fingerprint.visitorId,
+              confidence: fingerprint.confidence,
+              hasGPS: !!gpsCoordinates,
+              hasLocation: verificationPayload.hasLocationData,
+              gpsAccuracy: gpsCoordinates?.accuracy,
+            }
+          );
 
           const verifyUrl = `${API_CONFIG.baseURL}/patients/verify/${TOKEN_ID}`;
           const response = await fetch(verifyUrl, {
@@ -1233,7 +1255,6 @@
               isRegistered: result.isRegisteredDevice,
               alertsTriggered: result.alertsTriggered,
               confidence: result.confidence,
-              locationProcessed: result.locationProcessed,
             });
 
             updateDeviceStatus(fingerprint, result);
@@ -1550,13 +1571,17 @@
         console.log("🌐 Starting location detection process...");
         updateLocationDisplay(); // Show initial loading state
 
-        // Get GPS location first (non-blocking)
+        // ✅ Get GPS location first (non-blocking) - but don't store globally yet
         getGPSLocation().then((gpsLocation) => {
           if (gpsLocation) {
             locationData.gps = gpsLocation;
             locationData.hasGPS = true;
-            console.log("✅ GPS location obtained");
+            console.log("✅ GPS location obtained and stored for verification");
             updateLocationDisplay();
+          } else {
+            console.log(
+              "⚠️ GPS location not available - will use IP location only"
+            );
           }
         });
 
