@@ -604,32 +604,32 @@ const triggerEmergencyAlerts = async (
     console.log(`📨 Alert message would be: "${alertMessage}"`);
 
     // Simulate successful batch result for development
-    const batchResult = {
-      total: emergencyContacts.length,
-      successful: emergencyContacts.length, // Simulate all successful
-      failed: 0,
-      trialUnverified: 0,
-      details: emergencyContacts.map((contact) => ({
-        contact: contact,
-        result: {
-          success: true,
-          messageId: `DEV_${Date.now()}_${Math.random()
-            .toString(36)
-            .substr(2, 9)}`,
-          status: "simulated",
-        },
-      })),
-    };
+    // const batchResult = {
+    //   total: emergencyContacts.length,
+    //   successful: emergencyContacts.length, // Simulate all successful
+    //   failed: 0,
+    //   trialUnverified: 0,
+    //   details: emergencyContacts.map((contact) => ({
+    //     contact: contact,
+    //     result: {
+    //       success: true,
+    //       messageId: `DEV_${Date.now()}_${Math.random()
+    //         .toString(36)
+    //         .substr(2, 9)}`,
+    //       status: "simulated",
+    //     },
+    //   })),
+    // };
 
     console.log(`✅ [SIMULATED] Batch SMS result:`, {
       successful: batchResult.successful,
       failed: batchResult.failed,
       total: batchResult.total,
     });
-    // const batchResult = await twilioSMSService.sendBatchEmergencyAlerts(
-    //   emergencyContacts,
-    //   alertMessage
-    // );
+    const batchResult = await twilioSMSService.sendBatchEmergencyAlerts(
+      emergencyContacts,
+      alertMessage
+    );
 
     // ✅ Enhanced response handling
     const response = {
