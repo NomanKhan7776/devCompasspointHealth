@@ -57,13 +57,13 @@ const checkDeviceAndTriggerAlerts = async (
         .input("patientUserId", sql.Int, patientUserId)
         .input("timeWindow", sql.DateTime, new Date(Date.now() - 5 * 60 * 1000)) // Last 5 minutes
         .query(`
-    SELECT TOP 1 alertId, alertType, triggeredAt
+    SELECT TOP 1 alertId, alertType, createdAt
     FROM SmartTokenEmergencyAlerts
     WHERE tokenId = @tokenId 
       AND patientUserId = @patientUserId
       AND alertType LIKE '%timer%'
-      AND triggeredAt > @timeWindow
-    ORDER BY triggeredAt DESC
+      AND createdAt > @timeWindow
+    ORDER BY createdAt DESC
   `);
 
       if (recentTimerAlert.recordset.length > 0) {
@@ -245,13 +245,13 @@ const checkDeviceAndTriggerAlerts = async (
         .input("patientUserId", sql.Int, patientUserId)
         .input("timeWindow", sql.DateTime, new Date(Date.now() - 5 * 60 * 1000)) // Last 5 minutes
         .query(`
-      SELECT TOP 1 alertId, alertType, triggeredAt
+      SELECT TOP 1 alertId, alertType, createdAt
       FROM SmartTokenEmergencyAlerts
       WHERE tokenId = @tokenId 
         AND patientUserId = @patientUserId
         AND (alertType LIKE '%timer%' OR alertType LIKE '%cancelled%')
-        AND triggeredAt > @timeWindow
-      ORDER BY triggeredAt DESC
+        AND createdAt > @timeWindow
+      ORDER BY createdAt DESC
     `);
 
       if (recentTimerAlertCheck.recordset.length > 0) {
@@ -3356,5 +3356,5 @@ exports.getPatientDataAfterTimer = async (req, res) => {
 
 // Export the trigger function for use in other parts of the app
 exports.triggerEmergencyAlerts = triggerEmergencyAlerts;
-exports.getCombinedLocationData = getCombinedLocationData; 
+exports.getCombinedLocationData = getCombinedLocationData;
 module.exports = exports;

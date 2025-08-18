@@ -124,18 +124,24 @@ router.post("/verify/:id", async (req, res) => {
       .input("patientUserId", sql.Int, token.patientUserId)
       .input("timeWindow", sql.DateTime, new Date(Date.now() - 2 * 60 * 1000)) // Last 2 minutes
       .query(`
-        SELECT TOP 1 alertId, alertType, triggeredAt
+        SELECT TOP 1 alertId, alertType, createdAt
         FROM SmartTokenEmergencyAlerts
         WHERE tokenId = @tokenId 
           AND patientUserId = @patientUserId
           AND (alertType LIKE '%timer%' OR alertType LIKE '%cancelled%')
-          AND triggeredAt > @timeWindow
-        ORDER BY triggeredAt DESC
+          AND createdAt > @timeWindow
+        ORDER BY createdAt DESC
       `);
 
     if (recentTimerAlert.recordset.length > 0) {
       console.log(
         "⏰ Recent timer alert found, skipping device verification alert to prevent duplicates"
+      );
+      console.log(
+        `   - Alert found at: ${recentTimerAlert.recordset[0].createdAt}`
+      );
+      console.log(
+        `   - Alert type: ${recentTimerAlert.recordset[0].alertType}`
       );
 
       // Still log the access but don't trigger alerts
@@ -184,6 +190,11 @@ router.post("/verify/:id", async (req, res) => {
         securityStatus: "timer_alert_sent",
         service: "fingerprintjs_pro",
         skipReason: "Recent timer alert prevents duplicate",
+        recentAlert: {
+          alertId: recentTimerAlert.recordset[0].alertId,
+          alertType: recentTimerAlert.recordset[0].alertType,
+          createdAt: recentTimerAlert.recordset[0].createdAt,
+        },
         timestamp: new Date().toISOString(),
       });
     }
