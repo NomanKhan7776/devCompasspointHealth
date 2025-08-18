@@ -51,6 +51,10 @@ const checkDeviceAndTriggerAlerts = async (
       }
 
       // Only trigger alert for POST requests without fingerprint (actual security issue)
+      // ✅ Get location data for early alerts
+      const combinedLocationData = await getCombinedLocationData(req);
+      const primaryLocation = combinedLocationData.primaryLocation;
+
       await triggerEmergencyAlerts(
         tokenId,
         patientUserId,
@@ -61,7 +65,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "missing_fpjs",
           visitorId: "unknown",
         },
-        primaryLocation,
+        primaryLocation, // ✅ Now properly defined
         req
       );
 
@@ -80,6 +84,12 @@ const checkDeviceAndTriggerAlerts = async (
     if (!visitorId) {
       console.warn("⚠️ No FingerprintJS Pro visitorId found");
 
+      // ✅ Ensure location data is available
+      const combinedLocationDataForAlert =
+        combinedLocationData || (await getCombinedLocationData(req));
+      const primaryLocationForAlert =
+        combinedLocationDataForAlert.primaryLocation;
+
       await triggerEmergencyAlerts(
         tokenId,
         patientUserId,
@@ -90,7 +100,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "invalid_fpjs",
           visitorId: "missing",
         },
-        primaryLocation,
+        primaryLocationForAlert, // ✅ Properly defined
         req
       );
 
@@ -107,6 +117,12 @@ const checkDeviceAndTriggerAlerts = async (
     if (service !== "fingerprintjs_pro") {
       console.warn(`⚠️ Invalid fingerprint service: ${service}`);
 
+      // ✅ Ensure location data is available
+      const combinedLocationDataForService =
+        combinedLocationData || (await getCombinedLocationData(req));
+      const primaryLocationForService =
+        combinedLocationDataForService.primaryLocation;
+
       await triggerEmergencyAlerts(
         tokenId,
         patientUserId,
@@ -117,7 +133,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: service || "unknown",
           visitorId: visitorId,
         },
-        primaryLocation,
+        primaryLocationForService, // ✅ Properly defined
         req
       );
 
@@ -240,8 +256,11 @@ const checkDeviceAndTriggerAlerts = async (
     return {
       isRegisteredDevice: isRegistered,
       deviceInfo: extractDeviceInfo(deviceFingerprint),
-      ipLocation: ipLocation,
-      hasLocation: !!ipLocation,
+      combinedLocation: combinedLocationData, // ✅ Include full location data
+      ipLocation: combinedLocationData.ipLocation, // ✅ From combined data
+      gpsLocation: combinedLocationData.gpsLocation, // ✅ From combined data
+      primaryLocation: primaryLocation, // ✅ Primary location
+      hasLocation: combinedLocationData.hasGPS || combinedLocationData.hasIP, // ✅ From combined data
       enhancedLogId,
       alertsTriggered,
       service: "fingerprintjs_pro",
@@ -254,6 +273,18 @@ const checkDeviceAndTriggerAlerts = async (
 
     // On error, trigger alerts as a safety measure
     try {
+      // ✅ Get location data for error case
+      let errorLocationData;
+      try {
+        errorLocationData = await getCombinedLocationData(req);
+      } catch (locationError) {
+        console.warn(
+          "Could not get location for error alert:",
+          locationError.message
+        );
+        errorLocationData = { primaryLocation: null };
+      }
+
       await triggerEmergencyAlerts(
         tokenId,
         patientUserId,
@@ -264,7 +295,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "fingerprintjs_pro_error",
           visitorId: "error",
         },
-        primaryLocation,
+        errorLocationData.primaryLocation, // ✅ Safely handle location
         req
       );
     } catch (alertError) {
