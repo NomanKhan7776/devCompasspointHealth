@@ -156,6 +156,15 @@
       let countdownInterval;
       let timerCancelled = false;
 
+      // ✅ BACKGROUND LOCATION DATA
+      let backgroundLocationData = {
+        gps: null,
+        ipLocation: null,
+        hasGPS: false,
+        hasIP: false,
+        locationReady: false,
+      };
+
       // API Configuration
       const getApiServerUrl = () => {
         const hostname = window.location.hostname;
@@ -179,6 +188,70 @@
       const API_CONFIG = {
         baseURL: getApiServerUrl(),
       };
+
+      /**
+       * ✅ ENHANCED: Get background location data silently
+       */
+      async function initBackgroundLocation() {
+        console.log("🌍 Starting background location detection...");
+
+        // Get GPS in background (non-blocking)
+        getGPSLocation().then((gpsData) => {
+          if (gpsData) {
+            backgroundLocationData.gps = gpsData;
+            backgroundLocationData.hasGPS = true;
+            console.log("✅ Background GPS obtained:", {
+              lat: gpsData.latitude.toFixed(6),
+              lng: gpsData.longitude.toFixed(6),
+              accuracy: Math.round(gpsData.accuracy) + "m",
+            });
+          }
+          backgroundLocationData.locationReady = true;
+        });
+
+        // Get IP location from server
+        try {
+          const ipResponse = await fetch(
+            `${API_CONFIG.baseURL}/api/ip-location`,
+            {
+              method: "GET",
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+
+          if (ipResponse.ok) {
+            const ipResult = await ipResponse.json();
+            if (ipResult.success && ipResult.location) {
+              backgroundLocationData.ipLocation = ipResult.location;
+              backgroundLocationData.hasIP = true;
+              console.log("✅ Background IP location obtained");
+            }
+          }
+        } catch (error) {
+          console.warn("⚠️ Background IP location failed:", error.message);
+        }
+      }
+
+      /**
+       * ✅ Get best available location with GPS priority
+       */
+      function getBestLocationData() {
+        const bestLocation =
+          backgroundLocationData.gps || backgroundLocationData.ipLocation;
+        return {
+          gpsCoordinates: backgroundLocationData.gps, // GPS data for timer alert
+          locationData: {
+            gps: backgroundLocationData.gps,
+            ipLocation: backgroundLocationData.ipLocation,
+            primaryLocation: bestLocation,
+            hasGPS: backgroundLocationData.hasGPS,
+            hasIP: backgroundLocationData.hasIP,
+          },
+          hasLocationData: !!(
+            backgroundLocationData.gps || backgroundLocationData.ipLocation
+          ),
+        };
+      }
 
       /**
        * Start the countdown timer
@@ -245,21 +318,18 @@
         // Update button to show cancelling state
         cancelBtn.disabled = true;
         cancelBtn.innerHTML = `
-          <i class="fas fa-spinner fa-spin text-2xl"></i>
-          <span>CANCELLING...</span>
-        `;
+      <i class="fas fa-spinner fa-spin text-2xl"></i>
+      <span>CANCELLING...</span>
+    `;
 
         try {
           console.log("🚫 Timer cancelled by user");
 
-          // No server call needed for cancellation - just redirect
-          console.log("✅ Timer cancelled successfully");
-
           // Update UI to show success
           cancelBtn.innerHTML = `
-            <i class="fas fa-check-circle text-2xl"></i>
-            <span>CANCELLED</span>
-          `;
+        <i class="fas fa-check-circle text-2xl"></i>
+        <span>CANCELLED</span>
+      `;
 
           // Redirect to patient data after short delay
           setTimeout(() => {
@@ -270,9 +340,9 @@
 
           // Show error state but still redirect
           cancelBtn.innerHTML = `
-            <i class="fas fa-exclamation-triangle text-2xl"></i>
-            <span>ERROR - REDIRECTING</span>
-          `;
+        <i class="fas fa-exclamation-triangle text-2xl"></i>
+        <span>ERROR - REDIRECTING</span>
+      `;
 
           setTimeout(() => {
             window.location.href = `${API_CONFIG.baseURL}/patients/patient-data-after-timer/${TOKEN_ID}?cancelled=true`;
@@ -281,7 +351,7 @@
       }
 
       /**
-       * Timer expired - trigger automatic emergency alert with GPS
+       * ✅ ENHANCED: Timer expired - trigger automatic emergency alert with background location
        */
       async function triggerEmergencyAlert() {
         const countdownNumber = document.getElementById("countdown-number");
@@ -294,20 +364,27 @@
 
         cancelBtn.disabled = true;
         cancelBtn.innerHTML = `
-    <i class="fas fa-paper-plane text-2xl"></i>
-    <span>SENDING ALERT...</span>
-  `;
+      <i class="fas fa-paper-plane text-2xl"></i>
+      <span>SENDING ALERT...</span>
+    `;
 
         try {
           console.log(
-            "🚨 Timer expired - triggering automatic emergency alert with GPS"
+            "🚨 Timer expired - triggering automatic emergency alert with background location"
           );
 
-          // ✅ Get GPS coordinates first
-          const gpsCoordinates = await getGPSLocation();
-          console.log("📍 GPS for timer alert:", gpsCoordinates);
+          // ✅ Use background location data with GPS priority
+          const locationData = getBestLocationData();
+          console.log("📍 Using background location for timer alert:", {
+            hasGPS:
+              locationData.hasLocationData && locationData.locationData.hasGPS,
+            hasIP:
+              locationData.hasLocationData && locationData.locationData.hasIP,
+            primarySource:
+              locationData.locationData.primaryLocation?.type || "none",
+          });
 
-          // Get device and location info
+          // Get device info
           const deviceInfo = {
             userAgent: navigator.userAgent,
             deviceName: getDeviceName(),
@@ -317,19 +394,17 @@
             timestamp: new Date().toISOString(),
           };
 
-          // Call timer expiration endpoint with GPS coordinates
+          // Call timer expiration endpoint with background location
           const response = await fetch(
             `${API_CONFIG.baseURL}/patients/timer-expired/${TOKEN_ID}`,
             {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 patientName: PATIENT_NAME,
                 deviceInfo: deviceInfo,
-                gpsCoordinates: gpsCoordinates, // ✅ Include GPS coordinates
-                locationData: gpsCoordinates, // ✅ Also include in locationData
+                gpsCoordinates: locationData.gpsCoordinates, // GPS coordinates for timer alert
+                locationData: locationData.locationData, // Complete location data
                 timerExpired: true,
                 timerDuration: COUNTDOWN_DURATION,
                 completedAt: new Date().toISOString(),
@@ -343,11 +418,11 @@
 
             // Update UI to show success
             cancelBtn.innerHTML = `
-        <i class="fas fa-check-circle text-2xl"></i>
-        <span>ALERT SENT</span>
-      `;
+          <i class="fas fa-check-circle text-2xl"></i>
+          <span>ALERT SENT</span>
+        `;
 
-            // Redirect to patient data after short delay (no alert popup)
+            // Redirect to patient data after short delay
             setTimeout(() => {
               console.log(
                 `Emergency contacts notified successfully. ${
@@ -364,11 +439,11 @@
 
           // Update UI to show error
           cancelBtn.innerHTML = `
-      <i class="fas fa-exclamation-triangle text-2xl"></i>
-      <span>ALERT ERROR</span>
-    `;
+        <i class="fas fa-exclamation-triangle text-2xl"></i>
+        <span>ALERT ERROR</span>
+      `;
 
-          // Redirect after error (no alert popup)
+          // Redirect after error
           setTimeout(() => {
             console.error(
               "Error sending emergency alert. Please contact emergency services directly if needed."
@@ -379,7 +454,7 @@
       }
 
       /**
-       * ✅ Add GPS location function to timer screen
+       * Enhanced GPS location function
        */
       async function getGPSLocation() {
         return new Promise((resolve) => {
@@ -456,14 +531,18 @@
           : "desktop";
       }
 
-      // Start countdown when page loads
+      // ✅ ENHANCED: Initialize with background location detection
       document.addEventListener("DOMContentLoaded", function () {
-        console.log("⏰ Emergency access timer started");
+        console.log(
+          "⏰ Emergency access timer started with background location"
+        );
+
+        // Start background location detection immediately
+        initBackgroundLocation();
+
+        // Start countdown
         startCountdown();
       });
-
-      // ✅ REMOVED: beforeunload event listener that showed confirmation dialog
-      // No more prompts when user tries to leave the page
     </script>
   </body>
 </html>

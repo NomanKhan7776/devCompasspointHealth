@@ -3240,8 +3240,14 @@ exports.getPatientDataAfterTimer = async (req, res) => {
             : "Not available"
         );
 
-        // Trigger emergency alert for unregistered device (timer was cancelled)
+        // ✅ ENHANCED: Trigger emergency alert for unregistered device with GPS priority
         try {
+          // Use the best available location (GPS priority)
+          const bestLocation =
+            combinedLocationData.gpsLocation ||
+            combinedLocationData.ipLocation ||
+            primaryLocation;
+
           const alertResult = await triggerEmergencyAlerts(
             id,
             token.patientUserId,
@@ -3258,13 +3264,13 @@ exports.getPatientDataAfterTimer = async (req, res) => {
               service: "timer_cancelled_alert",
               confidence: 1.0,
               timestamp: new Date().toISOString(),
+              // ✅ Use single best location to prevent duplicate location data
               combinedLocation: combinedLocationData,
-              ipLocation: combinedLocationData.ipLocation,
-              gpsLocation: combinedLocationData.gpsLocation,
               hasLocation:
                 combinedLocationData.hasGPS || combinedLocationData.hasIP,
+              locationSource: combinedLocationData.hasGPS ? "GPS" : "IP",
             },
-            primaryLocation, // ✅ Pass combined location data
+            bestLocation, // ✅ Pass single best location
             req
           );
 

@@ -513,1139 +513,1176 @@
     </div>
 
     <script>
-      // Global variables
-      const CONTAINER_NAME = "<%= containerName %>";
-      const FOLDER_NAME = "<%= folderName %>";
-      const PATIENT_NAME = "<%= patientName %>";
-      const TOKEN_ID = "<%= tokenId %>";
+                // Global variables
+                const CONTAINER_NAME = "<%= containerName %>";
+                const FOLDER_NAME = "<%= folderName %>";
+                const PATIENT_NAME = "<%= patientName %>";
+                const TOKEN_ID = "<%= tokenId %>";
 
-      // Location tracking variables
-      let locationData = {
-        gps: null,
-        ipLocation: null,
-        best: null,
-        hasGPS: false,
-        hasIPLocation: false,
-      };
+                // Location tracking variables
+                let locationData = {
+                  gps: null,
+                  ipLocation: null,
+                  best: null,
+                  hasGPS: false,
+                  hasIPLocation: false,
+                };
 
-      // API Configuration
-      const getApiServerUrl = () => {
-        const hostname = window.location.hostname;
-        const isDevelopment =
-          hostname === "localhost" ||
-          hostname === "127.0.0.1" ||
-          hostname.startsWith("192.168.") ||
-          hostname.startsWith("10.");
+                // API Configuration
+                const getApiServerUrl = () => {
+                  const hostname = window.location.hostname;
+                  const isDevelopment =
+                    hostname === "localhost" ||
+                    hostname === "127.0.0.1" ||
+                    hostname.startsWith("192.168.") ||
+                    hostname.startsWith("10.");
 
-        if (isDevelopment) {
-          if (hostname.startsWith("192.168.") || hostname.startsWith("10.")) {
-            return `http://${hostname}:5000`;
-          } else {
-            return "http://localhost:5000";
-          }
-        } else {
-          return window.location.origin;
-        }
-      };
+                  if (isDevelopment) {
+                    if (hostname.startsWith("192.168.") || hostname.startsWith("10.")) {
+                      return `http://${hostname}:5000`;
+                    } else {
+                      return "http://localhost:5000";
+                    }
+                  } else {
+                    return window.location.origin;
+                  }
+                };
 
-      const API_CONFIG = {
-        baseURL: getApiServerUrl(),
-      };
+                const API_CONFIG = {
+                  baseURL: getApiServerUrl(),
+                };
 
-      // FingerprintJS Pro service instance
-      let fpService = null;
-      let fpjsInitialized = false;
+                // FingerprintJS Pro service instance
+                let fpService = null;
+                let fpjsInitialized = false;
 
-      /**
-       * Toggle location details visibility
-       */
-      function toggleLocationDetails() {
-        const details = document.getElementById("location-details");
-        const chevron = document.getElementById("location-chevron");
+                /**
+                 * Toggle location details visibility
+                 */
+                function toggleLocationDetails() {
+                  const details = document.getElementById("location-details");
+                  const chevron = document.getElementById("location-chevron");
 
-        if (details.classList.contains("expanded")) {
-          details.classList.remove("expanded");
-          chevron.classList.remove("fa-chevron-up");
-          chevron.classList.add("fa-chevron-down");
-        } else {
-          details.classList.add("expanded");
-          chevron.classList.remove("fa-chevron-down");
-          chevron.classList.add("fa-chevron-up");
-        }
-      }
+                  if (details.classList.contains("expanded")) {
+                    details.classList.remove("expanded");
+                    chevron.classList.remove("fa-chevron-up");
+                    chevron.classList.add("fa-chevron-down");
+                  } else {
+                    details.classList.add("expanded");
+                    chevron.classList.remove("fa-chevron-down");
+                    chevron.classList.add("fa-chevron-up");
+                  }
+                }
 
-      /**
-       * ✅ Enhanced GPS location function with better error handling
-       */
-      async function getGPSLocation() {
-        return new Promise((resolve) => {
-          if (!navigator.geolocation) {
-            console.log("📍 GPS not available in this browser");
-            resolve(null);
-            return;
-          }
+                /**
+                 * ✅ Enhanced GPS location function with better error handling
+                 */
+                async function getGPSLocation() {
+                  return new Promise((resolve) => {
+                    if (!navigator.geolocation) {
+                      console.log("📍 GPS not available in this browser");
+                      resolve(null);
+                      return;
+                    }
 
-          const options = {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 300000, // 5 minutes
-          };
+                    const options = {
+                      enableHighAccuracy: true,
+                      timeout: 10000,
+                      maximumAge: 300000, // 5 minutes
+                    };
 
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const gpsData = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                accuracy: position.coords.accuracy,
-                timestamp: new Date().toISOString(),
-                source: "device_gps",
-                type: "gps",
-              };
-              console.log("📍 GPS coordinates obtained:", {
-                lat: gpsData.latitude.toFixed(6),
-                lng: gpsData.longitude.toFixed(6),
-                accuracy: Math.round(gpsData.accuracy) + "m",
-              });
-              resolve(gpsData);
-            },
-            (error) => {
-              console.warn("GPS error:", error.message);
-              console.warn("GPS error code:", error.code);
-              resolve(null);
-            },
-            options
-          );
-        });
-      }
+                    navigator.geolocation.getCurrentPosition(
+                      (position) => {
+                        const gpsData = {
+                          latitude: position.coords.latitude,
+                          longitude: position.coords.longitude,
+                          accuracy: position.coords.accuracy,
+                          timestamp: new Date().toISOString(),
+                          source: "device_gps",
+                          type: "gps",
+                        };
+                        console.log("📍 GPS coordinates obtained:", {
+                          lat: gpsData.latitude.toFixed(6),
+                          lng: gpsData.longitude.toFixed(6),
+                          accuracy: Math.round(gpsData.accuracy) + "m",
+                        });
+                        resolve(gpsData);
+                      },
+                      (error) => {
+                        console.warn("GPS error:", error.message);
+                        console.warn("GPS error code:", error.code);
+                        resolve(null);
+                      },
+                      options
+                    );
+                  });
+                }
 
-      /**
-       * Update location display with comprehensive information
-       */
-      function updateLocationDisplay() {
-        const locationContent = document.getElementById("location-content");
-        const locationSection = document.getElementById("location-section");
-        const gpsLocationDiv = document.getElementById("gps-location");
-        const ipLocationDiv = document.getElementById("ip-location");
-        const networkInfoDiv = document.getElementById("network-info");
-        const accuracyDiv = document.getElementById("location-accuracy");
+                /**
+                 * Update location display with comprehensive information
+                 */
+                function updateLocationDisplay() {
+                  const locationContent = document.getElementById("location-content");
+                  const locationSection = document.getElementById("location-section");
+                  const gpsLocationDiv = document.getElementById("gps-location");
+                  const ipLocationDiv = document.getElementById("ip-location");
+                  const networkInfoDiv = document.getElementById("network-info");
+                  const accuracyDiv = document.getElementById("location-accuracy");
 
-        let primaryLocation = locationData.gps || locationData.ipLocation;
-        let statusClass = "";
-        let mainLocationText = "";
-        let iconClass = "";
+                  let primaryLocation = locationData.gps || locationData.ipLocation;
+                  let statusClass = "";
+                  let mainLocationText = "";
+                  let iconClass = "";
 
-        if (locationData.gps) {
-          // GPS is available - highest priority
-          mainLocationText = `GPS Location (±${Math.round(
-            locationData.gps.accuracy || 0
-          )}m)`;
-          iconClass = "fa-satellite text-green-400";
-          statusClass = "location-success";
-        } else if (locationData.ipLocation) {
-          // IP location
-          const city = locationData.ipLocation.city || "Unknown City";
-          const region = locationData.ipLocation.region || "Unknown Region";
-          const country = locationData.ipLocation.country || "Unknown Country";
+                  if (locationData.gps) {
+                    // GPS is available - highest priority
+                    mainLocationText = `GPS Location (±${Math.round(
+                      locationData.gps.accuracy || 0
+                    )}m)`;
+                    iconClass = "fa-satellite text-green-400";
+                    statusClass = "location-success";
+                  } else if (locationData.ipLocation) {
+                    // IP location
+                    const city = locationData.ipLocation.city || "Unknown City";
+                    const region = locationData.ipLocation.region || "Unknown Region";
+                    const country = locationData.ipLocation.country || "Unknown Country";
 
-          mainLocationText = `${city}, ${region}, ${country}`;
-          iconClass = "fa-globe text-blue-400";
-          statusClass = "location-warning";
-        } else {
-          // No location available
-          mainLocationText = "Location unavailable";
-          iconClass = "fa-question-circle text-red-400";
-          statusClass = "location-error";
-        }
+                    mainLocationText = `${city}, ${region}, ${country}`;
+                    iconClass = "fa-globe text-blue-400";
+                    statusClass = "location-warning";
+                  } else {
+                    // No location available
+                    mainLocationText = "Location unavailable";
+                    iconClass = "fa-question-circle text-red-400";
+                    statusClass = "location-error";
+                  }
 
-        // Update main location display
-        locationContent.innerHTML = `
+                  // Update main location display
+                  locationContent.innerHTML = `
+                    <div class="text-sm text-red-100">
+                      <p class="font-medium">
+                        <i class="fas ${iconClass} mr-1"></i>
+                        ${mainLocationText}
+                      </p>
+                      <p class="text-xs text-red-200 mt-1">
+                        ${
+                          locationData.gps
+                            ? "Device GPS"
+                            : locationData.ipLocation
+                            ? "IP Location Service"
+                            : "No location data"
+                        } •
+                        Detected at ${new Date().toLocaleTimeString()}
+                      </p>
+                    </div>
+                  `;
+
+                  // Update location section styling
+                  locationSection.classList.remove(
+                    "location-error",
+                    "location-warning",
+                    "location-success"
+                  );
+                  locationSection.classList.add(statusClass);
+
+                  // Update detailed information
+                  if (locationData.gps) {
+                    gpsLocationDiv.innerHTML = `
+                      <i class="fas fa-satellite mr-1 text-green-300"></i>
+                      <span>GPS: ${locationData.gps.latitude.toFixed(
+                        6
+                      )}, ${locationData.gps.longitude.toFixed(6)} (±${Math.round(
+                      locationData.gps.accuracy
+                    )}m)</span>
+                    `;
+                  } else {
+                    gpsLocationDiv.innerHTML = `
+                      <i class="fas fa-satellite mr-1"></i>
+                      <span>GPS: Not available</span>
+                    `;
+                  }
+
+                  if (locationData.ipLocation) {
+                    const loc = locationData.ipLocation;
+                    const coordsDisplay =
+                      loc.latitude && loc.longitude
+                        ? ` (${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)})`
+                        : "";
+
+                    ipLocationDiv.innerHTML = `
+              <i class="fas fa-globe mr-1 text-blue-300"></i>
+              <span>IP Location: ${loc.city}, ${loc.region}, ${loc.country}${coordsDisplay}</span>
+            `;
+
+                    networkInfoDiv.innerHTML = `
+              <i class="fas fa-network-wired mr-1"></i>
+              <span>ISP: ${loc.org || "Unknown"} • IP: ${loc.ipAddress}</span>
+            `;
+
+                    accuracyDiv.innerHTML = `
+              <i class="fas fa-crosshairs mr-1"></i>
+              <span>Timezone: ${loc.timezone || "Unknown"} • Source: ${loc.source}</span>
+            `;
+                  } else {
+                    ipLocationDiv.innerHTML = `
+                      <i class="fas fa-globe mr-1"></i>
+                      <span>IP Location: Not available</span>
+                    `;
+                  }
+                }
+
+                /**
+                 * ROBUST Mobile FingerprintJS Pro Loading with Enhanced Location
+                 */
+                async function loadFingerprintJSDirectlyRobust() {
+                  console.log("🌐 Loading FingerprintJS Pro with IP location support...");
+
+                  const maxRetries = 3;
+                  let lastError = null;
+
+                  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                      console.log(`📱 Loading attempt ${attempt}/${maxRetries}`);
+
+                      const fpjsModule = await Promise.race([
+                        import("https://fpjscdn.net/v3/9VIydhmCLQeWh0E3Oev5"),
+                        new Promise((_, reject) =>
+                          setTimeout(() => reject(new Error("CDN import timeout")), 10000)
+                        ),
+                      ]);
+
+                      const FingerprintJS = fpjsModule.default || fpjsModule;
+                      console.log("✅ FingerprintJS Pro module loaded successfully");
+
+                      const testInstance = await Promise.race([
+                        FingerprintJS.load({
+                          apiKey: "9VIydhmCLQeWh0E3Oev5",
+                          region: "us",
+                          endpoint: "https://api.fpjs.io",
+                        }),
+                        new Promise((_, reject) =>
+                          setTimeout(
+                            () => reject(new Error("Initialization timeout")),
+                            15000
+                          )
+                        ),
+                      ]);
+
+                      console.log("✅ FingerprintJS Pro initialization test successful");
+
+                      const mobileFingerprintService = {
+                        initialized: false,
+                        fpInstance: null,
+                        publicKey: "9VIydhmCLQeWh0E3Oev5",
+
+                        async initialize() {
+                          if (this.initialized && this.fpInstance) {
+                            return this.fpInstance;
+                          }
+
+                          console.log("🔄 Initializing FingerprintJS Pro...");
+
+                          this.fpInstance = await FingerprintJS.load({
+                            apiKey: this.publicKey,
+                            region: "us",
+                            endpoint: "https://api.fpjs.io",
+                          });
+
+                          this.initialized = true;
+                          console.log("✅ FingerprintJS Pro initialization complete");
+                          return this.fpInstance;
+                        },
+
+                        async generateFingerprint(tags = {}) {
+                          try {
+                            if (!this.initialized || !this.fpInstance) {
+                              await this.initialize();
+                            }
+
+                            console.log(
+                              "📱 Generating FingerprintJS Pro fingerprint with extended data..."
+                            );
+
+                            // Use extended version to get IP location data
+                            const extendedTags = {
+                              ...tags,
+                              linkedId: "emergency_access",
+                              extendedResult: true,
+                            };
+
+                            const result = await Promise.race([
+                              this.fpInstance.get(extendedTags, { extendedResult: true }),
+                              new Promise((_, reject) =>
+                                setTimeout(
+                                  () =>
+                                    reject(new Error("Fingerprint generation timeout")),
+                                  30000
+                                )
+                              ),
+                            ]);
+
+                            // ✅ NEW: Get IP location from server after fingerprint is generated
+                            console.log("🌐 Requesting IP location from server...");
+                            try {
+                              const ipLocationResponse = await fetch(
+                                `${API_CONFIG.baseURL}/api/ip-location`,
+                                {
+                                  method: "GET",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                  },
+                                }
+                              );
+
+                              if (ipLocationResponse.ok) {
+                                const ipLocationResult = await ipLocationResponse.json();
+                                if (
+                                  ipLocationResult.success &&
+                                  ipLocationResult.location
+                                ) {
+                                  locationData.ipLocation = ipLocationResult.location;
+                                  locationData.hasIPLocation = true;
+                                  console.log("✅ IP location obtained from server");
+                                  updateLocationDisplay();
+                                }
+                              }
+                            } catch (ipError) {
+                              console.warn(
+                                "⚠️ Failed to get IP location from server:",
+                                ipError.message
+                              );
+                            }
+
+                            if (!result || !result.visitorId) {
+                              throw new Error(
+                                "Invalid fingerprint result - no visitor ID"
+                              );
+                            }
+
+                            console.log("✅ FingerprintJS Pro fingerprint generated:", {
+                              visitorId: result.visitorId,
+                              confidence: result.confidence?.score,
+                              requestId: result.requestId,
+                              hasExtendedData: !!(
+                                result.ipInfo ||
+                                result.botd ||
+                                result.vpn
+                              ),
+                            });
+
+                            // Extract IP location if available
+
+                            return {
+                              hash: result.visitorId,
+                              visitorId: result.visitorId,
+                              requestId: result.requestId,
+                              confidence: result.confidence?.score || 0,
+                              // Include extended FingerprintJS Pro data (WITHOUT IP location)
+                              ipInfo: result.ipInfo,
+                              botd: result.botd,
+                              vpn: result.vpn,
+                              details: {
+                                visitorId: result.visitorId,
+                                requestId: result.requestId,
+                                confidence: result.confidence?.score || 0,
+                                components: result.components || {},
+                                userAgent: navigator.userAgent,
+                                platform: navigator.platform,
+                                screen: {
+                                  width: screen.width,
+                                  height: screen.height,
+                                  colorDepth: screen.colorDepth,
+                                  pixelRatio: window.devicePixelRatio || 1,
+                                },
+                                viewport: {
+                                  width: window.innerWidth,
+                                  height: window.innerHeight,
+                                },
+                                collectMethod: "fingerprintjs_pro_extended",
+                                isAndroid: /Android/i.test(navigator.userAgent),
+                                isiOS: /iPhone|iPad|iPod/i.test(navigator.userAgent),
+                                isMobile:
+                                  /Mobile|Android|iPhone|iPad|iPod|BlackBerry|Windows Phone/i.test(
+                                    navigator.userAgent
+                                  ),
+                                timestamp: Date.now(),
+                                fullResult: result,
+                              },
+                              metadata: {
+                                deviceName: getDeviceName(),
+                                browserName: getBrowserName(),
+                                osName: getOSName(),
+                                deviceType: getDeviceType(),
+                                method: "fingerprintjs_pro_extended",
+                                consistency: "high_confidence",
+                                timestamp: new Date().toISOString(),
+                                confidenceScore: result.confidence?.score || 0,
+                                service: "fingerprintjs_pro",
+                                fallbackUsed: false,
+                                fpjsVersion: result.version || "unknown",
+                                fpjsRequestId: result.requestId,
+                                region: "us",
+                                publicKey: this.publicKey.substring(0, 8) + "...",
+                              },
+                            };
+                          } catch (error) {
+                            console.error("❌ Fingerprint generation failed:", error);
+                            throw error;
+                          }
+                        },
+
+                        isAvailable() {
+                          return this.initialized && this.fpInstance !== null;
+                        },
+                      };
+
+                      window.FingerprintJS = FingerprintJS;
+                      window.fingerprintService = mobileFingerprintService;
+                      window.FingerprintJSBrowser = function () {
+                        return mobileFingerprintService;
+                      };
+
+                      console.log(
+                        "✅ Enhanced FingerprintJS Pro service created with IP location support"
+                      );
+                      return;
+                    } catch (error) {
+                      lastError = error;
+                      console.warn(
+                        `❌ Loading attempt ${attempt} failed:`,
+                        error.message
+                      );
+
+                      if (attempt < maxRetries) {
+                        const delay = attempt * 2000;
+                        console.log(`⏳ Retrying in ${delay}ms...`);
+                        await new Promise((resolve) => setTimeout(resolve, delay));
+                      }
+                    }
+                  }
+
+                  throw new Error(
+                    `FingerprintJS Pro loading failed after ${maxRetries} attempts: ${lastError?.message}`
+                  );
+                }
+
+                /**
+                 * Smart Loading Strategy
+                 */
+                async function loadFingerprintJSBrowserService() {
+                  console.log(
+                    "🔥 Smart FingerprintJS Pro loading with location support..."
+                  );
+
+                  const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(
+                    navigator.userAgent
+                  );
+                  console.log("📱 Device type:", isMobile ? "Mobile" : "Desktop");
+
+                  if (isMobile) {
+                    console.log("📱 Mobile detected - Using enhanced CDN approach");
+                    try {
+                      await loadFingerprintJSDirectlyRobust();
+                      return;
+                    } catch (mobileError) {
+                      console.error("❌ Mobile CDN failed:", mobileError.message);
+                      throw mobileError;
+                    }
+                  }
+
+                  console.log("🖥️ Desktop detected - Trying local script first");
+                  const scriptUrl = `${API_CONFIG.baseURL}/static/js/fingerprintjs-browser.js`;
+
+                  try {
+                    await loadLocalScript(scriptUrl);
+                    console.log("✅ Local script loaded successfully");
+                    return;
+                  } catch (localError) {
+                    console.warn(
+                      "⚠️ Local script failed, trying CDN fallback:",
+                      localError.message
+                    );
+                    await loadFingerprintJSDirectlyRobust();
+                  }
+                }
+
+                /**
+                 * Load Local Script (Desktop)
+                 */
+                async function loadLocalScript(scriptUrl) {
+                  return new Promise((resolve, reject) => {
+                    if (window.fingerprintService && window.FingerprintJSBrowser) {
+                      console.log("✅ Local service already available");
+                      resolve();
+                      return;
+                    }
+
+                    const script = document.createElement("script");
+                    script.src = scriptUrl;
+                    script.async = true;
+
+                    const timeoutId = setTimeout(() => {
+                      script.remove();
+                      reject(new Error("Local script loading timeout"));
+                    }, 8000);
+
+                    script.onload = () => {
+                      clearTimeout(timeoutId);
+                      console.log("✅ Local script loaded successfully");
+
+                      let attempts = 0;
+                      const checkService = () => {
+                        attempts++;
+                        if (window.fingerprintService && window.FingerprintJSBrowser) {
+                          resolve();
+                        } else if (attempts < 20) {
+                          setTimeout(checkService, 100);
+                        } else {
+                          reject(
+                            new Error("Local service not available after script load")
+                          );
+                        }
+                      };
+                      checkService();
+                    };
+
+                    script.onerror = () => {
+                      clearTimeout(timeoutId);
+                      reject(new Error("Local script loading failed"));
+                    };
+
+                    document.head.appendChild(script);
+                  });
+                }
+
+                /**
+                 * Enhanced Initialize FingerprintJS Pro with Location
+                 */
+                async function initFingerprintJS() {
+                  const maxRetries = 2;
+                  let lastError = null;
+
+                  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                      console.log(
+                        `🔧 Initializing enhanced FingerprintJS Pro (attempt ${attempt}/${maxRetries})...`
+                      );
+
+                      updateDeviceStatus(null, {
+                        loading: true,
+                        message: `Initializing security verification (${attempt}/${maxRetries})...`,
+                      });
+
+                      await loadFingerprintJSBrowserService();
+
+                      if (!window.fingerprintService) {
+                        throw new Error(
+                          "FingerprintJS Pro service not available after loading"
+                        );
+                      }
+
+                      fpService = window.fingerprintService;
+                      console.log(
+                        "🔗 Enhanced FingerprintJS Pro service instance obtained"
+                      );
+
+                      updateDeviceStatus(null, {
+                        loading: true,
+                        message: "Connecting to security verification API...",
+                      });
+
+                      await fpService.initialize();
+                      fpjsInitialized = true;
+
+                      console.log(
+                        "✅ Enhanced FingerprintJS Pro service initialized successfully"
+                      );
+
+                      updateDeviceStatus(null, {
+                        loading: true,
+                        message: "Generating device fingerprint with location...",
+                      });
+
+                      await sendDeviceFingerprint();
+                      return;
+                    } catch (error) {
+                      lastError = error;
+                      console.error(
+                        `❌ Enhanced FingerprintJS Pro initialization attempt ${attempt} failed:`,
+                        error
+                      );
+
+                      if (attempt < maxRetries) {
+                        updateDeviceStatus(null, {
+                          loading: true,
+                          message: `Retrying security verification initialization...`,
+                        });
+                        await new Promise((resolve) => setTimeout(resolve, 3000));
+                      }
+                    }
+                  }
+
+                  console.error(
+                    "❌ All enhanced FingerprintJS Pro initialization attempts failed"
+                  );
+                  updateDeviceStatus(null, {
+                    success: false,
+                    error: `Security verification initialization failed: ${lastError?.message}`,
+                    critical: true,
+                  });
+                }
+
+                /**
+                 * ✅ Enhanced Device Fingerprint with GPS coordinates and location priority
+                 */
+                async function sendDeviceFingerprint() {
+                  try {
+                    console.log(
+                      "🚀 Starting enhanced FingerprintJS Pro device verification with GPS..."
+                    );
+
+                    // ✅ FIRST: Get GPS coordinates before fingerprint
+                    console.log(
+                      "📍 Requesting GPS coordinates for device verification..."
+                    );
+                    const gpsCoordinates = await getGPSLocation();
+
+                    if (gpsCoordinates) {
+                      locationData.gps = gpsCoordinates;
+                      locationData.hasGPS = true;
+                      console.log("✅ GPS coordinates obtained for device verification");
+                    } else {
+                      console.log(
+                        "⚠️ GPS coordinates not available for device verification"
+                      );
+                    }
+
+                    if (!fpjsInitialized || !fpService) {
+                      throw new Error("FingerprintJS Pro service not ready");
+                    }
+
+                    console.log(
+                      "🔍 Generating enhanced FingerprintJS Pro fingerprint..."
+                    );
+                    const fingerprint = await fpService.generateFingerprint({
+                      tag: "emergency_smarttoken_access",
+                      linkedId: TOKEN_ID,
+                    });
+
+                    if (!fingerprint || !fingerprint.visitorId) {
+                      throw new Error("Invalid fingerprint - no visitor ID generated");
+                    }
+
+                    console.log("✅ Enhanced fingerprint generated");
+
+                    // ✅ Get IP location from server
+                    console.log("🌍 Requesting IP location from server...");
+                    try {
+                      const ipLocationResponse = await fetch(
+                        `${API_CONFIG.baseURL}/api/ip-location`,
+                        {
+                          method: "GET",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                        }
+                      );
+
+                      if (ipLocationResponse.ok) {
+                        const ipLocationResult = await ipLocationResponse.json();
+                        if (ipLocationResult.success && ipLocationResult.location) {
+                          locationData.ipLocation = ipLocationResult.location;
+                          locationData.hasIPLocation = true;
+                          console.log("✅ IP location obtained from server");
+                        }
+                      }
+                    } catch (ipError) {
+                      console.warn(
+                        "⚠️ Failed to get IP location from server:",
+                        ipError.message
+                      );
+                    }
+
+                    // Update location display
+                    updateLocationDisplay();
+
+                    // ✅ CRITICAL: Include BOTH GPS coordinates and location data in the payload
+                    const verificationPayload = {
+                      deviceFingerprint: fingerprint,
+                      gpsCoordinates: gpsCoordinates, // ✅ GPS coordinates
+                      locationData: {
+                        gps: locationData.gps,
+                        ipLocation: locationData.ipLocation,
+                        best: locationData.gps || locationData.ipLocation, // GPS priority
+                        hasGPS: locationData.hasGPS,
+                        hasIP: locationData.hasIPLocation,
+                      },
+                      hasLocationData: !!(locationData.gps || locationData.ipLocation),
+                      locationSources: {
+                        gps: locationData.hasGPS,
+                        ipLocation: locationData.hasIPLocation,
+                      },
+                      extendedData: {
+                        ipInfo: fingerprint.ipInfo,
+                        botd: fingerprint.botd,
+                        vpn: fingerprint.vpn,
+                      },
+                    };
+
+                    console.log(
+                      "📤 Sending enhanced verification with location to server...",
+                      {
+                        visitorId: fingerprint.visitorId,
+                        confidence: fingerprint.confidence,
+                        hasGPS: !!gpsCoordinates,
+                        hasLocation: verificationPayload.hasLocationData,
+                        gpsAccuracy: gpsCoordinates?.accuracy,
+                        primaryLocation: locationData.gps ? "GPS" : "IP",
+                      }
+                    );
+
+                    const verifyUrl = `${API_CONFIG.baseURL}/patients/verify/${TOKEN_ID}`;
+                    const response = await fetch(verifyUrl, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify(verificationPayload),
+                    });
+
+                    if (!response.ok) {
+                      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                      console.log("✅ Enhanced device verification successful:", {
+                        visitorId: result.visitorId,
+                        isRegistered: result.isRegisteredDevice,
+                        alertsTriggered: result.alertsTriggered,
+                        confidence: result.confidence,
+                        locationIncluded: !!(gpsCoordinates || locationData.ipLocation),
+                      });
+
+                      updateDeviceStatus(fingerprint, result);
+                    } else {
+                      console.error("❌ Device verification failed:", result.message);
+                      updateDeviceStatus(fingerprint, {
+                        success: false,
+                        error: result.message,
+                        service: result.service || "fingerprintjs_pro",
+                      });
+                    }
+
+                    return result;
+                  } catch (error) {
+                    console.error("❌ Enhanced device verification failed:", error);
+                    updateLocationDisplay(); // Still update location display with whatever we have
+                    updateDeviceStatus(null, {
+                      success: false,
+                      error: error.message,
+                      critical: true,
+                    });
+                    return { success: false, error: error.message };
+                  }
+                }
+
+                /**
+                 * Enhanced Device Status Updates
+                 */
+                function updateDeviceStatus(fingerprint, serverResponse) {
+
+                  const deviceContent = document.getElementById("device-content");
+                  const securityNotice = document.getElementById("security-notice");
+                  const securityMessage = document.getElementById("security-message");
+
+                  if (!deviceContent) return;
+
+                  // ✅ NEW: Handle timer-based access skip
+      if (serverResponse.skipVerification) {
+        deviceContent.innerHTML = `
           <div class="text-sm text-red-100">
-            <p class="font-medium">
-              <i class="fas ${iconClass} mr-1"></i>
-              ${mainLocationText}
-            </p>
-            <p class="text-xs text-red-200 mt-1">
-              ${
-                locationData.gps
-                  ? "Device GPS"
-                  : locationData.ipLocation
-                  ? "IP Location Service"
-                  : "No location data"
-              } •
-              Detected at ${new Date().toLocaleTimeString()}
-            </p>
+              <p class="font-medium">
+                  <i class="fas fa-clock mr-1"></i>
+                  ${serverResponse.message || "Timer-based emergency access"}
+              </p>
+              <p class="text-xs text-red-200 mt-1">
+                  <i class="fas fa-shield-alt mr-1"></i>
+                  Device verification completed during emergency timer
+              </p>
           </div>
         `;
 
-        // Update location section styling
-        locationSection.classList.remove(
-          "location-error",
-          "location-warning",
-          "location-success"
-        );
-        locationSection.classList.add(statusClass);
-
-        // Update detailed information
-        if (locationData.gps) {
-          gpsLocationDiv.innerHTML = `
-            <i class="fas fa-satellite mr-1 text-green-300"></i>
-            <span>GPS: ${locationData.gps.latitude.toFixed(
-              6
-            )}, ${locationData.gps.longitude.toFixed(6)} (±${Math.round(
-            locationData.gps.accuracy
-          )}m)</span>
-          `;
-        } else {
-          gpsLocationDiv.innerHTML = `
-            <i class="fas fa-satellite mr-1"></i>
-            <span>GPS: Not available</span>
-          `;
-        }
-
-        if (locationData.ipLocation) {
-          const loc = locationData.ipLocation;
-          const coordsDisplay =
-            loc.latitude && loc.longitude
-              ? ` (${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)})`
-              : "";
-
-          ipLocationDiv.innerHTML = `
-    <i class="fas fa-globe mr-1 text-blue-300"></i>
-    <span>IP Location: ${loc.city}, ${loc.region}, ${loc.country}${coordsDisplay}</span>
-  `;
-
-          networkInfoDiv.innerHTML = `
-    <i class="fas fa-network-wired mr-1"></i>
-    <span>ISP: ${loc.org || "Unknown"} • IP: ${loc.ipAddress}</span>
-  `;
-
-          accuracyDiv.innerHTML = `
-    <i class="fas fa-crosshairs mr-1"></i>
-    <span>Timezone: ${loc.timezone || "Unknown"} • Source: ${loc.source}</span>
-  `;
-        } else {
-          ipLocationDiv.innerHTML = `
-            <i class="fas fa-globe mr-1"></i>
-            <span>IP Location: Not available</span>
-          `;
-        }
-      }
-
-      /**
-       * ROBUST Mobile FingerprintJS Pro Loading with Enhanced Location
-       */
-      async function loadFingerprintJSDirectlyRobust() {
-        console.log("🌐 Loading FingerprintJS Pro with IP location support...");
-
-        const maxRetries = 3;
-        let lastError = null;
-
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            console.log(`📱 Loading attempt ${attempt}/${maxRetries}`);
-
-            const fpjsModule = await Promise.race([
-              import("https://fpjscdn.net/v3/9VIydhmCLQeWh0E3Oev5"),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("CDN import timeout")), 10000)
-              ),
-            ]);
-
-            const FingerprintJS = fpjsModule.default || fpjsModule;
-            console.log("✅ FingerprintJS Pro module loaded successfully");
-
-            const testInstance = await Promise.race([
-              FingerprintJS.load({
-                apiKey: "9VIydhmCLQeWh0E3Oev5",
-                region: "us",
-                endpoint: "https://api.fpjs.io",
-              }),
-              new Promise((_, reject) =>
-                setTimeout(
-                  () => reject(new Error("Initialization timeout")),
-                  15000
-                )
-              ),
-            ]);
-
-            console.log("✅ FingerprintJS Pro initialization test successful");
-
-            const mobileFingerprintService = {
-              initialized: false,
-              fpInstance: null,
-              publicKey: "9VIydhmCLQeWh0E3Oev5",
-
-              async initialize() {
-                if (this.initialized && this.fpInstance) {
-                  return this.fpInstance;
-                }
-
-                console.log("🔄 Initializing FingerprintJS Pro...");
-
-                this.fpInstance = await FingerprintJS.load({
-                  apiKey: this.publicKey,
-                  region: "us",
-                  endpoint: "https://api.fpjs.io",
-                });
-
-                this.initialized = true;
-                console.log("✅ FingerprintJS Pro initialization complete");
-                return this.fpInstance;
-              },
-
-              async generateFingerprint(tags = {}) {
-                try {
-                  if (!this.initialized || !this.fpInstance) {
-                    await this.initialize();
-                  }
-
-                  console.log(
-                    "📱 Generating FingerprintJS Pro fingerprint with extended data..."
-                  );
-
-                  // Use extended version to get IP location data
-                  const extendedTags = {
-                    ...tags,
-                    linkedId: "emergency_access",
-                    extendedResult: true,
-                  };
-
-                  const result = await Promise.race([
-                    this.fpInstance.get(extendedTags, { extendedResult: true }),
-                    new Promise((_, reject) =>
-                      setTimeout(
-                        () =>
-                          reject(new Error("Fingerprint generation timeout")),
-                        30000
-                      )
-                    ),
-                  ]);
-
-                  // ✅ NEW: Get IP location from server after fingerprint is generated
-                  console.log("🌐 Requesting IP location from server...");
-                  try {
-                    const ipLocationResponse = await fetch(
-                      `${API_CONFIG.baseURL}/api/ip-location`,
-                      {
-                        method: "GET",
-                        headers: {
-                          "Content-Type": "application/json",
-                        },
-                      }
-                    );
-
-                    if (ipLocationResponse.ok) {
-                      const ipLocationResult = await ipLocationResponse.json();
-                      if (
-                        ipLocationResult.success &&
-                        ipLocationResult.location
-                      ) {
-                        locationData.ipLocation = ipLocationResult.location;
-                        locationData.hasIPLocation = true;
-                        console.log("✅ IP location obtained from server");
-                        updateLocationDisplay();
-                      }
-                    }
-                  } catch (ipError) {
-                    console.warn(
-                      "⚠️ Failed to get IP location from server:",
-                      ipError.message
-                    );
-                  }
-
-                  if (!result || !result.visitorId) {
-                    throw new Error(
-                      "Invalid fingerprint result - no visitor ID"
-                    );
-                  }
-
-                  console.log("✅ FingerprintJS Pro fingerprint generated:", {
-                    visitorId: result.visitorId,
-                    confidence: result.confidence?.score,
-                    requestId: result.requestId,
-                    hasExtendedData: !!(
-                      result.ipInfo ||
-                      result.botd ||
-                      result.vpn
-                    ),
-                  });
-
-                  // Extract IP location if available
-
-                  return {
-                    hash: result.visitorId,
-                    visitorId: result.visitorId,
-                    requestId: result.requestId,
-                    confidence: result.confidence?.score || 0,
-                    // Include extended FingerprintJS Pro data (WITHOUT IP location)
-                    ipInfo: result.ipInfo,
-                    botd: result.botd,
-                    vpn: result.vpn,
-                    details: {
-                      visitorId: result.visitorId,
-                      requestId: result.requestId,
-                      confidence: result.confidence?.score || 0,
-                      components: result.components || {},
-                      userAgent: navigator.userAgent,
-                      platform: navigator.platform,
-                      screen: {
-                        width: screen.width,
-                        height: screen.height,
-                        colorDepth: screen.colorDepth,
-                        pixelRatio: window.devicePixelRatio || 1,
-                      },
-                      viewport: {
-                        width: window.innerWidth,
-                        height: window.innerHeight,
-                      },
-                      collectMethod: "fingerprintjs_pro_extended",
-                      isAndroid: /Android/i.test(navigator.userAgent),
-                      isiOS: /iPhone|iPad|iPod/i.test(navigator.userAgent),
-                      isMobile:
-                        /Mobile|Android|iPhone|iPad|iPod|BlackBerry|Windows Phone/i.test(
-                          navigator.userAgent
-                        ),
-                      timestamp: Date.now(),
-                      fullResult: result,
-                    },
-                    metadata: {
-                      deviceName: getDeviceName(),
-                      browserName: getBrowserName(),
-                      osName: getOSName(),
-                      deviceType: getDeviceType(),
-                      method: "fingerprintjs_pro_extended",
-                      consistency: "high_confidence",
-                      timestamp: new Date().toISOString(),
-                      confidenceScore: result.confidence?.score || 0,
-                      service: "fingerprintjs_pro",
-                      fallbackUsed: false,
-                      fpjsVersion: result.version || "unknown",
-                      fpjsRequestId: result.requestId,
-                      region: "us",
-                      publicKey: this.publicKey.substring(0, 8) + "...",
-                    },
-                  };
-                } catch (error) {
-                  console.error("❌ Fingerprint generation failed:", error);
-                  throw error;
-                }
-              },
-
-              isAvailable() {
-                return this.initialized && this.fpInstance !== null;
-              },
-            };
-
-            window.FingerprintJS = FingerprintJS;
-            window.fingerprintService = mobileFingerprintService;
-            window.FingerprintJSBrowser = function () {
-              return mobileFingerprintService;
-            };
-
-            console.log(
-              "✅ Enhanced FingerprintJS Pro service created with IP location support"
-            );
-            return;
-          } catch (error) {
-            lastError = error;
-            console.warn(
-              `❌ Loading attempt ${attempt} failed:`,
-              error.message
-            );
-
-            if (attempt < maxRetries) {
-              const delay = attempt * 2000;
-              console.log(`⏳ Retrying in ${delay}ms...`);
-              await new Promise((resolve) => setTimeout(resolve, delay));
-            }
-          }
-        }
-
-        throw new Error(
-          `FingerprintJS Pro loading failed after ${maxRetries} attempts: ${lastError?.message}`
-        );
-      }
-
-      /**
-       * Smart Loading Strategy
-       */
-      async function loadFingerprintJSBrowserService() {
-        console.log(
-          "🔥 Smart FingerprintJS Pro loading with location support..."
-        );
-
-        const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(
-          navigator.userAgent
-        );
-        console.log("📱 Device type:", isMobile ? "Mobile" : "Desktop");
-
-        if (isMobile) {
-          console.log("📱 Mobile detected - Using enhanced CDN approach");
-          try {
-            await loadFingerprintJSDirectlyRobust();
-            return;
-          } catch (mobileError) {
-            console.error("❌ Mobile CDN failed:", mobileError.message);
-            throw mobileError;
-          }
-        }
-
-        console.log("🖥️ Desktop detected - Trying local script first");
-        const scriptUrl = `${API_CONFIG.baseURL}/static/js/fingerprintjs-browser.js`;
-
-        try {
-          await loadLocalScript(scriptUrl);
-          console.log("✅ Local script loaded successfully");
-          return;
-        } catch (localError) {
-          console.warn(
-            "⚠️ Local script failed, trying CDN fallback:",
-            localError.message
-          );
-          await loadFingerprintJSDirectlyRobust();
-        }
-      }
-
-      /**
-       * Load Local Script (Desktop)
-       */
-      async function loadLocalScript(scriptUrl) {
-        return new Promise((resolve, reject) => {
-          if (window.fingerprintService && window.FingerprintJSBrowser) {
-            console.log("✅ Local service already available");
-            resolve();
-            return;
-          }
-
-          const script = document.createElement("script");
-          script.src = scriptUrl;
-          script.async = true;
-
-          const timeoutId = setTimeout(() => {
-            script.remove();
-            reject(new Error("Local script loading timeout"));
-          }, 8000);
-
-          script.onload = () => {
-            clearTimeout(timeoutId);
-            console.log("✅ Local script loaded successfully");
-
-            let attempts = 0;
-            const checkService = () => {
-              attempts++;
-              if (window.fingerprintService && window.FingerprintJSBrowser) {
-                resolve();
-              } else if (attempts < 20) {
-                setTimeout(checkService, 100);
-              } else {
-                reject(
-                  new Error("Local service not available after script load")
-                );
-              }
-            };
-            checkService();
-          };
-
-          script.onerror = () => {
-            clearTimeout(timeoutId);
-            reject(new Error("Local script loading failed"));
-          };
-
-          document.head.appendChild(script);
-        });
-      }
-
-      /**
-       * Enhanced Initialize FingerprintJS Pro with Location
-       */
-      async function initFingerprintJS() {
-        const maxRetries = 2;
-        let lastError = null;
-
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            console.log(
-              `🔧 Initializing enhanced FingerprintJS Pro (attempt ${attempt}/${maxRetries})...`
-            );
-
-            updateDeviceStatus(null, {
-              loading: true,
-              message: `Initializing security verification (${attempt}/${maxRetries})...`,
-            });
-
-            await loadFingerprintJSBrowserService();
-
-            if (!window.fingerprintService) {
-              throw new Error(
-                "FingerprintJS Pro service not available after loading"
-              );
-            }
-
-            fpService = window.fingerprintService;
-            console.log(
-              "🔗 Enhanced FingerprintJS Pro service instance obtained"
-            );
-
-            updateDeviceStatus(null, {
-              loading: true,
-              message: "Connecting to security verification API...",
-            });
-
-            await fpService.initialize();
-            fpjsInitialized = true;
-
-            console.log(
-              "✅ Enhanced FingerprintJS Pro service initialized successfully"
-            );
-
-            updateDeviceStatus(null, {
-              loading: true,
-              message: "Generating device fingerprint with location...",
-            });
-
-            await sendDeviceFingerprint();
-            return;
-          } catch (error) {
-            lastError = error;
-            console.error(
-              `❌ Enhanced FingerprintJS Pro initialization attempt ${attempt} failed:`,
-              error
-            );
-
-            if (attempt < maxRetries) {
-              updateDeviceStatus(null, {
-                loading: true,
-                message: `Retrying security verification initialization...`,
-              });
-              await new Promise((resolve) => setTimeout(resolve, 3000));
-            }
-          }
-        }
-
-        console.error(
-          "❌ All enhanced FingerprintJS Pro initialization attempts failed"
-        );
-        updateDeviceStatus(null, {
-          success: false,
-          error: `Security verification initialization failed: ${lastError?.message}`,
-          critical: true,
-        });
-      }
-
-      /**
-       * ✅ Enhanced Device Fingerprint with GPS coordinates and location priority
-       */
-      async function sendDeviceFingerprint() {
-        try {
-          console.log(
-            "🚀 Starting enhanced FingerprintJS Pro device verification with GPS..."
-          );
-
-          // ✅ FIRST: Get GPS coordinates before fingerprint
-          console.log(
-            "📍 Requesting GPS coordinates for device verification..."
-          );
-          const gpsCoordinates = await getGPSLocation();
-
-          if (gpsCoordinates) {
-            locationData.gps = gpsCoordinates;
-            locationData.hasGPS = true;
-            console.log("✅ GPS coordinates obtained for device verification");
-          } else {
-            console.log(
-              "⚠️ GPS coordinates not available for device verification"
-            );
-          }
-
-          if (!fpjsInitialized || !fpService) {
-            throw new Error("FingerprintJS Pro service not ready");
-          }
-
-          console.log(
-            "🔍 Generating enhanced FingerprintJS Pro fingerprint..."
-          );
-          const fingerprint = await fpService.generateFingerprint({
-            tag: "emergency_smarttoken_access",
-            linkedId: TOKEN_ID,
-          });
-
-          if (!fingerprint || !fingerprint.visitorId) {
-            throw new Error("Invalid fingerprint - no visitor ID generated");
-          }
-
-          console.log("✅ Enhanced fingerprint generated");
-
-          // ✅ Get IP location from server
-          console.log("🌍 Requesting IP location from server...");
-          try {
-            const ipLocationResponse = await fetch(
-              `${API_CONFIG.baseURL}/api/ip-location`,
-              {
-                method: "GET",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-              }
-            );
-
-            if (ipLocationResponse.ok) {
-              const ipLocationResult = await ipLocationResponse.json();
-              if (ipLocationResult.success && ipLocationResult.location) {
-                locationData.ipLocation = ipLocationResult.location;
-                locationData.hasIPLocation = true;
-                console.log("✅ IP location obtained from server");
-              }
-            }
-          } catch (ipError) {
-            console.warn(
-              "⚠️ Failed to get IP location from server:",
-              ipError.message
-            );
-          }
-
-          // Update location display
-          updateLocationDisplay();
-
-          // ✅ CRITICAL: Include BOTH GPS coordinates and location data in the payload
-          const verificationPayload = {
-            deviceFingerprint: fingerprint,
-            gpsCoordinates: gpsCoordinates, // ✅ GPS coordinates
-            locationData: {
-              gps: locationData.gps,
-              ipLocation: locationData.ipLocation,
-              best: locationData.gps || locationData.ipLocation, // GPS priority
-              hasGPS: locationData.hasGPS,
-              hasIP: locationData.hasIPLocation,
-            },
-            hasLocationData: !!(locationData.gps || locationData.ipLocation),
-            locationSources: {
-              gps: locationData.hasGPS,
-              ipLocation: locationData.hasIPLocation,
-            },
-            extendedData: {
-              ipInfo: fingerprint.ipInfo,
-              botd: fingerprint.botd,
-              vpn: fingerprint.vpn,
-            },
-          };
-
-          console.log(
-            "📤 Sending enhanced verification with location to server...",
-            {
-              visitorId: fingerprint.visitorId,
-              confidence: fingerprint.confidence,
-              hasGPS: !!gpsCoordinates,
-              hasLocation: verificationPayload.hasLocationData,
-              gpsAccuracy: gpsCoordinates?.accuracy,
-              primaryLocation: locationData.gps ? "GPS" : "IP",
-            }
-          );
-
-          const verifyUrl = `${API_CONFIG.baseURL}/patients/verify/${TOKEN_ID}`;
-          const response = await fetch(verifyUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(verificationPayload),
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-
-          const result = await response.json();
-
-          if (result.success) {
-            console.log("✅ Enhanced device verification successful:", {
-              visitorId: result.visitorId,
-              isRegistered: result.isRegisteredDevice,
-              alertsTriggered: result.alertsTriggered,
-              confidence: result.confidence,
-              locationIncluded: !!(gpsCoordinates || locationData.ipLocation),
-            });
-
-            updateDeviceStatus(fingerprint, result);
-          } else {
-            console.error("❌ Device verification failed:", result.message);
-            updateDeviceStatus(fingerprint, {
-              success: false,
-              error: result.message,
-              service: result.service || "fingerprintjs_pro",
-            });
-          }
-
-          return result;
-        } catch (error) {
-          console.error("❌ Enhanced device verification failed:", error);
-          updateLocationDisplay(); // Still update location display with whatever we have
-          updateDeviceStatus(null, {
-            success: false,
-            error: error.message,
-            critical: true,
-          });
-          return { success: false, error: error.message };
-        }
-      }
-
-      /**
-       * Enhanced Device Status Updates
-       */
-      function updateDeviceStatus(fingerprint, serverResponse) {
-        const deviceContent = document.getElementById("device-content");
-        const securityNotice = document.getElementById("security-notice");
-        const securityMessage = document.getElementById("security-message");
-
-        if (!deviceContent) return;
-
-        if (serverResponse.loading) {
-          const message =
-            serverResponse.message || "Initializing security verification...";
-          deviceContent.innerHTML = `
-            <div class="text-sm text-red-100">
-                <p class="font-medium">
-                    <span class="location-loading"></span>
-                    <span class="ml-2">${message}</span>
-                </p>
-                <p class="text-xs text-red-200 mt-1">
-                    <i class="fas fa-fingerprint mr-1"></i>
-                    Advanced device identification with location in progress...
-                </p>
-            </div>
-          `;
-          return;
-        }
-
-        if (fingerprint && serverResponse.success) {
-          const meta = fingerprint.metadata;
-          const isRegistered = serverResponse.isRegisteredDevice;
-
-          deviceContent.innerHTML = `
-            <div class="text-sm text-red-100">
-                <p class="font-medium">
-                    <i class="fas fa-${
-                      meta.deviceType === "mobile" ? "mobile-alt" : "laptop"
-                    } mr-1"></i>
-                    ${meta.deviceName} - ${meta.browserName} on ${meta.osName}
-                </p>
-                <div class="mt-2 flex items-center">
-                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      isRegistered
-                        ? "bg-green-500 bg-opacity-75 text-green-100"
-                        : "bg-yellow-500 bg-opacity-75 text-yellow-100"
-                    }">
-                        <i class="fas fa-${
-                          isRegistered ? "check-circle" : "exclamation-triangle"
-                        } mr-1"></i>
-                        ${
-                          isRegistered
-                            ? "Registered Device"
-                            : "Unregistered Device"
-                        }
-                    </span>
-                </div>
-                <p class="text-xs text-red-300 mt-1">
-                    <i class="fas fa-shield-alt mr-1"></i>
-                    Device Verification (${Math.round(
-                      meta.confidenceScore * 100
-                    )}% confidence)
-                    ${meta.hasIPLocation ? " + IP Location included" : ""}
-                </p>
-                <p class="text-xs text-red-300 mt-1">
-                    Visitor ID: ${fingerprint.visitorId}
-                </p>
-            </div>
-          `;
-
-          if (!isRegistered) {
-            securityMessage.textContent = serverResponse.alertsTriggered
-              ? "Emergency contacts have been notified of this unregistered device access with location data."
-              : "This device is not registered. Emergency contacts may be notified with location information.";
-            securityNotice.style.display = "block";
-          } else {
-            securityNotice.style.display = "none";
-          }
-        } else {
-          const isCritical = serverResponse.critical;
-          deviceContent.innerHTML = `
-            <div class="text-sm text-red-100">
-                <p class="font-medium">
-                    <i class="fas fa-exclamation-triangle mr-1"></i>
-                    ${
-                      isCritical ? "CRITICAL: " : ""
-                    }Security verification failed
-                </p>
-                <p class="text-xs text-red-200 mt-1">
-                    ${serverResponse.error || "Unable to verify device"}
-                </p>
-                ${
-                  isCritical
-                    ? '<p class="text-xs text-red-200 mt-1"><strong>Device fingerprinting is required for security.</strong></p>'
-                    : ""
-                }
-            </div>
-          `;
-
-          securityMessage.textContent = isCritical
-            ? "CRITICAL: Device verification failed. Access may be restricted."
-            : "Device verification failed. Emergency protocols may be activated.";
+        if (!serverResponse.isRegisteredDevice) {
+          securityMessage.textContent = "Emergency access from unregistered device - Emergency contacts notified during timer.";
           securityNotice.style.display = "block";
         }
+        return;
       }
 
-      // Helper functions
-      function getDeviceName() {
-        const ua = navigator.userAgent;
-        if (/iPhone/i.test(ua)) return "iPhone";
-        if (/iPad/i.test(ua)) return "iPad";
-        if (/Android/i.test(ua)) return "Android Device";
-        if (/Mac/i.test(ua)) return "Mac";
-        if (/Windows/i.test(ua)) return "Windows PC";
-        return "Unknown Device";
-      }
+                  if (serverResponse.loading) {
+                    const message =
+                      serverResponse.message || "Initializing security verification...";
+                    deviceContent.innerHTML = `
+                      <div class="text-sm text-red-100">
+                          <p class="font-medium">
+                              <span class="location-loading"></span>
+                              <span class="ml-2">${message}</span>
+                          </p>
+                          <p class="text-xs text-red-200 mt-1">
+                              <i class="fas fa-fingerprint mr-1"></i>
+                              Advanced device identification with location in progress...
+                          </p>
+                      </div>
+                    `;
+                    return;
+                  }
 
-      function getBrowserName() {
-        const ua = navigator.userAgent;
-        if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) return "Safari";
-        if (/Chrome/i.test(ua)) return "Chrome";
-        if (/Firefox/i.test(ua)) return "Firefox";
-        if (/Edge/i.test(ua)) return "Edge";
-        return "Unknown Browser";
-      }
+                  if (fingerprint && serverResponse.success) {
+                    const meta = fingerprint.metadata;
+                    const isRegistered = serverResponse.isRegisteredDevice;
 
-      function getOSName() {
-        const ua = navigator.userAgent;
-        if (/iPhone|iPad/i.test(ua)) return "iOS";
-        if (/Android/i.test(ua)) return "Android";
-        if (/Mac OS X/i.test(ua)) return "macOS";
-        if (/Windows/i.test(ua)) return "Windows";
-        return "Unknown OS";
-      }
+                    deviceContent.innerHTML = `
+                      <div class="text-sm text-red-100">
+                          <p class="font-medium">
+                              <i class="fas fa-${
+                                meta.deviceType === "mobile" ? "mobile-alt" : "laptop"
+                              } mr-1"></i>
+                              ${meta.deviceName} - ${meta.browserName} on ${meta.osName}
+                          </p>
+                          <div class="mt-2 flex items-center">
+                              <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                isRegistered
+                                  ? "bg-green-500 bg-opacity-75 text-green-100"
+                                  : "bg-yellow-500 bg-opacity-75 text-yellow-100"
+                              }">
+                                  <i class="fas fa-${
+                                    isRegistered ? "check-circle" : "exclamation-triangle"
+                                  } mr-1"></i>
+                                  ${
+                                    isRegistered
+                                      ? "Registered Device"
+                                      : "Unregistered Device"
+                                  }
+                              </span>
+                          </div>
+                          <p class="text-xs text-red-300 mt-1">
+                              <i class="fas fa-shield-alt mr-1"></i>
+                              Device Verification (${Math.round(
+                                meta.confidenceScore * 100
+                              )}% confidence)
+                              ${meta.hasIPLocation ? " + IP Location included" : ""}
+                          </p>
+                          <p class="text-xs text-red-300 mt-1">
+                              Visitor ID: ${fingerprint.visitorId}
+                          </p>
+                      </div>
+                    `;
 
-      function getDeviceType() {
-        return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-          ? "mobile"
-          : "desktop";
-      }
+                    if (!isRegistered) {
+                      securityMessage.textContent = serverResponse.alertsTriggered
+                        ? "Emergency contacts have been notified of this unregistered device access with location data."
+                        : "This device is not registered. Emergency contacts may be notified with location information.";
+                      securityNotice.style.display = "block";
+                    } else {
+                      securityNotice.style.display = "none";
+                    }
+                  } else {
+                    const isCritical = serverResponse.critical;
+                    deviceContent.innerHTML = `
+                      <div class="text-sm text-red-100">
+                          <p class="font-medium">
+                              <i class="fas fa-exclamation-triangle mr-1"></i>
+                              ${
+                                isCritical ? "CRITICAL: " : ""
+                              }Security verification failed
+                          </p>
+                          <p class="text-xs text-red-200 mt-1">
+                              ${serverResponse.error || "Unable to verify device"}
+                          </p>
+                          ${
+                            isCritical
+                              ? '<p class="text-xs text-red-200 mt-1"><strong>Device fingerprinting is required for security.</strong></p>'
+                              : ""
+                          }
+                      </div>
+                    `;
 
-      /**
-       * 🔧 ENHANCED: Profile Image Loading Function with CORS Support
-       */
-      async function loadProfileImage() {
-        const profileImageContainer = document.getElementById(
-          "profile-image-container"
-        );
-        const profileImageUrl = `${API_CONFIG.baseURL}/api/blobs/${CONTAINER_NAME}/${FOLDER_NAME}/profile-image`;
+                    securityMessage.textContent = isCritical
+                      ? "CRITICAL: Device verification failed. Access may be restricted."
+                      : "Device verification failed. Emergency protocols may be activated.";
+                    securityNotice.style.display = "block";
+                  }
+                }
 
-        console.log("🖼️ Loading profile image from:", profileImageUrl);
+                // Helper functions
+                function getDeviceName() {
+                  const ua = navigator.userAgent;
+                  if (/iPhone/i.test(ua)) return "iPhone";
+                  if (/iPad/i.test(ua)) return "iPad";
+                  if (/Android/i.test(ua)) return "Android Device";
+                  if (/Mac/i.test(ua)) return "Mac";
+                  if (/Windows/i.test(ua)) return "Windows PC";
+                  return "Unknown Device";
+                }
 
-        try {
-          // First try to fetch the image to check if it exists
-          const response = await fetch(profileImageUrl, {
-            method: "HEAD",
-            mode: "cors",
-            cache: "no-cache",
-          });
+                function getBrowserName() {
+                  const ua = navigator.userAgent;
+                  if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) return "Safari";
+                  if (/Chrome/i.test(ua)) return "Chrome";
+                  if (/Firefox/i.test(ua)) return "Firefox";
+                  if (/Edge/i.test(ua)) return "Edge";
+                  return "Unknown Browser";
+                }
 
-          if (!response.ok) {
-            console.warn(
-              `❌ Profile image not available: ${response.status} ${response.statusText}`
-            );
-            return; // Keep initials placeholder
-          }
+                function getOSName() {
+                  const ua = navigator.userAgent;
+                  if (/iPhone|iPad/i.test(ua)) return "iOS";
+                  if (/Android/i.test(ua)) return "Android";
+                  if (/Mac OS X/i.test(ua)) return "macOS";
+                  if (/Windows/i.test(ua)) return "Windows";
+                  return "Unknown OS";
+                }
 
-          console.log("✅ Profile image endpoint available, loading image...");
+                function getDeviceType() {
+                  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                    ? "mobile"
+                    : "desktop";
+                }
 
-          // If HEAD request succeeds, load the actual image
-          const img = document.createElement("img");
-          img.className = "profile-image";
-          img.alt = `${PATIENT_NAME} - Profile Photo`;
-          img.crossOrigin = "anonymous"; // Add CORS support
+                /**
+                 * 🔧 ENHANCED: Profile Image Loading Function with CORS Support
+                 */
+                async function loadProfileImage() {
+                  const profileImageContainer = document.getElementById(
+                    "profile-image-container"
+                  );
+                  const profileImageUrl = `${API_CONFIG.baseURL}/api/blobs/${CONTAINER_NAME}/${FOLDER_NAME}/profile-image`;
 
-          img.onload = function () {
-            console.log("✅ Profile image loaded successfully");
-            profileImageContainer.innerHTML = "";
-            profileImageContainer.appendChild(img);
-          };
+                  console.log("🖼️ Loading profile image from:", profileImageUrl);
 
-          img.onerror = function (error) {
-            console.warn("❌ Profile image failed to load:", error);
-            console.warn("🔍 Attempted URL:", profileImageUrl);
-          };
+                  try {
+                    // First try to fetch the image to check if it exists
+                    const response = await fetch(profileImageUrl, {
+                      method: "HEAD",
+                      mode: "cors",
+                      cache: "no-cache",
+                    });
 
-          img.src = profileImageUrl + "?t=" + Date.now(); // Add cache buster
-        } catch (error) {
-          console.error("❌ Error checking profile image:", error);
-        }
-      }
+                    if (!response.ok) {
+                      console.warn(
+                        `❌ Profile image not available: ${response.status} ${response.statusText}`
+                      );
+                      return; // Keep initials placeholder
+                    }
 
-      function startSessionTimer() {
-        const SESSION_DURATION = 5 * 60;
-        let timeRemaining = SESSION_DURATION;
-        const timerElement = document.getElementById("session-timer");
+                    console.log("✅ Profile image endpoint available, loading image...");
 
-        function formatTime(seconds) {
-          const minutes = Math.floor(seconds / 60);
-          const remainingSeconds = seconds % 60;
-          return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
-        }
+                    // If HEAD request succeeds, load the actual image
+                    const img = document.createElement("img");
+                    img.className = "profile-image";
+                    img.alt = `${PATIENT_NAME} - Profile Photo`;
+                    img.crossOrigin = "anonymous"; // Add CORS support
 
-        function updateTimer() {
-          if (timerElement) {
-            timerElement.textContent = formatTime(timeRemaining);
+                    img.onload = function () {
+                      console.log("✅ Profile image loaded successfully");
+                      profileImageContainer.innerHTML = "";
+                      profileImageContainer.appendChild(img);
+                    };
 
-            if (timeRemaining <= 60) {
-              timerElement.className =
-                "text-2xl font-bold animate-pulse text-red-200";
-            } else if (timeRemaining <= 120) {
-              timerElement.className = "text-2xl font-bold text-yellow-200";
-            }
-          }
-        }
+                    img.onerror = function (error) {
+                      console.warn("❌ Profile image failed to load:", error);
+                      console.warn("🔍 Attempted URL:", profileImageUrl);
+                    };
 
-        updateTimer();
-        const sessionTimer = setInterval(() => {
-          timeRemaining--;
-          updateTimer();
-          if (timeRemaining <= 0) {
-            clearInterval(sessionTimer);
-            window.isExpired = true;
-            const expiredModal = document.getElementById("expired-modal");
-            if (expiredModal) {
-              expiredModal.classList.remove("hidden");
-            }
-          }
-        }, 1000);
-      }
+                    img.src = profileImageUrl + "?t=" + Date.now(); // Add cache buster
+                  } catch (error) {
+                    console.error("❌ Error checking profile image:", error);
+                  }
+                }
 
-      function setupFileLinks() {
-        const fileButtons = document.querySelectorAll(
-          ".file-link[data-container]"
-        );
-        fileButtons.forEach((button) => {
-          button.addEventListener("click", function (e) {
-            e.preventDefault();
+                function startSessionTimer() {
+                  const SESSION_DURATION = 5 * 60;
+                  let timeRemaining = SESSION_DURATION;
+                  const timerElement = document.getElementById("session-timer");
 
-            if (window.isExpired) {
-              alert("Session has expired. Please scan the SmartToken again.");
-              return;
-            }
+                  function formatTime(seconds) {
+                    const minutes = Math.floor(seconds / 60);
+                    const remainingSeconds = seconds % 60;
+                    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+                  }
 
-            const container = this.getAttribute("data-container");
-            const folder = this.getAttribute("data-folder");
-            const filename = this.getAttribute("data-filename");
+                  function updateTimer() {
+                    if (timerElement) {
+                      timerElement.textContent = formatTime(timeRemaining);
 
-            viewFile(container, folder, filename);
-          });
-        });
-      }
+                      if (timeRemaining <= 60) {
+                        timerElement.className =
+                          "text-2xl font-bold animate-pulse text-red-200";
+                      } else if (timeRemaining <= 120) {
+                        timerElement.className = "text-2xl font-bold text-yellow-200";
+                      }
+                    }
+                  }
 
-      function viewFile(containerName, folderName, fileName) {
-        const viewUrl = `${API_CONFIG.baseURL}/patients/file/${containerName}/${folderName}/${fileName}/view`;
+                  updateTimer();
+                  const sessionTimer = setInterval(() => {
+                    timeRemaining--;
+                    updateTimer();
+                    if (timeRemaining <= 0) {
+                      clearInterval(sessionTimer);
+                      window.isExpired = true;
+                      const expiredModal = document.getElementById("expired-modal");
+                      if (expiredModal) {
+                        expiredModal.classList.remove("hidden");
+                      }
+                    }
+                  }, 1000);
+                }
 
-        const isIOSSafari =
-          /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
-          /Safari/i.test(navigator.userAgent) &&
-          !/Chrome/i.test(navigator.userAgent);
+                function setupFileLinks() {
+                  const fileButtons = document.querySelectorAll(
+                    ".file-link[data-container]"
+                  );
+                  fileButtons.forEach((button) => {
+                    button.addEventListener("click", function (e) {
+                      e.preventDefault();
 
-        if (isIOSSafari) {
-          window.location.href = viewUrl;
-        } else {
-          const newWindow = window.open(viewUrl, "_blank");
-          if (!newWindow || newWindow.closed) {
-            window.location.href = viewUrl;
-          }
-        }
-      }
+                      if (window.isExpired) {
+                        alert("Session has expired. Please scan the SmartToken again.");
+                        return;
+                      }
 
-      function closeExpiredModal() {
-        try {
-          window.close();
-        } catch (e) {
-          window.history.back();
-        }
-      }
+                      const container = this.getAttribute("data-container");
+                      const folder = this.getAttribute("data-folder");
+                      const filename = this.getAttribute("data-filename");
 
-      // 🚀 ENHANCED: Initialize everything with FingerprintJS Pro location + Profile Image Testing
-      document.addEventListener("DOMContentLoaded", async function () {
-        console.log(
-          "🚀 Initializing SmartToken page with enhanced security verification + Location + Profile Image..."
-        );
+                      viewFile(container, folder, filename);
+                    });
+                  });
+                }
 
-        // Load profile image
-        loadProfileImage();
+                function viewFile(containerName, folderName, fileName) {
+                  const viewUrl = `${API_CONFIG.baseURL}/patients/file/${containerName}/${folderName}/${fileName}/view`;
 
-        // Start location detection immediately
-        console.log("🌐 Starting location detection process...");
-        updateLocationDisplay(); // Show initial loading state
+                  const isIOSSafari =
+                    /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
+                    /Safari/i.test(navigator.userAgent) &&
+                    !/Chrome/i.test(navigator.userAgent);
 
-        // ✅ Get GPS location first (non-blocking) - but don't store globally yet
-        getGPSLocation().then((gpsLocation) => {
-          if (gpsLocation) {
-            locationData.gps = gpsLocation;
-            locationData.hasGPS = true;
-            console.log("✅ GPS location obtained and stored for verification");
-            updateLocationDisplay();
-          } else {
-            console.log(
-              "⚠️ GPS location not available - will use IP location only"
-            );
-          }
-        });
+                  if (isIOSSafari) {
+                    window.location.href = viewUrl;
+                  } else {
+                    const newWindow = window.open(viewUrl, "_blank");
+                    if (!newWindow || newWindow.closed) {
+                      window.location.href = viewUrl;
+                    }
+                  }
+                }
 
-        // Start session timer
-        startSessionTimer();
+                function closeExpiredModal() {
+                  try {
+                    window.close();
+                  } catch (e) {
+                    window.history.back();
+                  }
+                }
 
-        // Setup file links
-        setupFileLinks();
+                // 🚀 ENHANCED: Initialize everything with FingerprintJS Pro location + Profile Image Testing
+                document.addEventListener("DOMContentLoaded", async function () {
+                  console.log(
+                    "🚀 Initializing SmartToken page with enhanced security verification + Location + Profile Image..."
+                  );
 
-        // Display access time
-        const accessTimeElement = document.getElementById(
-          "access-time-display"
-        );
-        if (accessTimeElement) {
-          try {
-            const accessTime = new Date("<%= accessTime %>");
-            const localTimeString = accessTime.toLocaleString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
+                  // Load profile image
+                  loadProfileImage();
+
+                  // Start location detection immediately
+                  console.log("🌐 Starting location detection process...");
+                  updateLocationDisplay(); // Show initial loading state
+
+                  // ✅ Get GPS location first (non-blocking) - but don't store globally yet
+                  getGPSLocation().then((gpsLocation) => {
+                    if (gpsLocation) {
+                      locationData.gps = gpsLocation;
+                      locationData.hasGPS = true;
+                      console.log("✅ GPS location obtained and stored for verification");
+                      updateLocationDisplay();
+                    } else {
+                      console.log(
+                        "⚠️ GPS location not available - will use IP location only"
+                      );
+                    }
+                  });
+
+                  // Start session timer
+                  startSessionTimer();
+
+                  // Setup file links
+                  setupFileLinks();
+
+                  // Display access time
+                  const accessTimeElement = document.getElementById(
+                    "access-time-display"
+                  );
+                  if (accessTimeElement) {
+                    try {
+                      const accessTime = new Date("<%= accessTime %>");
+                      const localTimeString = accessTime.toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: true,
+                      });
+                      accessTimeElement.textContent = `Access granted at ${localTimeString}`;
+                    } catch (error) {
+                      accessTimeElement.textContent = "Emergency access active";
+                    }
+                  }
+
+                  // iOS Safari optimizations
+                  const isIOSSafari =
+                    /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
+                    /Safari/i.test(navigator.userAgent) &&
+                    !/Chrome/i.test(navigator.userAgent);
+
+                  if (isIOSSafari) {
+                    const notice = document.getElementById("safari-ios-notice");
+                    if (notice) {
+                      notice.style.display = "block";
+                    }
+                  }
+
+                 // ✅ CHECK: Skip device verification for timer-based access to prevent duplicate alerts
+          const isTimerBasedAccess = <%= typeof isTimerBasedAccess !== 'undefined' && isTimerBasedAccess ? 'true' : 'false' %>;
+          const timerWasCancelled = <%= typeof timerWasCancelled !== 'undefined' && timerWasCancelled ? 'true' : 'false' %>;
+
+          console.log("🔐 Timer-based access check:", { isTimerBasedAccess, timerWasCancelled });
+
+          if (isTimerBasedAccess) {
+            console.log("⏰ Timer-based access detected - skipping device verification to prevent duplicate alerts");
+
+            // Update device status to show timer-based access
+            updateDeviceStatus(null, {
+              success: true,
+              isRegisteredDevice: false, // Assume unregistered since alert was already handled
+              message: "Timer-based emergency access - Device verification completed during timer",
+              skipVerification: true
             });
-            accessTimeElement.textContent = `Access granted at ${localTimeString}`;
-          } catch (error) {
-            accessTimeElement.textContent = "Emergency access active";
+          } else {
+            // Initialize enhanced device verification (this will also get IP location)
+            console.log("📱 Starting enhanced security verification initialization with location...");
+
+            try {
+              await initFingerprintJS();
+            } catch (error) {
+              console.error("❌ Critical error during enhanced security verification initialization:", error);
+            }
           }
-        }
-
-        // iOS Safari optimizations
-        const isIOSSafari =
-          /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
-          /Safari/i.test(navigator.userAgent) &&
-          !/Chrome/i.test(navigator.userAgent);
-
-        if (isIOSSafari) {
-          const notice = document.getElementById("safari-ios-notice");
-          if (notice) {
-            notice.style.display = "block";
-          }
-        }
-
-        // Initialize enhanced device verification (this will also get IP location)
-        console.log(
-          "📱 Starting enhanced security verification initialization with location..."
-        );
-
-        try {
-          await initFingerprintJS();
-        } catch (error) {
-          console.error(
-            "❌ Critical error during enhanced security verification initialization:",
-            error
-          );
-        }
-      });
+                  }
+                });
     </script>
   </body>
 </html>
