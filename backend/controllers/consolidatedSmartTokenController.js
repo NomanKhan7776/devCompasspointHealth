@@ -28,18 +28,18 @@ const checkDeviceAndTriggerAlerts = async (
   skipAlertsUntilClientFingerprint = false
 ) => {
   try {
-    console.log(`ðŸ” FingerprintJS Pro ONLY device verification started:`);
+    console.log(`🔐 FingerprintJS Pro ONLY device verification started:`);
     console.log(`   - Token: ${tokenId}`);
     console.log(`   - Patient: ${patientName} (ID: ${patientUserId})`);
 
-    // âœ… CRITICAL: Only accept FingerprintJS Pro fingerprints
+    // ✅ CRITICAL: Only accept FingerprintJS Pro fingerprints
     if (!req.body?.deviceFingerprint) {
-      console.warn("âš ï¸ No FingerprintJS Pro fingerprint provided");
+      console.warn("⚠️ No FingerprintJS Pro fingerprint provided");
 
-      // âœ… FIX: Don't trigger alerts on GET requests OR if we already sent cancelled timer alert
+      // ✅ FIX: Don't trigger alerts on GET requests OR if we already sent cancelled timer alert
       if (req.method === "GET") {
         console.log(
-          "ðŸ“ GET request - skipping alerts, waiting for FingerprintJS Pro data"
+          "📍 GET request - skipping alerts, waiting for FingerprintJS Pro data"
         );
         return {
           isRegisteredDevice: false,
@@ -50,7 +50,7 @@ const checkDeviceAndTriggerAlerts = async (
         };
       }
       await pool.connect();
-      // âœ… NEW: Check if we already sent a cancelled timer alert recently
+      // ✅ NEW: Check if we already sent a cancelled timer alert recently
       const recentTimerAlert = await pool
         .request()
         .input("tokenId", sql.NVarChar, tokenId)
@@ -68,7 +68,7 @@ const checkDeviceAndTriggerAlerts = async (
 
       if (recentTimerAlert.recordset.length > 0) {
         console.log(
-          "â° Recent timer alert already sent, skipping device verification alert"
+          "⏰ Recent timer alert already sent, skipping device verification alert"
         );
         return {
           isRegisteredDevice: false,
@@ -79,7 +79,7 @@ const checkDeviceAndTriggerAlerts = async (
       }
 
       // Only trigger alert for POST requests without fingerprint (actual security issue)
-      // âœ… Get location data for early alerts
+      // ✅ Get location data for early alerts
       const combinedLocationData = await getCombinedLocationData(req);
       const primaryLocation = combinedLocationData.primaryLocation;
 
@@ -93,7 +93,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "missing_fpjs",
           visitorId: "unknown",
         },
-        primaryLocation, // âœ… Now properly defined
+        primaryLocation, // ✅ Now properly defined
         req
       );
 
@@ -108,11 +108,11 @@ const checkDeviceAndTriggerAlerts = async (
     const deviceFingerprint = req.body.deviceFingerprint;
     const visitorId = deviceFingerprint.visitorId;
 
-    // âœ… Validate FingerprintJS Pro data structure
+    // ✅ Validate FingerprintJS Pro data structure
     if (!visitorId) {
-      console.warn("âš ï¸ No FingerprintJS Pro visitorId found");
+      console.warn("⚠️ No FingerprintJS Pro visitorId found");
 
-      // âœ… Ensure location data is available
+      // ✅ Ensure location data is available
       const combinedLocationDataForAlert =
         combinedLocationData || (await getCombinedLocationData(req));
       const primaryLocationForAlert =
@@ -128,7 +128,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: "invalid_fpjs",
           visitorId: "missing",
         },
-        primaryLocationForAlert, // âœ… Properly defined
+        primaryLocationForAlert, // ✅ Properly defined
         req
       );
 
@@ -140,12 +140,12 @@ const checkDeviceAndTriggerAlerts = async (
       };
     }
 
-    // âœ… Validate this is actually FingerprintJS Pro data
+    // ✅ Validate this is actually FingerprintJS Pro data
     const service = deviceFingerprint.metadata?.service;
     if (service !== "fingerprintjs_pro") {
-      console.warn(`âš ï¸ Invalid fingerprint service: ${service}`);
+      console.warn(`⚠️ Invalid fingerprint service: ${service}`);
 
-      // âœ… Ensure location data is available
+      // ✅ Ensure location data is available
       const combinedLocationDataForService =
         combinedLocationData || (await getCombinedLocationData(req));
       const primaryLocationForService =
@@ -161,7 +161,7 @@ const checkDeviceAndTriggerAlerts = async (
           service: service || "unknown",
           visitorId: visitorId,
         },
-        primaryLocationForService, // âœ… Properly defined
+        primaryLocationForService, // ✅ Properly defined
         req
       );
 
@@ -173,17 +173,17 @@ const checkDeviceAndTriggerAlerts = async (
       };
     }
 
-    console.log(`ðŸ” FingerprintJS Pro Device Check:`);
+    console.log(`🔍 FingerprintJS Pro Device Check:`);
     console.log(`   - Visitor ID: ${visitorId}`);
     console.log(`   - Request ID: ${deviceFingerprint.requestId}`);
     console.log(`   - Confidence: ${deviceFingerprint.confidence}`);
     console.log(`   - Patient ID: ${patientUserId}`);
 
-    // âœ… ENHANCED: Get combined GPS + IP location data
+    // ✅ ENHANCED: Get combined GPS + IP location data
     const combinedLocationData = await getCombinedLocationData(req);
     const primaryLocation = combinedLocationData.primaryLocation;
 
-    console.log(`ðŸŒ Combined location result:`, {
+    console.log(`🌐 Combined location result:`, {
       hasGPS: combinedLocationData.hasGPS,
       hasIP: combinedLocationData.hasIP,
       primaryType: primaryLocation?.type,
@@ -195,7 +195,7 @@ const checkDeviceAndTriggerAlerts = async (
     });
     await pool.connect();
 
-    // âœ… Check if this FingerprintJS Pro visitorId is registered for this patient
+    // ✅ Check if this FingerprintJS Pro visitorId is registered for this patient
     const deviceCheck = await pool
       .request()
       .input("patientUserId", sql.Int, patientUserId)
@@ -219,11 +219,11 @@ const checkDeviceAndTriggerAlerts = async (
     const isRegistered = deviceCheck.recordset.length > 0;
     let alertsTriggered = false;
 
-    console.log(`âœ… FingerprintJS Pro device check result:`);
+    console.log(`✅ FingerprintJS Pro device check result:`);
     console.log(`   - Is registered: ${isRegistered}`);
     console.log(`   - Matches found: ${deviceCheck.recordset.length}`);
 
-    // âœ… Log the access attempt with FingerprintJS Pro data
+    // ✅ Log the access attempt with FingerprintJS Pro data
     const enhancedLogId = await logSmartTokenAccess(
       tokenId,
       patientUserId,
@@ -233,12 +233,12 @@ const checkDeviceAndTriggerAlerts = async (
       isRegistered
     );
     if (!isRegistered) {
-      console.log("ðŸš¨ UNREGISTERED DEVICE DETECTED - FingerprintJS Pro");
+      console.log("🚨 UNREGISTERED DEVICE DETECTED - FingerprintJS Pro");
       console.log("   - Visitor ID:", visitorId);
       console.log("   - Confidence:", deviceFingerprint.confidence);
       console.log("   - Request ID:", deviceFingerprint.requestId);
 
-      // âœ… NEW: Check if we already sent a recent timer alert to prevent duplicates
+      // ✅ NEW: Check if we already sent a recent timer alert to prevent duplicates
       const recentTimerAlertCheck = await pool
         .request()
         .input("tokenId", sql.NVarChar, tokenId)
@@ -256,11 +256,11 @@ const checkDeviceAndTriggerAlerts = async (
 
       if (recentTimerAlertCheck.recordset.length > 0) {
         console.log(
-          "â° Recent timer/cancelled alert already sent, skipping duplicate FingerprintJS alert"
+          "⏰ Recent timer/cancelled alert already sent, skipping duplicate FingerprintJS alert"
         );
         alertsTriggered = false;
       } else {
-        console.log(`ðŸš¨ About to trigger emergency alerts with location:`, {
+        console.log(`🚨 About to trigger emergency alerts with location:`, {
           hasGPS: combinedLocationData.hasGPS,
           hasIP: combinedLocationData.hasIP,
           primaryType: primaryLocation?.type,
@@ -272,11 +272,11 @@ const checkDeviceAndTriggerAlerts = async (
               : "None",
         });
 
-        // âœ… Get FRESH combined location data for main alert
+        // ✅ Get FRESH combined location data for main alert
         const alertLocationData = await getCombinedLocationData(req);
         const alertPrimaryLocation = alertLocationData.primaryLocation;
 
-        console.log(`ðŸŒ FRESH alert location data:`, {
+        console.log(`🌐 FRESH alert location data:`, {
           hasGPS: alertLocationData.hasGPS,
           hasIP: alertLocationData.hasIP,
           primaryType: alertPrimaryLocation?.type,
@@ -287,19 +287,19 @@ const checkDeviceAndTriggerAlerts = async (
               : "None",
         });
 
-        // âœ… Enhanced device info with location
+        // ✅ Enhanced device info with location
         const enhancedDeviceInfo = {
           ...extractDeviceInfo(deviceFingerprint),
           combinedLocation: alertLocationData,
           ipLocation: alertLocationData.ipLocation,
           gpsLocation: alertLocationData.gpsLocation,
           hasLocation: alertLocationData.hasGPS || alertLocationData.hasIP,
-          // âœ… Explicitly set location properties for alert message
+          // ✅ Explicitly set location properties for alert message
           type: extractDeviceInfo(deviceFingerprint).deviceType,
           deviceType: extractDeviceInfo(deviceFingerprint).deviceType,
         };
 
-        console.log(`ðŸ“ Enhanced device info for alert:`, {
+        console.log(`📝 Enhanced device info for alert:`, {
           hasLocation: enhancedDeviceInfo.hasLocation,
           ipLocationCity: enhancedDeviceInfo.ipLocation?.city,
           type: enhancedDeviceInfo.type,
@@ -313,7 +313,7 @@ const checkDeviceAndTriggerAlerts = async (
           patientName,
           enhancedLogId,
           enhancedDeviceInfo,
-          alertPrimaryLocation, // âœ… Pass fresh primary location
+          alertPrimaryLocation, // ✅ Pass fresh primary location
           req
         );
 
@@ -321,7 +321,7 @@ const checkDeviceAndTriggerAlerts = async (
       }
     } else {
       console.log(
-        "âœ… REGISTERED DEVICE - No alerts needed (FingerprintJS Pro)"
+        "✅ REGISTERED DEVICE - No alerts needed (FingerprintJS Pro)"
       );
       const registeredDevice = deviceCheck.recordset[0];
       console.log("   - Device Name:", registeredDevice.deviceName);
@@ -333,11 +333,11 @@ const checkDeviceAndTriggerAlerts = async (
     return {
       isRegisteredDevice: isRegistered,
       deviceInfo: extractDeviceInfo(deviceFingerprint),
-      combinedLocation: combinedLocationData, // âœ… Include full location data
-      ipLocation: combinedLocationData.ipLocation, // âœ… From combined data
-      gpsLocation: combinedLocationData.gpsLocation, // âœ… From combined data
-      primaryLocation: primaryLocation, // âœ… Primary location
-      hasLocation: combinedLocationData.hasGPS || combinedLocationData.hasIP, // âœ… From combined data
+      combinedLocation: combinedLocationData, // ✅ Include full location data
+      ipLocation: combinedLocationData.ipLocation, // ✅ From combined data
+      gpsLocation: combinedLocationData.gpsLocation, // ✅ From combined data
+      primaryLocation: primaryLocation, // ✅ Primary location
+      hasLocation: combinedLocationData.hasGPS || combinedLocationData.hasIP, // ✅ From combined data
       enhancedLogId,
       alertsTriggered,
       service: "fingerprintjs_pro",
@@ -346,11 +346,11 @@ const checkDeviceAndTriggerAlerts = async (
       registeredDevice: isRegistered ? deviceCheck.recordset[0] : null,
     };
   } catch (error) {
-    console.error("âŒ Error in FingerprintJS Pro device verification:", error);
+    console.error("❌ Error in FingerprintJS Pro device verification:", error);
 
     // On error, trigger alerts as a safety measure
     try {
-      // âœ… Get location data for error case
+      // ✅ Get location data for error case
       let errorLocationData;
       try {
         errorLocationData = await getCombinedLocationData(req);
@@ -372,11 +372,11 @@ const checkDeviceAndTriggerAlerts = async (
           service: "fingerprintjs_pro_error",
           visitorId: "error",
         },
-        errorLocationData.primaryLocation, // âœ… Safely handle location
+        errorLocationData.primaryLocation, // ✅ Safely handle location
         req
       );
     } catch (alertError) {
-      console.error("âŒ Error triggering emergency alerts:", alertError);
+      console.error("❌ Error triggering emergency alerts:", alertError);
     }
 
     return {
@@ -395,7 +395,7 @@ const extractDeviceInfo = (fingerprint) => {
   const metadata = fingerprint.metadata || {};
   const details = fingerprint.details || {};
 
-  // âœ… REMOVED: FingerprintJS Pro IP location extraction
+  // ✅ REMOVED: FingerprintJS Pro IP location extraction
   // Will use separate IP geolocation service instead
 
   return {
@@ -467,7 +467,7 @@ const logSmartTokenAccess = async (
 
     const logId = result.recordset[0].logId;
 
-    console.log("ðŸ“ SmartToken access logged:", {
+    console.log("📝 SmartToken access logged:", {
       logId: logId,
       visitorId: deviceFingerprint.visitorId,
       confidence: deviceFingerprint.confidence,
@@ -477,7 +477,7 @@ const logSmartTokenAccess = async (
 
     return logId;
   } catch (error) {
-    console.error("âŒ Error logging SmartToken access:", error);
+    console.error("❌ Error logging SmartToken access:", error);
     return null;
   }
 };
@@ -495,7 +495,7 @@ const triggerEmergencyAlerts = async (
   req
 ) => {
   try {
-    console.log("ðŸš¨ FingerprintJS Pro EMERGENCY ALERT SYSTEM ACTIVATED");
+    console.log("🚨 FingerprintJS Pro EMERGENCY ALERT SYSTEM ACTIVATED");
     console.log("   - Token:", tokenId);
     console.log("   - Patient:", patientName, "(ID:", patientUserId, ")");
     console.log("   - Visitor ID:", deviceInfo.visitorId || "unknown");
@@ -517,10 +517,7 @@ const triggerEmergencyAlerts = async (
     const emergencyContacts = contactsResult.recordset;
 
     if (emergencyContacts.length === 0) {
-      console.log(
-        "âš ï¸ No emergency contacts found for patient",
-        patientUserId
-      );
+      console.log("⚠️ No emergency contacts found for patient", patientUserId);
       return {
         success: false,
         reason: "No emergency contacts found",
@@ -530,8 +527,8 @@ const triggerEmergencyAlerts = async (
       };
     }
 
-    // âœ… ENHANCED: Create alert message with proper location data
-    console.log(`ðŸ“ Creating alert message with:`, {
+    // ✅ ENHANCED: Create alert message with proper location data
+    console.log(`📝 Creating alert message with:`, {
       patientName,
       deviceInfo: {
         type: deviceInfo.type || deviceInfo.deviceType,
@@ -550,7 +547,7 @@ const triggerEmergencyAlerts = async (
 
     // Use locationData parameter first, then fallback to deviceInfo.ipLocation
     const finalLocationData = locationData || deviceInfo.ipLocation || {};
-    console.log(`ðŸ“ Final location data for alert:`, finalLocationData);
+    console.log(`📍 Final location data for alert:`, finalLocationData);
 
     const alertMessage = await twilioSMSService.createEmergencyMessage(
       patientName,
@@ -558,7 +555,7 @@ const triggerEmergencyAlerts = async (
       finalLocationData
     );
 
-    console.log(`ðŸ“¨ Generated alert message:`, alertMessage);
+    console.log(`📨 Generated alert message:`, alertMessage);
 
     // Create alert record
     const alertResult = await pool
@@ -590,13 +587,13 @@ const triggerEmergencyAlerts = async (
 
     const alertId = alertResult.recordset[0].alertId;
 
-    // âœ… Enhanced SMS sending with trial account handling
+    // ✅ Enhanced SMS sending with trial account handling
     console.log(
-      `ðŸ“¤ Sending emergency alerts to ${emergencyContacts.length} contacts...`
+      `📤 Sending emergency alerts to ${emergencyContacts.length} contacts...`
     );
-    // ðŸš« DEVELOPMENT: Comment out Twilio API calls to avoid costs
-    console.log(`ðŸš« [DEVELOPMENT MODE] Twilio API disabled`);
-    console.log(`ðŸ“± Would send SMS to ${emergencyContacts.length} contacts:`);
+    // 🚫 DEVELOPMENT: Comment out Twilio API calls to avoid costs
+    console.log(`🚫 [DEVELOPMENT MODE] Twilio API disabled`);
+    console.log(`📱 Would send SMS to ${emergencyContacts.length} contacts:`);
     emergencyContacts.forEach((contact, index) => {
       console.log(
         `   ${index + 1}. ${contact.contactName} (${contact.phoneNumber}): ${
@@ -604,37 +601,37 @@ const triggerEmergencyAlerts = async (
         }`
       );
     });
-    console.log(`ðŸ“¨ Alert message would be: "${alertMessage}"`);
+    console.log(`📨 Alert message would be: "${alertMessage}"`);
 
     // Simulate successful batch result for development
-    // const batchResult = {
-    //   total: emergencyContacts.length,
-    //   successful: emergencyContacts.length, // Simulate all successful
-    //   failed: 0,
-    //   trialUnverified: 0,
-    //   details: emergencyContacts.map((contact) => ({
-    //     contact: contact,
-    //     result: {
-    //       success: true,
-    //       messageId: `DEV_${Date.now()}_${Math.random()
-    //         .toString(36)
-    //         .substr(2, 9)}`,
-    //       status: "simulated",
-    //     },
-    //   })),
-    // };
+    const batchResult = {
+      total: emergencyContacts.length,
+      successful: emergencyContacts.length, // Simulate all successful
+      failed: 0,
+      trialUnverified: 0,
+      details: emergencyContacts.map((contact) => ({
+        contact: contact,
+        result: {
+          success: true,
+          messageId: `DEV_${Date.now()}_${Math.random()
+            .toString(36)
+            .substr(2, 9)}`,
+          status: "simulated",
+        },
+      })),
+    };
 
-    // console.log(`âœ… [SIMULATED] Batch SMS result:`, {
-    //   successful: batchResult.successful,
-    //   failed: batchResult.failed,
-    //   total: batchResult.total,
-    // });
-    const batchResult = await twilioSMSService.sendBatchEmergencyAlerts(
-      emergencyContacts,
-      alertMessage
-    );
+    console.log(`✅ [SIMULATED] Batch SMS result:`, {
+      successful: batchResult.successful,
+      failed: batchResult.failed,
+      total: batchResult.total,
+    });
+    // const batchResult = await twilioSMSService.sendBatchEmergencyAlerts(
+    //   emergencyContacts,
+    //   alertMessage
+    // );
 
-    // âœ… Enhanced response handling
+    // ✅ Enhanced response handling
     const response = {
       alertId: alertId,
       contactsTotal: batchResult.total,
@@ -644,16 +641,16 @@ const triggerEmergencyAlerts = async (
       details: batchResult.details,
     };
 
-    // âœ… Special handling for trial accounts with unverified numbers
+    // ✅ Special handling for trial accounts with unverified numbers
     if (batchResult.trialUnverified > 0) {
       console.warn(
-        `âš ï¸ TRIAL ACCOUNT LIMITATION: ${batchResult.trialUnverified} contacts have unverified numbers`
+        `⚠️ TRIAL ACCOUNT LIMITATION: ${batchResult.trialUnverified} contacts have unverified numbers`
       );
 
       // Log trial verification instructions
       const verificationInstructions =
         twilioSMSService.getTrialVerificationInstructions();
-      console.log("ðŸ“‹ To resolve unverified numbers:");
+      console.log("📋 To resolve unverified numbers:");
       verificationInstructions.steps.forEach((step) =>
         console.log(`   ${step}`)
       );
@@ -661,7 +658,7 @@ const triggerEmergencyAlerts = async (
       response.trialAccountLimitation = true;
       response.verificationInstructions = verificationInstructions;
 
-      // âœ… Track unverified contacts in the alert details
+      // ✅ Track unverified contacts in the alert details
       const unverifiedContacts = batchResult.details
         .filter(
           (detail) => detail.result.errorCode === "UNVERIFIED_NUMBER_TRIAL"
@@ -698,7 +695,7 @@ const triggerEmergencyAlerts = async (
         WHERE alertId = @alertId
       `);
 
-    console.log("ðŸ“‹ FingerprintJS Pro EMERGENCY ALERT SUMMARY:");
+    console.log("📋 FingerprintJS Pro EMERGENCY ALERT SUMMARY:");
     console.log("   - Alert ID:", alertId);
     console.log("   - Service: FingerprintJS Pro");
     console.log("   - Visitor ID:", deviceInfo.visitorId);
@@ -726,7 +723,7 @@ const triggerEmergencyAlerts = async (
     };
   } catch (error) {
     console.error(
-      "âŒ CRITICAL ERROR in FingerprintJS Pro emergency alert system:",
+      "❌ CRITICAL ERROR in FingerprintJS Pro emergency alert system:",
       error
     );
     return {
@@ -819,7 +816,7 @@ const getIPLocationForDevice = async (ipAddress) => {
     const locationResult = await locationService.getLocationFromIP(ipAddress);
     return locationResult;
   } catch (error) {
-    console.error("âŒ Error getting IP location:", error);
+    console.error("❌ Error getting IP location:", error);
     return null;
   }
 };
@@ -935,7 +932,7 @@ const logTokenAccess = async (
     // Optional: Log to console in development for debugging
     if (process.env.NODE_ENV === "development") {
       console.log(
-        `ðŸ“ SmartToken Access Logged: ${tokenId.substring(
+        `📍 SmartToken Access Logged: ${tokenId.substring(
           0,
           8
         )}... from IP ${ipAddress} (${mode} mode)`
@@ -949,7 +946,7 @@ const logTokenAccess = async (
 };
 
 /**
- * âœ… NEW: Combine GPS and IP location data for comprehensive location info
+ * ✅ NEW: Combine GPS and IP location data for comprehensive location info
  */
 const getCombinedLocationData = async (req) => {
   try {
@@ -971,7 +968,7 @@ const getCombinedLocationData = async (req) => {
 
     // If GPS coordinates are provided, use them as primary
     if (gpsCoordinates && gpsCoordinates.latitude && gpsCoordinates.longitude) {
-      console.log(`ðŸ“ GPS coordinates received:`, {
+      console.log(`📍 GPS coordinates received:`, {
         latitude: gpsCoordinates.latitude,
         longitude: gpsCoordinates.longitude,
         accuracy: gpsCoordinates.accuracy,
@@ -1003,7 +1000,7 @@ const getCombinedLocationData = async (req) => {
         }
       } catch (gpsError) {
         console.warn(
-          "âš ï¸ Could not get address from GPS coordinates:",
+          "⚠️ Could not get address from GPS coordinates:",
           gpsError.message
         );
       }
@@ -1013,7 +1010,7 @@ const getCombinedLocationData = async (req) => {
       combinedLocation.primaryLocation = gpsLocation; // GPS takes priority
     }
 
-    console.log(`ðŸŒ Combined location data:`, {
+    console.log(`🌐 Combined location data:`, {
       hasGPS: combinedLocation.hasGPS,
       hasIP: combinedLocation.hasIP,
       primaryType: combinedLocation.primaryLocation?.type,
@@ -1026,7 +1023,7 @@ const getCombinedLocationData = async (req) => {
 
     return combinedLocation;
   } catch (error) {
-    console.error("âŒ Error getting combined location:", error);
+    console.error("❌ Error getting combined location:", error);
     return {
       hasGPS: false,
       hasIP: false,
@@ -1050,7 +1047,7 @@ exports.verifySmartToken = async (req, res) => {
     const { s: signature } = req.query;
 
     console.log(
-      `ðŸ” Starting SmartToken verification with auto-registration: ${id}`
+      `🔍 Starting SmartToken verification with auto-registration: ${id}`
     );
 
     // Validate input
@@ -1092,7 +1089,7 @@ exports.verifySmartToken = async (req, res) => {
 
     try {
       // Call VivoKey Verify API
-      console.log(`ðŸ”‘ Calling VivoKey API for signature validation...`);
+      console.log(`🔑 Calling VivoKey API for signature validation...`);
       vivoKeyResponse = await axios.post(
         "https://auth.vivokey.com/validate",
         {
@@ -1106,9 +1103,9 @@ exports.verifySmartToken = async (req, res) => {
           timeout: 10000,
         }
       );
-      console.log(`âœ… VivoKey API Response: ${vivoKeyResponse.data.result}`);
+      console.log(`✅ VivoKey API Response: ${vivoKeyResponse.data.result}`);
     } catch (apiError) {
-      console.log(`âŒ VivoKey API Error: ${apiError.message}`);
+      console.log(`❌ VivoKey API Error: ${apiError.message}`);
       // Handle network/API errors - fallback to offline mode
       return await handleOfflineMode(req, res, id);
     }
@@ -1129,7 +1126,7 @@ exports.verifySmartToken = async (req, res) => {
       }
 
       const secureChipId = decoded.sub;
-      console.log(`ðŸ” Extracted secureChipId from JWT: ${secureChipId}`);
+      console.log(`🔐 Extracted secureChipId from JWT: ${secureChipId}`);
 
       // Check database for token
       await pool.connect();
@@ -1153,9 +1150,9 @@ exports.verifySmartToken = async (req, res) => {
           WHERE st.smartTokenId = @smartTokenId AND st.secureChipId = @secureChipId
         `);
 
-      // âœ… AUTO-REGISTRATION: Auto-enrollment for new tokens
+      // ✅ AUTO-REGISTRATION: Auto-enrollment for new tokens
       if (tokenRecord.recordset.length === 0) {
-        console.log(`ðŸ†• NEW SMARTTOKEN DETECTED - Auto-registering: ${id}`);
+        console.log(`🆕 NEW SMARTTOKEN DETECTED - Auto-registering: ${id}`);
         console.log(`   - SmartToken ID: ${id}`);
         console.log(`   - Secure Chip ID: ${secureChipId}`);
 
@@ -1176,10 +1173,10 @@ exports.verifySmartToken = async (req, res) => {
             `);
 
           console.log(
-            `âœ… SmartToken auto-registered successfully as 'unclaimed'`
+            `✅ SmartToken auto-registered successfully as 'unclaimed'`
           );
 
-          // âœ… Use existing tokenStatus.ejs template for newly registered tokens
+          // ✅ Use existing tokenStatus.ejs template for newly registered tokens
           return res.render("tokenStatus", {
             title: "Token Registered",
             message:
@@ -1191,7 +1188,7 @@ exports.verifySmartToken = async (req, res) => {
           });
         } catch (registrationError) {
           console.error(
-            `âŒ Failed to auto-register SmartToken:`,
+            `❌ Failed to auto-register SmartToken:`,
             registrationError
           );
           return res.status(500).render("error", {
@@ -1204,7 +1201,7 @@ exports.verifySmartToken = async (req, res) => {
       }
 
       const token = tokenRecord.recordset[0];
-      console.log(`âœ… Existing SmartToken found in database`);
+      console.log(`✅ Existing SmartToken found in database`);
 
       // Double-check token status from database
       if (token.status === "revoked") {
@@ -1219,9 +1216,9 @@ exports.verifySmartToken = async (req, res) => {
         });
       }
 
-      // âœ… Handle unclaimed tokens (use existing template)
+      // ✅ Handle unclaimed tokens (use existing template)
       if (token.status === "unclaimed") {
-        console.log(`ðŸ“‹ SmartToken is unclaimed - showing status page`);
+        console.log(`📋 SmartToken is unclaimed - showing status page`);
         return res.render("tokenStatus", {
           title: "Token Registered",
           message:
@@ -1240,7 +1237,7 @@ exports.verifySmartToken = async (req, res) => {
         token.status === "assigned"
       ) {
         console.log(
-          `âœ… SmartToken is assigned to patient: ${token.patientName}`
+          `✅ SmartToken is assigned to patient: ${token.patientName}`
         );
         console.log(`   - Container: ${token.containerName}`);
         console.log(`   - Folder: ${token.folderName}`);
@@ -1254,7 +1251,7 @@ exports.verifySmartToken = async (req, res) => {
           true
         );
 
-        console.log(`âœ… Device verification completed:`);
+        console.log(`✅ Device verification completed:`);
         console.log(
           `   - Registered Device: ${deviceVerification.isRegisteredDevice}`
         );
@@ -1321,7 +1318,7 @@ exports.verifySmartToken = async (req, res) => {
           emergencyContactsAvailable: true, // Will be used to show/hide timer based on contacts
         });
       } else {
-        // âœ… Use existing template for unassigned tokens
+        // ✅ Use existing template for unassigned tokens
         return res.render("tokenStatus", {
           title: "Token Not Assigned",
           message:
@@ -2828,7 +2825,7 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
       triggerSource = "patient_emergency_button",
     } = req.body;
 
-    console.log(`ðŸš¨ MANUAL EMERGENCY ALERT TRIGGERED:`);
+    console.log(`🚨 MANUAL EMERGENCY ALERT TRIGGERED:`);
     console.log(`   - Token: ${id}`);
     console.log(`   - Patient: ${patientName}`);
     console.log(`   - Trigger: ${triggerSource}`);
@@ -2868,15 +2865,15 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
       });
     }
 
-    console.log(`âœ… Token validated for manual emergency alert:`);
+    console.log(`✅ Token validated for manual emergency alert:`);
     console.log(`   - Patient ID: ${token.patientUserId}`);
     console.log(`   - Patient Name: ${token.patientName}`);
     let finalLocationData = locationData;
     if (!finalLocationData || !finalLocationData.city) {
-      console.log(`ðŸŒ Getting IP location for manual alert...`);
+      console.log(`🌐 Getting IP location for manual alert...`);
       finalLocationData = await getIPLocationForDevice(getRealUserIP(req));
       console.log(
-        `ðŸŒ Manual alert IP Location:`,
+        `🌐 Manual alert IP Location:`,
         finalLocationData
           ? `${finalLocationData.city}, ${finalLocationData.country}`
           : "Not available"
@@ -2897,7 +2894,7 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
         service: "manual_emergency_alert",
         confidence: 1.0,
         timestamp: new Date().toISOString(),
-        ipLocation: finalLocationData, // âœ… Include IP location
+        ipLocation: finalLocationData, // ✅ Include IP location
         hasLocation: !!finalLocationData,
       },
       finalLocationData,
@@ -2929,14 +2926,14 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
           )
         `);
 
-      console.log("ðŸ“ Manual emergency alert trigger logged");
+      console.log("📝 Manual emergency alert trigger logged");
     } catch (logError) {
-      console.error("âŒ Error logging manual emergency alert:", logError);
+      console.error("❌ Error logging manual emergency alert:", logError);
       // Don't fail the request if logging fails
     }
 
     if (alertResult.success) {
-      console.log("âœ… Manual emergency alert sent successfully");
+      console.log("✅ Manual emergency alert sent successfully");
 
       res.json({
         success: true,
@@ -2951,7 +2948,7 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
         timestamp: new Date().toISOString(),
       });
     } else {
-      console.error("âŒ Manual emergency alert failed:", alertResult.reason);
+      console.error("❌ Manual emergency alert failed:", alertResult.reason);
 
       res.status(500).json({
         success: false,
@@ -2963,7 +2960,7 @@ exports.triggerManualEmergencyAlert = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error("âŒ CRITICAL ERROR in manual emergency alert:", error);
+    console.error("❌ CRITICAL ERROR in manual emergency alert:", error);
 
     res.status(500).json({
       success: false,
@@ -2985,7 +2982,7 @@ exports.handleTimerExpiration = async (req, res) => {
       timerExpired = true,
     } = req.body;
 
-    console.log(`â° TIMER-BASED EMERGENCY ALERT TRIGGERED:`);
+    console.log(`⏰ TIMER-BASED EMERGENCY ALERT TRIGGERED:`);
     console.log(`   - Token: ${id}`);
     console.log(`   - Patient: ${patientName}`);
     console.log(`   - Timer Expired: ${timerExpired}`);
@@ -3025,15 +3022,15 @@ exports.handleTimerExpiration = async (req, res) => {
       });
     }
 
-    console.log(`âœ… Token validated for timer-based emergency alert:`);
+    console.log(`✅ Token validated for timer-based emergency alert:`);
     console.log(`   - Patient ID: ${token.patientUserId}`);
     console.log(`   - Patient Name: ${token.patientName}`);
 
-    console.log(`ðŸŒ Getting combined location for timer-based alert...`);
+    console.log(`🌐 Getting combined location for timer-based alert...`);
     const combinedLocationData = await getCombinedLocationData(req);
     const primaryLocation = combinedLocationData.primaryLocation;
     console.log(
-      `ðŸŒ Timer alert combined location:`,
+      `🌐 Timer alert combined location:`,
       primaryLocation
         ? `${primaryLocation.city || "Unknown"}, ${
             primaryLocation.country || "Unknown"
@@ -3058,12 +3055,12 @@ exports.handleTimerExpiration = async (req, res) => {
         service: "timer_emergency_alert",
         confidence: deviceInfo.confidence || 1.0,
         timestamp: new Date().toISOString(),
-        combinedLocation: combinedLocationData, // âœ… Include full location data
+        combinedLocation: combinedLocationData, // ✅ Include full location data
         ipLocation: combinedLocationData.ipLocation,
         gpsLocation: combinedLocationData.gpsLocation,
         hasLocation: combinedLocationData.hasGPS || combinedLocationData.hasIP,
       },
-      primaryLocation, // âœ… Updated
+      primaryLocation, // ✅ Updated
       req
     );
 
@@ -3092,14 +3089,14 @@ exports.handleTimerExpiration = async (req, res) => {
           )
         `);
 
-      console.log("ðŸ“ Timer-based emergency alert trigger logged");
+      console.log("📝 Timer-based emergency alert trigger logged");
     } catch (logError) {
-      console.error("âŒ Error logging timer emergency alert:", logError);
+      console.error("❌ Error logging timer emergency alert:", logError);
       // Don't fail the request if logging fails
     }
 
     if (alertResult.success) {
-      console.log("âœ… Timer-based emergency alert sent successfully");
+      console.log("✅ Timer-based emergency alert sent successfully");
 
       res.json({
         success: true,
@@ -3115,7 +3112,7 @@ exports.handleTimerExpiration = async (req, res) => {
       });
     } else {
       console.error(
-        "âŒ Timer-based emergency alert failed:",
+        "❌ Timer-based emergency alert failed:",
         alertResult.reason
       );
 
@@ -3129,7 +3126,7 @@ exports.handleTimerExpiration = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error("âŒ CRITICAL ERROR in timer-based emergency alert:", error);
+    console.error("❌ CRITICAL ERROR in timer-based emergency alert:", error);
 
     res.status(500).json({
       success: false,
@@ -3146,7 +3143,7 @@ exports.getPatientDataAfterTimer = async (req, res) => {
     const { id } = req.params; // Token ID
     const { cancelled = false } = req.query;
 
-    console.log(`ðŸ“„ PATIENT DATA ACCESS AFTER TIMER:`);
+    console.log(`📄 PATIENT DATA ACCESS AFTER TIMER:`);
     console.log(`   - Token: ${id}`);
     console.log(`   - Timer Cancelled: ${cancelled}`);
 
@@ -3196,7 +3193,7 @@ exports.getPatientDataAfterTimer = async (req, res) => {
 
     if (cancelled === "true" || cancelled === true) {
       console.log(
-        `â° Timer was CANCELLED - checking if unregistered device alert needed`
+        `⏰ Timer was CANCELLED - checking if unregistered device alert needed`
       );
 
       // Get the most recent device verification for this token
@@ -3227,15 +3224,15 @@ exports.getPatientDataAfterTimer = async (req, res) => {
 
       if (wasUnregisteredDevice) {
         console.log(
-          `ðŸš¨ CANCELLED TIMER + UNREGISTERED DEVICE - Triggering alert`
+          `🚨 CANCELLED TIMER + UNREGISTERED DEVICE - Triggering alert`
         );
 
-        // âœ… Get combined location for the alert
+        // ✅ Get combined location for the alert
         const combinedLocationData = await getCombinedLocationData(req);
         const primaryLocation = combinedLocationData.primaryLocation;
 
         console.log(
-          `ðŸŒ Cancelled timer combined location:`,
+          `🌍 Cancelled timer combined location:`,
           primaryLocation
             ? `${primaryLocation.city || "Unknown"}, ${
                 primaryLocation.country || "Unknown"
@@ -3267,32 +3264,32 @@ exports.getPatientDataAfterTimer = async (req, res) => {
               hasLocation:
                 combinedLocationData.hasGPS || combinedLocationData.hasIP,
             },
-            primaryLocation, // âœ… Pass combined location data
+            primaryLocation, // ✅ Pass combined location data
             req
           );
 
           if (alertResult.success) {
-            console.log(`âœ… Cancelled timer alert sent successfully`);
+            console.log(`✅ Cancelled timer alert sent successfully`);
           } else {
             console.error(
-              `âŒ Cancelled timer alert failed:`,
+              `❌ Cancelled timer alert failed:`,
               alertResult.reason
             );
           }
         } catch (alertError) {
           console.error(
-            "âŒ Error triggering cancelled timer alert:",
+            "❌ Error triggering cancelled timer alert:",
             alertError
           );
         }
       } else {
         console.log(
-          `âœ… Timer cancelled but device was registered - no alert needed`
+          `✅ Timer cancelled but device was registered - no alert needed`
         );
       }
     } else {
       console.log(
-        `â° Timer EXPIRED - alert was already sent in timer-expired endpoint`
+        `⏰ Timer EXPIRED - alert was already sent in timer-expired endpoint`
       );
     }
 
@@ -3329,7 +3326,7 @@ exports.getPatientDataAfterTimer = async (req, res) => {
         "Emergency contacts have been automatically notified after 10-second timer.";
     }
 
-    // âœ… Render patient data page allowing device verification (for second alert)
+    // ✅ Render patient data page allowing device verification (for second alert)
     return res.render("patientData", {
       title: `Patient Data - ${token.patientName || token.folderName}`,
       patientName: token.patientName || token.folderName,
@@ -3345,10 +3342,10 @@ exports.getPatientDataAfterTimer = async (req, res) => {
       timerWasCancelled: cancelled,
       securityNotice: securityNotice,
       accessIP: getRealUserIP(req),
-      // âœ… REMOVED: skipDeviceAlerts flag - allow device verification for second alert
+      // ✅ REMOVED: skipDeviceAlerts flag - allow device verification for second alert
     });
   } catch (error) {
-    console.error("âŒ Error getting patient data after timer:", error);
+    console.error("❌ Error getting patient data after timer:", error);
     return res.status(500).render("error", {
       title: "System Error",
       message: "An error occurred while accessing patient data",
