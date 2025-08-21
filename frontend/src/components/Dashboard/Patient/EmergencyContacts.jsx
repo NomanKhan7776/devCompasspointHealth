@@ -1,4 +1,4 @@
-// src/components/Dashboard/Patient/EmergencyContacts.jsx - Emergency Contacts Management
+// src/components/Dashboard/Patient/EmergencyContacts.jsx - Fixed Button Issues
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import { emergencyContactsAPI } from "../../../api";
@@ -6,6 +6,7 @@ import Loader from "../../common/Loader";
 import Alert from "../../common/Alert";
 import Modal from "../../common/Modal";
 import Button from "../../common/Button";
+import PrivacyPolicyModal from "../../common/PrivacyPolicyModal";
 
 const EmergencyContacts = () => {
   const [contacts, setContacts] = useState([]);
@@ -14,6 +15,7 @@ const EmergencyContacts = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
   const [testingContact, setTestingContact] = useState(null);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -21,6 +23,8 @@ const EmergencyContacts = () => {
     phoneNumber: "",
     relationship: "",
     isPrimary: false,
+    // SMS Consent required for A2P 10DLC compliance
+    smsConsent: false,
   });
 
   const relationshipOptions = [
@@ -58,7 +62,7 @@ const EmergencyContacts = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
 
     if (
       !formData.contactName ||
@@ -66,6 +70,12 @@ const EmergencyContacts = () => {
       !formData.relationship
     ) {
       toast.error("Please fill in all required fields");
+      return;
+    }
+
+    // A2P 10DLC Compliance: Validate SMS consent for new contacts
+    if (!editingContact && !formData.smsConsent) {
+      toast.error("SMS consent is required to add emergency contacts");
       return;
     }
 
@@ -91,7 +101,7 @@ const EmergencyContacts = () => {
         toast.success(
           editingContact
             ? "Emergency contact updated successfully"
-            : "Emergency contact added successfully"
+            : "Emergency contact added successfully. They will now receive emergency SMS alerts."
         );
         await loadContacts();
         handleCloseModal();
@@ -108,7 +118,9 @@ const EmergencyContacts = () => {
 
   const handleDelete = async (contactId) => {
     if (
-      !window.confirm("Are you sure you want to delete this emergency contact?")
+      !window.confirm(
+        "Are you sure you want to delete this emergency contact? They will no longer receive SMS alerts."
+      )
     ) {
       return;
     }
@@ -132,7 +144,11 @@ const EmergencyContacts = () => {
   };
 
   const handleTest = async (contact) => {
-    if (!window.confirm(`Send a test alert to ${contact.contactName}?`)) {
+    if (
+      !window.confirm(
+        `Send a test emergency SMS alert to ${contact.contactName}?`
+      )
+    ) {
       return;
     }
 
@@ -143,7 +159,9 @@ const EmergencyContacts = () => {
       );
 
       if (response.data.success) {
-        toast.success(`Test alert sent to ${contact.contactName}`);
+        toast.success(
+          `Test emergency SMS alert sent to ${contact.contactName}`
+        );
       } else {
         toast.error(response.data.message || "Failed to send test alert");
       }
@@ -162,6 +180,7 @@ const EmergencyContacts = () => {
       phoneNumber: contact.phoneNumber,
       relationship: contact.relationship,
       isPrimary: contact.isPrimary,
+      smsConsent: true, // Assume consent was given when originally added
     });
     setShowAddModal(true);
   };
@@ -174,6 +193,7 @@ const EmergencyContacts = () => {
       phoneNumber: "",
       relationship: "",
       isPrimary: false,
+      smsConsent: false,
     });
   };
 
@@ -195,16 +215,18 @@ const EmergencyContacts = () => {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">
-            Emergency Contacts
+            🚨 Emergency SMS Alert Contacts
           </h1>
           <p className="text-gray-600 mt-1">
-            Manage contacts who will be notified if your SmartToken is accessed
-            by an unregistered device
+            Manage contacts who will receive emergency SMS alerts when your
+            SmartToken medical device is accessed
           </p>
         </div>
         <Button
-          onClick={() => setShowAddModal(true)}
-          className="bg-blue-500 hover:bg-blue-600 text-white"
+          onClick={() => {
+            setShowAddModal(true);
+          }}
+          color="red"
         >
           <svg
             className="w-5 h-5 mr-2"
@@ -223,17 +245,57 @@ const EmergencyContacts = () => {
         </Button>
       </div>
 
-      {/* Alert Info */}
+      {/* Emergency SMS Alert Information */}
+      <div className="bg-red-50 border-l-4 border-red-400 p-6 mb-6">
+        <div className="flex items-start space-x-3">
+          <div className="text-red-600 text-2xl">🚨</div>
+          <div className="text-sm text-red-800">
+            <h3 className="font-semibold mb-2">Emergency SMS Alert System</h3>
+            <div className="space-y-2">
+              <p>
+                <strong>Purpose:</strong> Emergency medical alerts for
+                SmartToken device access during medical emergencies
+              </p>
+              <p>
+                <strong>When SMS sent:</strong> Only when your SmartToken is
+                accessed by unregistered devices or during emergency situations
+              </p>
+              <p>
+                <strong>Message content:</strong> Location information, device
+                details, and emergency medical context
+              </p>
+              <p>
+                <strong>Frequency:</strong> Emergency situations only (typically
+                0-5 messages per month)
+              </p>
+              <p>
+                <strong>Opt-out:</strong> Contacts can reply STOP to any message
+                to unsubscribe
+              </p>
+              <p>
+                <strong>Rates:</strong> Standard message and data rates may
+                apply to recipients
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Privacy Policy Notice */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
         <div className="flex items-start space-x-3">
-          <div className="text-blue-600 text-xl">ℹ️</div>
+          <div className="text-blue-600 text-xl">🔒</div>
           <div className="text-sm text-blue-800">
-            <p className="font-medium mb-1">How Emergency Alerts Work</p>
+            <p className="font-medium mb-1">SMS Privacy Protection</p>
             <p>
-              When someone accesses your SmartToken with an unregistered device,
-              all your emergency contacts will automatically receive an SMS
-              alert with device and location information. This helps ensure your
-              medical data access is monitored for security.
+              We protect your emergency contacts' privacy and do not share
+              mobile numbers with third parties for marketing purposes.
+              <button
+                onClick={() => setShowPrivacyModal(true)}
+                className="text-blue-600 hover:text-blue-800 underline ml-1"
+              >
+                View our SMS Privacy Policy
+              </button>
             </p>
           </div>
         </div>
@@ -246,17 +308,19 @@ const EmergencyContacts = () => {
         <div className="bg-white rounded-lg shadow-md p-8 text-center">
           <div className="text-gray-400 text-6xl mb-4">📞</div>
           <h3 className="text-lg font-medium text-gray-800 mb-2">
-            No Emergency Contacts
+            No Emergency SMS Alert Contacts
           </h3>
           <p className="text-gray-600 mb-4">
-            Add emergency contacts to receive alerts when your SmartToken is
-            accessed
+            Add emergency contacts to receive SMS alerts when your SmartToken
+            medical device is accessed during emergencies
           </p>
           <Button
-            onClick={() => setShowAddModal(true)}
-            className="bg-blue-500 hover:bg-blue-600 text-white"
+            onClick={() => {
+              setShowAddModal(true);
+            }}
+            color="red"
           >
-            Add Your First Contact
+            Add Your First Emergency Contact
           </Button>
         </div>
       ) : (
@@ -269,7 +333,7 @@ const EmergencyContacts = () => {
               {/* Primary Badge */}
               {contact.isPrimary && (
                 <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 mb-3">
-                  ⭐ Primary Contact
+                  ⭐ Primary Emergency Contact
                 </div>
               )}
 
@@ -282,6 +346,9 @@ const EmergencyContacts = () => {
                 <p className="text-blue-600 font-medium">
                   {formatPhoneNumber(contact.phoneNumber)}
                 </p>
+                <p className="text-xs text-green-600 mt-1">
+                  ✅ Receives emergency SMS alerts
+                </p>
               </div>
 
               {/* Actions */}
@@ -291,7 +358,9 @@ const EmergencyContacts = () => {
                   disabled={testingContact === contact.contactId}
                   className="flex-1 px-3 py-2 text-sm bg-green-100 text-green-700 hover:bg-green-200 rounded-md transition-colors disabled:opacity-50"
                 >
-                  {testingContact === contact.contactId ? "Sending..." : "Test"}
+                  {testingContact === contact.contactId
+                    ? "Sending..."
+                    : "Test SMS"}
                 </button>
                 <button
                   onClick={() => handleEdit(contact)}
@@ -318,15 +387,36 @@ const EmergencyContacts = () => {
         </div>
       )}
 
-      {/* Add/Edit Modal */}
+      {/* A2P 10DLC Compliant Add/Edit Modal */}
       <Modal
         isOpen={showAddModal}
         onClose={handleCloseModal}
         title={
-          editingContact ? "Edit Emergency Contact" : "Add Emergency Contact"
+          editingContact
+            ? "Edit Emergency Contact"
+            : "Add Emergency SMS Alert Contact"
         }
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-6">
+          {/* Emergency SMS Notice */}
+          {!editingContact && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <div className="text-yellow-600 text-xl">⚠️</div>
+                <div className="text-sm text-yellow-800">
+                  <p className="font-medium mb-1">
+                    Emergency SMS Alert Registration
+                  </p>
+                  <p>
+                    By adding this contact, they will receive emergency SMS
+                    alerts from <strong>CompassPoint Health PRMS</strong> when
+                    your SmartToken medical device is accessed.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Contact Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -347,7 +437,7 @@ const EmergencyContacts = () => {
           {/* Phone Number */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Phone Number *
+              Phone Number (SMS Capable) *
             </label>
             <input
               type="tel"
@@ -360,7 +450,8 @@ const EmergencyContacts = () => {
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              Include country code if outside the US
+              Must be able to receive SMS text messages. Include country code if
+              outside the US.
             </p>
           </div>
 
@@ -398,8 +489,134 @@ const EmergencyContacts = () => {
               className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
             <label htmlFor="isPrimary" className="ml-2 text-sm text-gray-700">
-              Set as primary contact
+              Set as primary emergency contact (receives alerts first)
             </label>
+          </div>
+
+          {/* A2P 10DLC REQUIRED: SMS Consent Section */}
+          {!editingContact && (
+            <div className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
+              <h4 className="text-lg font-semibold text-red-900 mb-3">
+                📱 Emergency SMS Alert Consent Required
+              </h4>
+
+              <div className="space-y-4">
+                <div className="flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    id="smsConsent"
+                    checked={formData.smsConsent}
+                    onChange={(e) =>
+                      setFormData({ ...formData, smsConsent: e.target.checked })
+                    }
+                    className="mt-1 h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                    required
+                  />
+                  <label htmlFor="smsConsent" className="text-sm text-gray-800">
+                    <strong>
+                      I consent to this phone number receiving emergency SMS
+                      text messages from CompassPoint Health PRMS
+                    </strong>{" "}
+                    when my SmartToken medical device is accessed during
+                    emergency situations.
+                  </label>
+                </div>
+
+                {/* Detailed SMS Information */}
+                <div className="bg-white rounded-lg p-4 text-sm text-gray-700">
+                  <h5 className="font-semibold text-gray-800 mb-2">
+                    Emergency SMS Alert Details:
+                  </h5>
+                  <ul className="space-y-1 ml-4 list-disc">
+                    <li>
+                      <strong>Message Type:</strong> Emergency medical alerts
+                      and security notifications only
+                    </li>
+                    <li>
+                      <strong>Frequency:</strong> Only when SmartToken is
+                      accessed during medical emergencies (typically 0-5
+                      messages per month)
+                    </li>
+                    <li>
+                      <strong>Content:</strong> Patient location information,
+                      device access details, and emergency medical context
+                    </li>
+                    <li>
+                      <strong>Rates:</strong> Standard message and data rates
+                      may apply to the recipient
+                    </li>
+                    <li>
+                      <strong>Opt-Out:</strong> Recipient can reply STOP to any
+                      message to unsubscribe immediately
+                    </li>
+                    <li>
+                      <strong>Help:</strong> Recipient can reply HELP for
+                      assistance
+                    </li>
+                    <li>
+                      <strong>Purpose:</strong> Support emergency medical
+                      response and public safety
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Sample Message Preview */}
+                <div className="bg-gray-100 rounded-lg p-4">
+                  <h5 className="font-semibold text-gray-800 mb-2">
+                    📱 Sample Emergency SMS Alert:
+                  </h5>
+                  <div className="bg-white rounded p-3 text-sm font-mono border">
+                    "🚨 EMERGENCY: John Smith's SmartToken accessed at GPS
+                    location 123 Main St, Anytown. Emergency access during
+                    medical emergency. Contact medical staff if unauthorized.
+                    Reply STOP to opt out."
+                  </div>
+                </div>
+
+                {/* Confirmation Statement */}
+                <div className="text-sm text-gray-700">
+                  <p>
+                    <strong>I understand and confirm:</strong>
+                  </p>
+                  <ul className="ml-4 space-y-1 list-disc">
+                    <li>
+                      This phone number will receive emergency SMS alerts with
+                      patient location information
+                    </li>
+                    <li>
+                      Alerts are sent only when my SmartToken medical device is
+                      accessed during emergencies
+                    </li>
+                    <li>
+                      The recipient can opt out anytime by replying STOP to any
+                      message
+                    </li>
+                    <li>
+                      This is for emergency medical purposes only, not marketing
+                    </li>
+                    <li>
+                      I am the owner of this phone number or have permission to
+                      register it for emergency alerts
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Privacy Policy Link */}
+          <div className="text-center text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
+            <p>
+              <button
+                type="button"
+                onClick={() => setShowPrivacyModal(true)}
+                className="text-blue-600 hover:text-blue-800 underline"
+              >
+                View SMS Privacy Policy
+              </button>{" "}
+              - We do not share mobile information with third parties for
+              marketing purposes.
+            </p>
           </div>
 
           {/* Buttons */}
@@ -407,19 +624,32 @@ const EmergencyContacts = () => {
             <Button
               type="button"
               onClick={handleCloseModal}
-              className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800"
+              color="gray"
+              className="flex-1"
             >
               Cancel
             </Button>
             <Button
-              type="submit"
-              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white"
+              type="button"
+              onClick={(e) => {
+                handleSubmit(e);
+              }}
+              color="red"
+              className="flex-1"
             >
-              {editingContact ? "Update Contact" : "Add Contact"}
+              {editingContact
+                ? "Update Contact"
+                : "Add Emergency Contact & Enable SMS Alerts"}
             </Button>
           </div>
-        </form>
+        </div>
       </Modal>
+
+      {/* Privacy Policy Modal */}
+      <PrivacyPolicyModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
     </div>
   );
 };
