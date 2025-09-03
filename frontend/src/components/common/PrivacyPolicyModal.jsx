@@ -184,9 +184,8 @@ const PrivacyPolicyModal = ({ isOpen, onClose }) => {
           <div className="text-sm text-gray-700 space-y-2">
             <p>
               We work with HIPAA-compliant third-party services for SMS delivery
-              (Twilio), cloud hosting (AWS/Azure), and security monitoring.
-              These partners have signed Business Associate Agreements (BAAs)
-              and are contractually obligated to protect your PHI.
+              (Azure Communication Service), cloud hosting (AWS/Azure), and
+              security monitoring.
             </p>
           </div>
         </section>
